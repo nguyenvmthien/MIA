@@ -30,8 +30,8 @@ Requirements:
 """
 
 import argparse
-import logging
 import json
+import logging
 from pathlib import Path
 
 import torch
@@ -127,8 +127,7 @@ class DistillationTrainer:
 
     def train(self, data_paths: list[str], output_dir: str, epochs: int = 3):
         import mlflow  # type: ignore
-        from torch.utils.data import DataLoader
-        from transformers import DataCollatorForSeq2Seq  # type: ignore
+
         from train.dataset import build_dataset
 
         teacher, t_tokenizer = self._load_teacher()

@@ -8,7 +8,7 @@ from rich.console import Console
 from rich.table import Table
 
 from meeting_agent.pipeline.run import run_pipeline
-from meeting_agent.schemas.worker import Worker, WorkerRoster
+from meeting_agent.schemas.worker import WorkerRoster
 
 app = typer.Typer(help="Meeting AI Agent — extract action items from meeting audio")
 console = Console()

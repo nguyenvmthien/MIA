@@ -5,7 +5,6 @@ Corrections are accumulated as a JSONL file that the retraining
 pipeline consumes to improve the model over time.
 """
 
-import json
 import logging
 from datetime import datetime
 from pathlib import Path

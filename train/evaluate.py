@@ -67,10 +67,11 @@ def run_evaluation(gold_path: str, model: str) -> dict:
     import sys
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+    import uuid
+
     from meeting_agent.pipeline.orchestrator import extract_action_items
     from meeting_agent.schemas.transcript import TranscriptTurn
     from meeting_agent.schemas.worker import WorkerRoster
-    import uuid
 
     gold_samples = []
     with open(gold_path) as f:
@@ -81,8 +82,6 @@ def run_evaluation(gold_path: str, model: str) -> dict:
 
     all_precision, all_recall, all_f1 = [], [], []
     schema_failures = 0
-    hallucination_flags = 0
-
     for i, sample in enumerate(gold_samples):
         # Reconstruct transcript turns from the gold sample
         turns = []

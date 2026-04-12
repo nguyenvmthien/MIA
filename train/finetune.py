@@ -16,9 +16,7 @@ Requirements:
 """
 
 import argparse
-import json
 import logging
-import os
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -104,7 +102,8 @@ def formatting_fn(examples, tokenizer):
 
 def train(args, hparams: dict | None = None):
     """Run one training job and return eval metrics."""
-    from trl import SFTTrainer, SFTConfig  # type: ignore
+    from trl import SFTConfig, SFTTrainer  # type: ignore
+
     from train.dataset import build_dataset, train_val_split
 
     hp = {**DEFAULTS, **(hparams or {})}
@@ -135,10 +134,14 @@ def train(args, hparams: dict | None = None):
         )
 
         train_ds = train_ds.map(
-            lambda ex: formatting_fn(ex, tokenizer), batched=True, remove_columns=train_ds.column_names
+            lambda ex: formatting_fn(ex, tokenizer),
+            batched=True,
+            remove_columns=train_ds.column_names,
         )
         val_ds = val_ds.map(
-            lambda ex: formatting_fn(ex, tokenizer), batched=True, remove_columns=val_ds.column_names
+            lambda ex: formatting_fn(ex, tokenizer),
+            batched=True,
+            remove_columns=val_ds.column_names,
         )
 
         # ── Trainer ───────────────────────────────────────────────────────────
@@ -185,7 +188,6 @@ def train(args, hparams: dict | None = None):
 
         # Convert to GGUF Q4_K_M for Ollama deployment
         try:
-            from unsloth import FastLanguageModel  # type: ignore
             model.save_pretrained_gguf(
                 str(output_dir / "gguf"),
                 tokenizer,

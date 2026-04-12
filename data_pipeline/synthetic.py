@@ -12,7 +12,6 @@ import argparse
 import json
 import logging
 import random
-import uuid
 from datetime import date, timedelta
 from pathlib import Path
 

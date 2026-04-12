@@ -5,8 +5,8 @@ import time
 from pathlib import Path
 
 import noisereduce as nr
-import soundfile as sf
 import numpy as np
+import soundfile as sf
 
 from meeting_agent.monitoring.metrics import STAGE_LATENCY
 

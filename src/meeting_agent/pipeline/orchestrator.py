@@ -18,8 +18,6 @@ from datetime import date, timedelta
 
 from tenacity import retry, stop_after_attempt, wait_fixed
 
-import ollama as ollama_client
-
 from meeting_agent.config import settings
 from meeting_agent.monitoring.metrics import LLM_CALLS, LLM_TOKENS, STAGE_LATENCY
 from meeting_agent.pipeline.cache import cached_llm_call
@@ -214,7 +212,8 @@ def summarize_meeting(
     full_text = _turns_to_text(turns)
     words = full_text.split()
     if len(words) > int(CHUNK_TOKEN_BUDGET * 2 * WORDS_PER_TOKEN):
-        full_text = " ".join(words[: int(CHUNK_TOKEN_BUDGET * 2 * WORDS_PER_TOKEN)]) + " [truncated]"
+        limit = int(CHUNK_TOKEN_BUDGET * 2 * WORDS_PER_TOKEN)
+        full_text = " ".join(words[:limit]) + " [truncated]"
 
     user_prompt = SUMMARIZE_USER.format(
         meeting_date=meeting_date,

@@ -39,7 +39,9 @@ class StageTiming(BaseModel):
 
 class RunMetrics(BaseModel):
     wer_estimate: float | None = Field(default=None, description="Word Error Rate (0-1)")
-    diarization_error: float | None = Field(default=None, description="Diarization Error Rate (0-1)")
+    diarization_error: float | None = Field(
+        default=None, description="Diarization Error Rate (0-1)"
+    )
     total_tokens_used: int = Field(default=0)
     llm_calls: int = Field(default=0)
     hallucination_flags: int = Field(default=0)

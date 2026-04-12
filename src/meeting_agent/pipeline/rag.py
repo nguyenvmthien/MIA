@@ -7,7 +7,6 @@ without bloating every prompt with the full transcript history.
 """
 
 import logging
-from pathlib import Path
 
 import numpy as np
 

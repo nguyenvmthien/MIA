@@ -2,8 +2,8 @@
 
 import pytest
 
-from meeting_agent.pipeline.assignment import _fuzzy_score, _confidence_score, resolve_assignments
-from meeting_agent.schemas.task import ExtractedTask, TaskPriority, TaskStatus
+from meeting_agent.pipeline.assignment import _confidence_score, _fuzzy_score, resolve_assignments
+from meeting_agent.schemas.task import ExtractedTask, TaskStatus
 from meeting_agent.schemas.worker import Worker, WorkerRoster
 
 

@@ -5,7 +5,7 @@ import uuid
 from pathlib import Path
 
 from meeting_agent.config import settings
-from meeting_agent.monitoring.metrics import STAGE_LATENCY, STT_WER, DIARIZE_DER
+from meeting_agent.monitoring.metrics import STAGE_LATENCY
 from meeting_agent.schemas.transcript import TranscriptTurn
 
 

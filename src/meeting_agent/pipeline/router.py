@@ -21,8 +21,8 @@ import itertools
 import logging
 import threading
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Iterator
 
 import httpx
 

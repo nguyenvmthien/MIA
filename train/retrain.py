@@ -78,7 +78,9 @@ def _export_feedback_as_training_data(out_path: str) -> int:
                 continue  # skip — these tell us what NOT to extract (handled by negative examples)
             row = {
                 "transcript": f"[Action item]: {c.original_description}",
-                "meeting_date": c.submitted_at.date().isoformat() if c.submitted_at else "2026-01-01",
+                "meeting_date": (
+                    c.submitted_at.date().isoformat() if c.submitted_at else "2026-01-01"
+                ),
                 "participants": c.corrected_assignee or c.original_assignee or "",
                 "action_items": [{
                     "description": c.corrected_description or c.original_description,

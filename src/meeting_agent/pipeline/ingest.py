@@ -1,13 +1,11 @@
 """Stage 1 — Ingest: validate and store the uploaded audio file."""
 
-import os
 import shutil
 import time
 from pathlib import Path
 
 from meeting_agent.config import settings
 from meeting_agent.monitoring.metrics import STAGE_LATENCY
-
 
 SUPPORTED_FORMATS = {".mp3", ".mp4", ".wav", ".m4a", ".ogg", ".flac", ".webm"}
 MAX_BYTES = settings.max_audio_duration_hours * 3600 * 320_000  # rough upper bound at 320kbps

@@ -18,6 +18,7 @@ Data format (each line of input JSONL):
 """
 
 import json
+from __future__ import annotations
 from pathlib import Path
 
 from meeting_agent.prompts.templates import (
@@ -64,7 +65,7 @@ def load_jsonl(path: str | Path) -> list[dict]:
     return rows
 
 
-def build_dataset(data_paths: list[str | Path]) -> "datasets.Dataset":
+def build_dataset(data_paths: list[str | Path]) -> "Dataset":
     """
     Load one or more JSONL files and return a HuggingFace Dataset
     in instruction-tuning format.

@@ -1,21 +1,21 @@
 """Tests for the Guardrail Engine."""
 
 import json
-import pytest
 from datetime import date
+
+import pytest
 
 from meeting_agent.pipeline.guardrails import (
     GuardrailError,
-    _strip_json_fences,
-    _find_json_array,
-    _validate_due_date,
     _check_hallucination,
+    _find_json_array,
+    _strip_json_fences,
+    _validate_due_date,
     parse_and_validate,
 )
-from meeting_agent.schemas.transcript import TranscriptTurn
 from meeting_agent.schemas.task import TaskStatus
+from meeting_agent.schemas.transcript import TranscriptTurn
 from meeting_agent.schemas.worker import Worker, WorkerRoster
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -144,7 +144,12 @@ def test_parse_invalid_json_raises(roster, turns):
 
 
 def test_parse_markdown_fenced_output(roster, turns):
-    raw = "```json\n[{\"description\": \"Send email\", \"assignee\": \"Bob\", \"due_date\": null, \"priority\": \"low\", \"notes\": null}]\n```"
+    raw = (
+        "```json\n"
+        '[{"description": "Send email", "assignee": "Bob",'
+        ' "due_date": null, "priority": "low", "notes": null}]\n'
+        "```"
+    )
     tasks = parse_and_validate(raw, roster, turns, ["t1"], "meet1")
     assert len(tasks) == 1
     assert tasks[0].assignee == "Bob Kim"
@@ -152,8 +157,10 @@ def test_parse_markdown_fenced_output(roster, turns):
 
 def test_parse_skips_empty_descriptions(roster, turns):
     raw = json.dumps([
-        {"description": "", "assignee": "Alice", "due_date": None, "priority": "low", "notes": None},
-        {"description": "Valid task", "assignee": None, "due_date": None, "priority": "low", "notes": None},
+        {"description": "", "assignee": "Alice", "due_date": None,
+         "priority": "low", "notes": None},
+        {"description": "Valid task", "assignee": None, "due_date": None,
+         "priority": "low", "notes": None},
     ])
     tasks = parse_and_validate(raw, roster, turns, ["t1"], "meet1")
     assert len(tasks) == 1

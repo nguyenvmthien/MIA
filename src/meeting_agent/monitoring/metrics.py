@@ -5,7 +5,7 @@ All metrics are defined here and imported by pipeline stages.
 The FastAPI app exposes /metrics for Prometheus scraping.
 """
 
-from prometheus_client import Counter, Gauge, Histogram, Summary
+from prometheus_client import Counter, Gauge, Histogram
 
 # ── Stage latency (seconds) ───────────────────────────────────────────────────
 STAGE_LATENCY = Histogram(

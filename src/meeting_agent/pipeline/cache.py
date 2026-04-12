@@ -3,7 +3,7 @@
 import hashlib
 import json
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 try:
     import redis as redis_lib

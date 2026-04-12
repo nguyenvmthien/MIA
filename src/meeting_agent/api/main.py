@@ -1,5 +1,7 @@
 """FastAPI application — entry point for the Meeting AI Agent REST API."""
 
+import json
+import shutil
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -12,12 +14,7 @@ from meeting_agent.config import settings
 from meeting_agent.pipeline.feedback import FeedbackSubmission, feedback_stats, save_feedback
 from meeting_agent.pipeline.router import router_stats
 from meeting_agent.pipeline.worker_task import celery_app, check_retrain_task, process_meeting_task
-from meeting_agent.schemas.meeting import JobStatus, MeetingSummary
-from meeting_agent.schemas.worker import Worker, WorkerRoster
-
-import json
-import shutil
-import tempfile
+from meeting_agent.schemas.worker import WorkerRoster
 
 
 @asynccontextmanager

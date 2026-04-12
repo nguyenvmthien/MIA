@@ -4,18 +4,14 @@ Main pipeline runner — wires all stages together into a single batch job.
 Called by the Celery worker or the CLI.
 """
 
+import logging
 import time
 import uuid
-from datetime import datetime, date
+from datetime import date, datetime
 from pathlib import Path
 
-import logging
-
-from meeting_agent.config import settings
 from meeting_agent.monitoring.anomaly import check_run as anomaly_check
 from meeting_agent.monitoring.metrics import TASKS_EXTRACTED, TASKS_UNRESOLVED
-
-log = logging.getLogger(__name__)
 from meeting_agent.pipeline.assignment import resolve_assignments
 from meeting_agent.pipeline.ingest import ingest_audio
 from meeting_agent.pipeline.orchestrator import extract_action_items, summarize_meeting
@@ -24,6 +20,8 @@ from meeting_agent.pipeline.stt import transcribe_and_diarize
 from meeting_agent.schemas.meeting import JobStatus, MeetingSummary, RunMetrics, StageTiming
 from meeting_agent.schemas.task import TaskStatus
 from meeting_agent.schemas.worker import WorkerRoster
+
+log = logging.getLogger(__name__)
 
 
 def run_pipeline(

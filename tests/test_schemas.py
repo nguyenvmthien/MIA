@@ -1,14 +1,14 @@
 """Tests for canonical data schemas."""
 
-import pytest
 from datetime import date
+
+import pytest
 from pydantic import ValidationError
 
+from meeting_agent.schemas.meeting import RunMetrics, StageTiming
+from meeting_agent.schemas.task import ExtractedTask, TaskPriority, TaskStatus
 from meeting_agent.schemas.transcript import TranscriptTurn
 from meeting_agent.schemas.worker import Worker, WorkerRoster
-from meeting_agent.schemas.task import ExtractedTask, TaskPriority, TaskStatus
-from meeting_agent.schemas.meeting import MeetingSummary, RunMetrics, StageTiming
-
 
 # ── TranscriptTurn ────────────────────────────────────────────────────────────
 
