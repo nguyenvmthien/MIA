@@ -1,0 +1,45 @@
+{
+  "meeting_id": "fixture-001",
+  "job_status": "completed",
+  "audio_filename": "sample.mp3",
+  "created_at": "2026-04-12T10:00:00",
+  "processed_at": "2026-04-12T10:03:00",
+  "duration_ms": 42000,
+  "participants": ["Alice Chen", "Bob Kim"],
+  "summary_text": "Alice assigned Bob to send the quarterly report by Friday and fix the login bug by Wednesday.",
+  "action_items": [
+    {
+      "task_id": "fixture-001_c0_0",
+      "description": "Send quarterly report to client",
+      "assignee": "Bob Kim",
+      "assignee_id": "w2",
+      "due_date": "2026-04-17",
+      "priority": "high",
+      "source_turn_ids": ["t1"],
+      "extraction_confidence": 0.9,
+      "status": "open",
+      "notes": null
+    }
+  ],
+  "unresolved_items": [],
+  "human_review_items": [],
+  "run_metrics": {
+    "total_tokens_used": 512,
+    "llm_calls": 1,
+    "hallucination_flags": 0,
+    "schema_validation_failures": 0,
+    "tasks_extracted": 1,
+    "tasks_unresolved": 0,
+    "tasks_human_review": 0,
+    "stage_timings": {
+      "ingest_ms": 10,
+      "preprocess_ms": 500,
+      "stt_ms": 30000,
+      "diarize_ms": 0,
+      "llm_ms": 8000,
+      "assignment_ms": 5,
+      "persist_ms": 0
+    }
+  },
+  "error": null
+}

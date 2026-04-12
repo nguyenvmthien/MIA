@@ -534,7 +534,19 @@ Gold set format (each line):
 }
 ```
 
-Quality targets: Precision ≥ 0.85 · Recall ≥ 0.90 · Hallucination ≤ 5%
+**Baseline results** (qwen2.5:3b, no fine-tuning, 5-sample smoke set):
+
+| Metric | Score | Target |
+|--------|-------|--------|
+| Precision | 0.767 | ≥ 0.85 |
+| Recall | 0.700 | ≥ 0.90 |
+| F1 | 0.727 | — |
+| Schema failure rate | 0.0% | ≤ 5% |
+| Hallucination flags | 0 | ≤ 5% |
+
+Full analysis: [docs/eval-results.md](docs/eval-results.md)
+
+The base model meets schema and hallucination targets. Precision/Recall gaps are expected at this model size and close with fine-tuning (see [Fine-tuning](#fine-tuning) section).
 
 ---
 

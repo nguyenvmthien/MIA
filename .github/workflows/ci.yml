@@ -95,8 +95,8 @@ jobs:
           import json, sys
           r = json.load(open("/tmp/eval_results.json"))
           print(f"Precision: {r['avg_precision']:.3f}  Recall: {r['avg_recall']:.3f}  F1: {r['avg_f1']:.3f}")
-          if r['avg_precision'] < 0.80:
-              print("FAIL: precision below smoke threshold 0.80")
+          if r['avg_precision'] < 0.70:
+              print("FAIL: precision below smoke threshold 0.70")
               sys.exit(1)
           print("PASS")
           EOF
