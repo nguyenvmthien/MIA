@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" font-family="Inter, Segoe UI, sans-serif">
+  <!-- Background -->
+  <rect width="900" height="560" fill="#f8f9fa" rx="12"/>
+
+  <!-- Title -->
+  <text x="450" y="38" text-anchor="middle" font-size="18" font-weight="bold" fill="#1a1a2e">Meeting AI Agent — System Architecture</text>
+
+  <!-- ── User Layer ── -->
+  <rect x="30" y="70" width="120" height="54" rx="8" fill="#4361ee" stroke="#3a56d4" stroke-width="1.5"/>
+  <text x="90" y="93" text-anchor="middle" font-size="12" font-weight="bold" fill="white">User</text>
+  <text x="90" y="111" text-anchor="middle" font-size="10" fill="#cce0ff">browser / CLI</text>
+
+  <!-- Arrow user → UI -->
+  <line x1="150" y1="97" x2="198" y2="97" stroke="#999" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Streamlit UI -->
+  <rect x="200" y="70" width="130" height="54" rx="8" fill="#4361ee" stroke="#3a56d4" stroke-width="1.5"/>
+  <text x="265" y="93" text-anchor="middle" font-size="12" font-weight="bold" fill="white">Streamlit UI</text>
+  <text x="265" y="111" text-anchor="middle" font-size="10" fill="#cce0ff">localhost:8501</text>
+
+  <!-- Arrow UI → API -->
+  <line x1="330" y1="97" x2="378" y2="97" stroke="#999" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- FastAPI -->
+  <rect x="380" y="70" width="130" height="54" rx="8" fill="#3a0ca3" stroke="#2d0982" stroke-width="1.5"/>
+  <text x="445" y="93" text-anchor="middle" font-size="12" font-weight="bold" fill="white">FastAPI</text>
+  <text x="445" y="111" text-anchor="middle" font-size="10" fill="#c9b8ff">REST API · :8000</text>
+
+  <!-- Arrow API → Celery -->
+  <line x1="510" y1="97" x2="558" y2="97" stroke="#999" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Celery Worker -->
+  <rect x="560" y="70" width="130" height="54" rx="8" fill="#3a0ca3" stroke="#2d0982" stroke-width="1.5"/>
+  <text x="625" y="93" text-anchor="middle" font-size="12" font-weight="bold" fill="white">Celery Worker</text>
+  <text x="625" y="111" text-anchor="middle" font-size="10" fill="#c9b8ff">async pipeline</text>
+
+  <!-- ── AI Layer label ── -->
+  <rect x="30" y="165" width="840" height="180" rx="10" fill="none" stroke="#4cc9f0" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <text x="50" y="185" font-size="11" fill="#4cc9f0" font-weight="bold">AI / ML Core</text>
+
+  <!-- WhisperX -->
+  <rect x="60" y="195" width="150" height="70" rx="8" fill="#f72585" stroke="#d4157a" stroke-width="1.5"/>
+  <text x="135" y="222" text-anchor="middle" font-size="12" font-weight="bold" fill="white">WhisperX</text>
+  <text x="135" y="240" text-anchor="middle" font-size="10" fill="#ffd6eb">ASR large-v3</text>
+  <text x="135" y="256" text-anchor="middle" font-size="10" fill="#ffd6eb">+ Pyannote 3.1</text>
+
+  <!-- FAISS -->
+  <rect x="250" y="195" width="150" height="70" rx="8" fill="#7209b7" stroke="#5c0795" stroke-width="1.5"/>
+  <text x="325" y="222" text-anchor="middle" font-size="12" font-weight="bold" fill="white">FAISS</text>
+  <text x="325" y="240" text-anchor="middle" font-size="10" fill="#e8c8ff">Speaker RAG</text>
+  <text x="325" y="256" text-anchor="middle" font-size="10" fill="#e8c8ff">nomic-embed-text</text>
+
+  <!-- Ollama / Qwen -->
+  <rect x="440" y="195" width="180" height="70" rx="8" fill="#f72585" stroke="#d4157a" stroke-width="1.5"/>
+  <text x="530" y="218" text-anchor="middle" font-size="12" font-weight="bold" fill="white">Ollama</text>
+  <text x="530" y="236" text-anchor="middle" font-size="10" fill="#ffd6eb">Qwen2.5-3B-Instruct</text>
+  <text x="530" y="252" text-anchor="middle" font-size="10" fill="#ffd6eb">GGUF Q4_K_M · :11434</text>
+  <text x="530" y="268" text-anchor="middle" font-size="9" fill="#ffd6eb">(local — no API call)</text>
+
+  <!-- Guardrails -->
+  <rect x="660" y="195" width="180" height="70" rx="8" fill="#7209b7" stroke="#5c0795" stroke-width="1.5"/>
+  <text x="750" y="218" text-anchor="middle" font-size="12" font-weight="bold" fill="white">Guardrails</text>
+  <text x="750" y="236" text-anchor="middle" font-size="10" fill="#e8c8ff">Pydantic schema</text>
+  <text x="750" y="252" text-anchor="middle" font-size="10" fill="#e8c8ff">hallucination · PII</text>
+  <text x="750" y="268" text-anchor="middle" font-size="10" fill="#e8c8ff">jailbreak detection</text>
+
+  <!-- AI layer arrows -->
+  <line x1="625" y1="124" x2="530" y2="193" stroke="#4cc9f0" stroke-width="1.5" marker-end="url(#arrowBlue)"/>
+  <line x1="625" y1="124" x2="135" y2="193" stroke="#4cc9f0" stroke-width="1.5" marker-end="url(#arrowBlue)"/>
+
+  <!-- ── Data Layer ── -->
+  <!-- PostgreSQL -->
+  <rect x="60" y="390" width="160" height="60" rx="8" fill="#06d6a0" stroke="#05b888" stroke-width="1.5"/>
+  <text x="140" y="415" text-anchor="middle" font-size="12" font-weight="bold" fill="white">PostgreSQL</text>
+  <text x="140" y="434" text-anchor="middle" font-size="10" fill="#d0fff5">meetings · tasks · workers</text>
+
+  <!-- Redis -->
+  <rect x="250" y="390" width="160" height="60" rx="8" fill="#06d6a0" stroke="#05b888" stroke-width="1.5"/>
+  <text x="330" y="415" text-anchor="middle" font-size="12" font-weight="bold" fill="white">Redis</text>
+  <text x="330" y="434" text-anchor="middle" font-size="10" fill="#d0fff5">prompt cache · job queue</text>
+
+  <!-- MLflow -->
+  <rect x="440" y="390" width="160" height="60" rx="8" fill="#118ab2" stroke="#0e7494" stroke-width="1.5"/>
+  <text x="520" y="415" text-anchor="middle" font-size="12" font-weight="bold" fill="white">MLflow</text>
+  <text x="520" y="434" text-anchor="middle" font-size="10" fill="#cceeff">model versioning</text>
+
+  <!-- Observability -->
+  <rect x="630" y="390" width="240" height="60" rx="8" fill="#118ab2" stroke="#0e7494" stroke-width="1.5"/>
+  <text x="750" y="410" text-anchor="middle" font-size="12" font-weight="bold" fill="white">Observability</text>
+  <text x="750" y="428" text-anchor="middle" font-size="10" fill="#cceeff">Prometheus · Grafana</text>
+  <text x="750" y="444" text-anchor="middle" font-size="10" fill="#cceeff">LangSmith tracing</text>
+
+  <!-- Arrows down to data layer -->
+  <line x1="445" y1="345" x2="140" y2="388" stroke="#aaa" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrowGray)"/>
+  <line x1="530" y1="345" x2="330" y2="388" stroke="#aaa" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrowGray)"/>
+  <line x1="625" y1="345" x2="520" y2="388" stroke="#aaa" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrowGray)"/>
+  <line x1="750" y1="265" x2="750" y2="388" stroke="#aaa" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrowGray)"/>
+
+  <!-- ── CI/CD badge ── -->
+  <rect x="30" y="490" width="840" height="44" rx="8" fill="#e9ecef" stroke="#ced4da" stroke-width="1"/>
+  <text x="450" y="510" text-anchor="middle" font-size="11" fill="#495057" font-weight="bold">CI/CD: GitHub Actions</text>
+  <text x="450" y="527" text-anchor="middle" font-size="10" fill="#6c757d">lint (ruff + mypy)  →  unit tests (43)  →  eval smoke (P≥0.70)  →  Docker build</text>
+
+  <!-- Arrowhead markers -->
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#999"/>
+    </marker>
+    <marker id="arrowBlue" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#4cc9f0"/>
+    </marker>
+    <marker id="arrowGray" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#aaa"/>
+    </marker>
+  </defs>
+</svg>

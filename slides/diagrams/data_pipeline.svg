@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 380" font-family="Inter, Segoe UI, sans-serif">
+  <rect width="760" height="380" fill="#f8f9fa" rx="12"/>
+  <text x="380" y="32" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a1a2e">Data Pipeline — 3 nguồn dữ liệu &amp; Feedback Loop</text>
+
+  <!-- Source 1: Real Meetings -->
+  <rect x="30" y="60" width="180" height="70" rx="8" fill="#4361ee" stroke="#3a56d4" stroke-width="1.5"/>
+  <text x="120" y="84" text-anchor="middle" font-size="12" font-weight="bold" fill="white">Real Meetings</text>
+  <text x="120" y="100" text-anchor="middle" font-size="9" fill="#cce0ff">user upload + annotate</text>
+  <text x="120" y="116" text-anchor="middle" font-size="9" fill="#cce0ff">ground-truth corrections</text>
+
+  <!-- Source 2: AMI Corpus -->
+  <rect x="290" y="60" width="180" height="70" rx="8" fill="#7209b7" stroke="#5c0795" stroke-width="1.5"/>
+  <text x="380" y="84" text-anchor="middle" font-size="12" font-weight="bold" fill="white">AMI Corpus</text>
+  <text x="380" y="100" text-anchor="middle" font-size="9" fill="#e8c8ff">public dataset</text>
+  <text x="380" y="116" text-anchor="middle" font-size="9" fill="#e8c8ff">annotated meetings</text>
+
+  <!-- Source 3: Synthetic -->
+  <rect x="550" y="60" width="180" height="70" rx="8" fill="#118ab2" stroke="#0e7494" stroke-width="1.5"/>
+  <text x="640" y="84" text-anchor="middle" font-size="12" font-weight="bold" fill="white">Synthetic Data</text>
+  <text x="640" y="100" text-anchor="middle" font-size="9" fill="#cceeff">LLM-generated</text>
+  <text x="640" y="116" text-anchor="middle" font-size="9" fill="#cceeff">meeting scripts</text>
+
+  <!-- Arrows into validator -->
+  <line x1="120" y1="130" x2="340" y2="178" stroke="#999" stroke-width="1.5" marker-end="url(#arrD)"/>
+  <line x1="380" y1="130" x2="380" y2="178" stroke="#999" stroke-width="1.5" marker-end="url(#arrD)"/>
+  <line x1="640" y1="130" x2="420" y2="178" stroke="#999" stroke-width="1.5" marker-end="url(#arrD)"/>
+
+  <!-- Data Validator -->
+  <rect x="270" y="180" width="220" height="90" rx="8" fill="#f72585" stroke="#d4157a" stroke-width="1.5"/>
+  <text x="380" y="200" text-anchor="middle" font-size="12" font-weight="bold" fill="white">Data Validator</text>
+  <text x="380" y="218" text-anchor="middle" font-size="9" fill="#ffd6eb">· Schema check</text>
+  <text x="380" y="232" text-anchor="middle" font-size="9" fill="#ffd6eb">· Bias audit</text>
+  <text x="380" y="246" text-anchor="middle" font-size="9" fill="#ffd6eb">· Leakage check · Dedup</text>
+
+  <!-- Arrow down to Training Data -->
+  <line x1="380" y1="270" x2="380" y2="308" stroke="#999" stroke-width="1.5" marker-end="url(#arrD)"/>
+
+  <!-- Training Data -->
+  <rect x="270" y="310" width="220" height="54" rx="8" fill="#06d6a0" stroke="#05b888" stroke-width="1.5"/>
+  <text x="380" y="332" text-anchor="middle" font-size="12" font-weight="bold" fill="white">Training Data</text>
+  <text x="380" y="350" text-anchor="middle" font-size="9" fill="#d0fff5">JSONL format · versioned</text>
+
+  <!-- ===== FEEDBACK LOOP (right side) ===== -->
+  <!-- Feedback box -->
+  <rect x="560" y="180" width="170" height="70" rx="8" fill="#ffd166" fill-opacity="0.2" stroke="#ffd166" stroke-width="1.5"/>
+  <text x="645" y="202" text-anchor="middle" font-size="11" font-weight="bold" fill="#b8860b">User Correction</text>
+  <text x="645" y="219" text-anchor="middle" font-size="9" fill="#555">sửa assignee / description</text>
+  <text x="645" y="233" text-anchor="middle" font-size="9" fill="#555">trong Streamlit UI</text>
+
+  <!-- Celery Beat -->
+  <rect x="560" y="270" width="170" height="54" rx="8" fill="#118ab2" stroke="#0e7494" stroke-width="1.5"/>
+  <text x="645" y="293" text-anchor="middle" font-size="11" font-weight="bold" fill="white">Celery Beat</text>
+  <text x="645" y="309" text-anchor="middle" font-size="9" fill="#cceeff">check mỗi 24h · ≥ 50 corrections</text>
+  <text x="645" y="320" text-anchor="middle" font-size="9" fill="#cceeff">→ trigger auto retrain</text>
+
+  <!-- Feedback arrows -->
+  <line x1="645" y1="250" x2="645" y2="270" stroke="#ffd166" stroke-width="1.5" marker-end="url(#arrYellowD)"/>
+  <!-- Feedback → Validator (closed loop) -->
+  <path d="M 560 297 L 490 297" stroke="#ffd166" stroke-width="1.5" stroke-dasharray="5,3" fill="none" marker-end="url(#arrYellowD)"/>
+  <text x="500" y="292" font-size="8" fill="#b8860b">new training</text>
+  <text x="500" y="303" font-size="8" fill="#b8860b">examples</text>
+
+  <defs>
+    <marker id="arrD" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#999"/>
+    </marker>
+    <marker id="arrYellowD" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#ffd166"/>
+    </marker>
+  </defs>
+</svg>

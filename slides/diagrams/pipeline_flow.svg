@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 640" font-family="Inter, Segoe UI, sans-serif">
+  <rect width="320" height="640" fill="#f8f9fa" rx="12"/>
+  <text x="160" y="32" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a1a2e">Pipeline Flow</text>
+
+  <!-- Stage boxes -->
+  <!-- Stage 1 -->
+  <rect x="60" y="50" width="200" height="56" rx="8" fill="#4361ee" stroke="#3a56d4" stroke-width="1.5"/>
+  <text x="160" y="73" text-anchor="middle" font-size="12" font-weight="bold" fill="white">1. Ingest</text>
+  <text x="160" y="91" text-anchor="middle" font-size="10" fill="#cce0ff">validate format · store audio</text>
+
+  <line x1="160" y1="106" x2="160" y2="124" stroke="#aaa" stroke-width="2" marker-end="url(#a)"/>
+
+  <!-- Stage 2 -->
+  <rect x="60" y="126" width="200" height="56" rx="8" fill="#4361ee" stroke="#3a56d4" stroke-width="1.5"/>
+  <text x="160" y="149" text-anchor="middle" font-size="12" font-weight="bold" fill="white">2. Preprocess</text>
+  <text x="160" y="167" text-anchor="middle" font-size="10" fill="#cce0ff">ffmpeg · 16kHz · noise reduction</text>
+
+  <line x1="160" y1="182" x2="160" y2="200" stroke="#aaa" stroke-width="2" marker-end="url(#a)"/>
+
+  <!-- Stage 3 -->
+  <rect x="60" y="202" width="200" height="68" rx="8" fill="#f72585" stroke="#d4157a" stroke-width="1.5"/>
+  <text x="160" y="225" text-anchor="middle" font-size="12" font-weight="bold" fill="white">3. STT + Diarization</text>
+  <text x="160" y="243" text-anchor="middle" font-size="10" fill="#ffd6eb">WhisperX — word-level transcript</text>
+  <text x="160" y="260" text-anchor="middle" font-size="10" fill="#ffd6eb">Pyannote — speaker labels</text>
+
+  <line x1="160" y1="270" x2="160" y2="288" stroke="#aaa" stroke-width="2" marker-end="url(#a)"/>
+
+  <!-- Stage 4 -->
+  <rect x="60" y="290" width="200" height="70" rx="8" fill="#7209b7" stroke="#5c0795" stroke-width="1.5"/>
+  <text x="160" y="313" text-anchor="middle" font-size="12" font-weight="bold" fill="white">4. RAG + LLM</text>
+  <text x="160" y="331" text-anchor="middle" font-size="10" fill="#e8c8ff">FAISS · chunk · prompt</text>
+  <text x="160" y="349" text-anchor="middle" font-size="10" fill="#e8c8ff">Qwen2.5-3B via Ollama</text>
+
+  <line x1="160" y1="360" x2="160" y2="378" stroke="#aaa" stroke-width="2" marker-end="url(#a)"/>
+
+  <!-- Stage 5 -->
+  <rect x="60" y="380" width="200" height="70" rx="8" fill="#7209b7" stroke="#5c0795" stroke-width="1.5"/>
+  <text x="160" y="403" text-anchor="middle" font-size="12" font-weight="bold" fill="white">5. Guardrails</text>
+  <text x="160" y="421" text-anchor="middle" font-size="10" fill="#e8c8ff">schema · hallucination</text>
+  <text x="160" y="438" text-anchor="middle" font-size="10" fill="#e8c8ff">PII masking · jailbreak</text>
+
+  <line x1="160" y1="450" x2="160" y2="468" stroke="#aaa" stroke-width="2" marker-end="url(#a)"/>
+
+  <!-- Stage 6 -->
+  <rect x="60" y="470" width="200" height="56" rx="8" fill="#f72585" stroke="#d4157a" stroke-width="1.5"/>
+  <text x="160" y="493" text-anchor="middle" font-size="12" font-weight="bold" fill="white">6. Assignment</text>
+  <text x="160" y="511" text-anchor="middle" font-size="10" fill="#ffd6eb">exact → fuzzy → confidence score</text>
+
+  <line x1="160" y1="526" x2="160" y2="544" stroke="#aaa" stroke-width="2" marker-end="url(#a)"/>
+
+  <!-- Stage 7 -->
+  <rect x="60" y="546" width="200" height="56" rx="8" fill="#06d6a0" stroke="#05b888" stroke-width="1.5"/>
+  <text x="160" y="569" text-anchor="middle" font-size="12" font-weight="bold" fill="white">7. Emit</text>
+  <text x="160" y="587" text-anchor="middle" font-size="10" fill="#d0fff5">JSON → PostgreSQL · Prometheus</text>
+
+  <defs>
+    <marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#aaa"/>
+    </marker>
+  </defs>
+</svg>

@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 400" font-family="Inter, Segoe UI, sans-serif">
+  <rect width="760" height="400" fill="#f8f9fa" rx="12"/>
+  <text x="380" y="32" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a1a2e">Monitoring &amp; Observability — 3 tầng quan sát</text>
+
+  <!-- LangSmith -->
+  <rect x="30" y="56" width="210" height="170" rx="8" fill="#7209b7" stroke="#5c0795" stroke-width="1.5"/>
+  <text x="135" y="80" text-anchor="middle" font-size="13" font-weight="bold" fill="white">LangSmith</text>
+  <text x="135" y="96" text-anchor="middle" font-size="9" fill="#e8c8ff">LLM call tracing</text>
+  <line x1="50" y1="108" x2="220" y2="108" stroke="#5c0795" stroke-width="0.5"/>
+  <text x="50" y="124" font-size="10" fill="#e8c8ff">• Trace từng LLM call</text>
+  <text x="50" y="140" font-size="10" fill="#e8c8ff">• Prompt + response log</text>
+  <text x="50" y="156" font-size="10" fill="#e8c8ff">• Input / output tokens</text>
+  <text x="50" y="172" font-size="10" fill="#e8c8ff">• Latency per call</text>
+  <text x="50" y="188" font-size="10" fill="#e8c8ff">• 90-ngày retention</text>
+  <rect x="50" y="198" width="170" height="20" rx="4" fill="#5c0795"/>
+  <text x="135" y="212" text-anchor="middle" font-size="9" fill="#e8c8ff">@traceable decorator</text>
+
+  <!-- Prometheus -->
+  <rect x="275" y="56" width="210" height="170" rx="8" fill="#f72585" stroke="#d4157a" stroke-width="1.5"/>
+  <text x="380" y="80" text-anchor="middle" font-size="13" font-weight="bold" fill="white">Prometheus</text>
+  <text x="380" y="96" text-anchor="middle" font-size="9" fill="#ffd6eb">metrics collection</text>
+  <line x1="295" y1="108" x2="465" y2="108" stroke="#d4157a" stroke-width="0.5"/>
+  <text x="295" y="124" font-size="10" fill="#ffd6eb">• Per-stage latency (ms)</text>
+  <text x="295" y="140" font-size="10" fill="#ffd6eb">• Token count / request</text>
+  <text x="295" y="156" font-size="10" fill="#ffd6eb">• Error rate (%)</text>
+  <text x="295" y="172" font-size="10" fill="#ffd6eb">• Hallucination rate</text>
+  <text x="295" y="188" font-size="10" fill="#ffd6eb">• Queue depth (Celery)</text>
+  <rect x="295" y="198" width="170" height="20" rx="4" fill="#d4157a"/>
+  <text x="380" y="212" text-anchor="middle" font-size="9" fill="#ffd6eb">scrape every 15s</text>
+
+  <!-- Grafana -->
+  <rect x="520" y="56" width="210" height="170" rx="8" fill="#118ab2" stroke="#0e7494" stroke-width="1.5"/>
+  <text x="625" y="80" text-anchor="middle" font-size="13" font-weight="bold" fill="white">Grafana</text>
+  <text x="625" y="96" text-anchor="middle" font-size="9" fill="#cceeff">dashboard &amp; alerting</text>
+  <line x1="540" y1="108" x2="710" y2="108" stroke="#0e7494" stroke-width="0.5"/>
+  <text x="540" y="124" font-size="10" fill="#cceeff">• Throughput (req/min)</text>
+  <text x="540" y="140" font-size="10" fill="#cceeff">• Quality drift over time</text>
+  <text x="540" y="156" font-size="10" fill="#cceeff">• Alert rules (P2/P3)</text>
+  <text x="540" y="172" font-size="10" fill="#cceeff">• Stage timing breakdown</text>
+  <text x="540" y="188" font-size="10" fill="#cceeff">• Model comparison</text>
+  <rect x="540" y="198" width="170" height="20" rx="4" fill="#0e7494"/>
+  <text x="625" y="212" text-anchor="middle" font-size="9" fill="#cceeff">:3000 local dashboard</text>
+
+  <!-- Anomaly Detection section -->
+  <rect x="30" y="246" width="700" height="100" rx="8" fill="#1a1a2e" stroke="#333" stroke-width="1"/>
+  <text x="380" y="268" text-anchor="middle" font-size="12" font-weight="bold" fill="#4cc9f0">Anomaly Detection — Rolling Z-score</text>
+  <line x1="50" y1="276" x2="710" y2="276" stroke="#333" stroke-width="0.5"/>
+
+  <!-- Z-score formula visualization -->
+  <rect x="50" y="284" width="300" height="46" rx="6" fill="#ffffff" fill-opacity="0.05" stroke="#4cc9f0" stroke-width="1"/>
+  <text x="200" y="303" text-anchor="middle" font-size="10" fill="#4cc9f0">Nếu metric &gt; mean(100 meetings) + 3σ</text>
+  <text x="200" y="319" text-anchor="middle" font-size="10" fill="#4cc9f0">→ anomaly event → alert</text>
+
+  <!-- Alert rules table -->
+  <text x="400" y="290" font-size="9" font-weight="bold" fill="#ffd166">Alert Rules:</text>
+  <text x="400" y="304" font-size="9" fill="#ccc">Hallucination &gt; 5%  →  P2</text>
+  <text x="400" y="316" font-size="9" fill="#ccc">Recall &lt; 85%  →  P2</text>
+  <text x="560" y="304" font-size="9" fill="#ccc">p95 latency &gt; 120s  →  P3</text>
+  <text x="560" y="316" font-size="9" fill="#ccc">Error rate &gt; 1%  →  P2</text>
+
+  <!-- Arrows from Prometheus to Grafana -->
+  <line x1="485" y1="141" x2="520" y2="141" stroke="#ccc" stroke-width="1.5" marker-end="url(#arrM)"/>
+  <!-- Anomaly detection badge -->
+  <text x="380" y="362" text-anchor="middle" font-size="9" fill="#888">Phát hiện: hallucination spike · latency spike · model drift</text>
+
+  <defs>
+    <marker id="arrM" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#ccc"/>
+    </marker>
+  </defs>
+</svg>

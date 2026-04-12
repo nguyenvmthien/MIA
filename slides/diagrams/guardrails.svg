@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 380" font-family="Inter, Segoe UI, sans-serif">
+  <rect width="760" height="380" fill="#f8f9fa" rx="12"/>
+  <text x="380" y="32" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a1a2e">Prompt Engineering &amp; Guardrail Engine</text>
+
+  <!-- ===== PROMPT STRUCTURE (top bar) ===== -->
+  <rect x="30" y="50" width="700" height="80" rx="8" fill="#1a1a2e" stroke="#4361ee" stroke-width="1.5"/>
+  <text x="380" y="68" text-anchor="middle" font-size="11" font-weight="bold" fill="#4cc9f0">Prompt Strategy: Few-shot + Chain-of-Thought + Roster Grounding</text>
+  <!-- System msg box -->
+  <rect x="50" y="76" width="180" height="44" rx="5" fill="#4361ee"/>
+  <text x="140" y="93" text-anchor="middle" font-size="9" font-weight="bold" fill="white">System Message</text>
+  <text x="140" y="107" text-anchor="middle" font-size="8" fill="#cce0ff">roster · JSON schema · few-shot CoT examples</text>
+  <!-- User msg box -->
+  <rect x="250" y="76" width="160" height="44" rx="5" fill="#7209b7"/>
+  <text x="330" y="93" text-anchor="middle" font-size="9" font-weight="bold" fill="white">User Message</text>
+  <text x="330" y="107" text-anchor="middle" font-size="8" fill="#e8c8ff">transcript chunk ≤ 2048 tokens</text>
+  <!-- Roster grounding note -->
+  <rect x="430" y="76" width="280" height="44" rx="5" fill="#06d6a0" fill-opacity="0.2" stroke="#06d6a0" stroke-width="1"/>
+  <text x="570" y="92" text-anchor="middle" font-size="9" font-weight="bold" fill="#06d6a0">Roster Grounding</text>
+  <text x="570" y="106" text-anchor="middle" font-size="8" fill="#06d6a0">Ngăn model tự bịa tên người phụ trách</text>
+  <text x="570" y="116" text-anchor="middle" font-size="8" fill="#06d6a0">chỉ nhận assignee có trong roster</text>
+
+  <!-- ===== INPUT GUARDRAILS ===== -->
+  <text x="175" y="158" text-anchor="middle" font-size="12" font-weight="bold" fill="#f72585">INPUT Guardrails</text>
+  <text x="175" y="172" text-anchor="middle" font-size="9" fill="#999">(trước khi gửi LLM)</text>
+
+  <rect x="40" y="180" width="270" height="54" rx="8" fill="#f72585" fill-opacity="0.15" stroke="#f72585" stroke-width="1.5"/>
+  <text x="80" y="200" font-size="10" font-weight="bold" fill="#f72585">PII Masking</text>
+  <text x="80" y="216" font-size="9" fill="#555">email · phone · SSN</text>
+  <text x="80" y="228" font-size="9" fill="#555">→ [REDACTED] trước khi vào LLM</text>
+
+  <rect x="40" y="244" width="270" height="54" rx="8" fill="#f72585" fill-opacity="0.15" stroke="#f72585" stroke-width="1.5"/>
+  <text x="80" y="264" font-size="10" font-weight="bold" fill="#f72585">Jailbreak Detection</text>
+  <text x="80" y="280" font-size="9" fill="#555">regex blocklist (prompt injection patterns)</text>
+  <text x="80" y="292" font-size="9" fill="#555">→ reject request ngay lập tức</text>
+
+  <!-- LLM CENTER -->
+  <rect x="325" y="175" width="110" height="130" rx="10" fill="#7209b7" stroke="#5c0795" stroke-width="2"/>
+  <text x="380" y="218" text-anchor="middle" font-size="12" font-weight="bold" fill="white">Qwen</text>
+  <text x="380" y="234" text-anchor="middle" font-size="10" font-weight="bold" fill="white">2.5-3B</text>
+  <text x="380" y="252" text-anchor="middle" font-size="8" fill="#e8c8ff">Ollama</text>
+  <text x="380" y="266" text-anchor="middle" font-size="8" fill="#e8c8ff">local</text>
+  <text x="380" y="290" text-anchor="middle" font-size="8" fill="#ffd6eb">retry × 3</text>
+
+  <!-- Arrows into LLM -->
+  <line x1="310" y1="207" x2="325" y2="220" stroke="#f72585" stroke-width="1.5" marker-end="url(#arrPink)"/>
+  <line x1="310" y1="271" x2="325" y2="260" stroke="#f72585" stroke-width="1.5" marker-end="url(#arrPink)"/>
+
+  <!-- ===== OUTPUT GUARDRAILS ===== -->
+  <text x="585" y="158" text-anchor="middle" font-size="12" font-weight="bold" fill="#06d6a0">OUTPUT Guardrails</text>
+  <text x="585" y="172" text-anchor="middle" font-size="9" fill="#999">(setelah LLM response)</text>
+
+  <rect x="450" y="180" width="270" height="44" rx="8" fill="#06d6a0" fill-opacity="0.15" stroke="#06d6a0" stroke-width="1.5"/>
+  <text x="490" y="198" font-size="10" font-weight="bold" fill="#06d6a0">JSON Schema Validation</text>
+  <text x="490" y="214" font-size="9" fill="#555">Pydantic v2 — reject malformed output</text>
+
+  <rect x="450" y="234" width="270" height="44" rx="8" fill="#06d6a0" fill-opacity="0.15" stroke="#06d6a0" stroke-width="1.5"/>
+  <text x="490" y="252" font-size="10" font-weight="bold" fill="#06d6a0">Assignee Whitelist</text>
+  <text x="490" y="268" font-size="9" fill="#555">chỉ nhận tên có trong roster</text>
+
+  <rect x="450" y="288" width="270" height="44" rx="8" fill="#06d6a0" fill-opacity="0.15" stroke="#06d6a0" stroke-width="1.5"/>
+  <text x="490" y="306" font-size="10" font-weight="bold" fill="#06d6a0">Hallucination + Date Check</text>
+  <text x="490" y="322" font-size="9" fill="#555">assignee có trong transcript? · date sanity</text>
+
+  <!-- Arrows out of LLM -->
+  <line x1="435" y1="220" x2="450" y2="207" stroke="#06d6a0" stroke-width="1.5" marker-end="url(#arrGreen)"/>
+  <line x1="435" y1="256" x2="450" y2="256" stroke="#06d6a0" stroke-width="1.5" marker-end="url(#arrGreen)"/>
+  <line x1="435" y1="280" x2="450" y2="305" stroke="#06d6a0" stroke-width="1.5" marker-end="url(#arrGreen)"/>
+
+  <!-- Result bar -->
+  <rect x="40" y="342" width="680" height="26" rx="6" fill="#1a1a2e"/>
+  <text x="380" y="359" text-anchor="middle" font-size="10" fill="#4cc9f0">Kết quả: Schema failure = 0% · Hallucination flags = 0 · (5-sample gold set)</text>
+
+  <defs>
+    <marker id="arrPink" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#f72585"/>
+    </marker>
+    <marker id="arrGreen" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#06d6a0"/>
+    </marker>
+  </defs>
+</svg>
