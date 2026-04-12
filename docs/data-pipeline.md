@@ -75,7 +75,7 @@ rm data/audio/test_meeting.aiff
 
 ```bash
 # Sinh 50 mẫu (mặc định)
-python data_pipeline/synthetic.py --count 50 --out data/training/synthetic.jsonl
+python3 data_pipeline/synthetic.py --count 50 --out data/training/synthetic.jsonl
 
 # Sinh nhiều hơn cho fine-tuning
 python data_pipeline/synthetic.py --count 200 --out data/training/synthetic.jsonl
@@ -129,6 +129,49 @@ python data_pipeline/synthetic.py --count 200 --out data/training/synthetic.json
 
 - Ollama đang chạy với model `qwen2.5:3b` đã pull
 - Hoặc chạy trong Docker: `docker compose exec api python data_pipeline/synthetic.py --count 50 --out data/training/synthetic.jsonl`
+
+---
+
+## 2.5. Chuyển Synthetic JSONL thành Audio test
+
+Khi bạn đã có `data/training/synthetic.jsonl`, có thể sinh audio tương ứng để test end-to-end từ input âm thanh.
+
+Script: `data_pipeline/synthetic_to_audio.py`
+
+### Chạy thử nhanh (3 mẫu)
+
+```bash
+python3 data_pipeline/synthetic_to_audio.py \
+  --input data/training/synthetic.jsonl \
+  --out-dir data/audio/synthetic \
+  --limit 3 \
+  --overwrite
+```
+
+### Chuyển toàn bộ dataset
+
+```bash
+python3 data_pipeline/synthetic_to_audio.py \
+  --input data/training/synthetic.jsonl \
+  --out-dir data/audio/synthetic \
+  --overwrite
+```
+
+### Output tạo ra
+
+- Mỗi sample tạo ra 1 file `.mp3` theo dạng `meeting_00000.mp3`
+- Mỗi sample có 1 file `.json` đi kèm để đối chiếu nội dung transcript
+- Tất cả lưu trong thư mục `data/audio/synthetic/`
+
+### Yêu cầu môi trường
+
+- macOS có sẵn lệnh `say`
+- Cài `ffmpeg` để ghép/convert audio (`brew install ffmpeg`)
+
+### Ghi chú
+
+- Audio này dùng cho test pipeline (ingest -> STT -> LLM), không thay thế dữ liệu họp thật.
+- Giọng nói được gán theo speaker bằng tập voice mặc định trong script.
 
 ---
 

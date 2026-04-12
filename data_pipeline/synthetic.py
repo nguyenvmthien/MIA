@@ -12,6 +12,7 @@ import argparse
 import json
 import logging
 import random
+import re
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -46,6 +47,12 @@ You are generating synthetic meeting training data. Output ONLY valid JSON.
 Generate a short meeting transcript (4-8 turns) on the given topic with the given participants.
 Then list ALL action items mentioned in the transcript.
 
+IMPORTANT GROUNDING RULES:
+- Every action item must be explicitly mentioned in transcript_turns text.
+- Do not invent or infer tasks that are not spoken.
+- If no action items are mentioned, return an empty list.
+- Assignee must be an exact participant name or null.
+
 Output format:
 {
   "transcript_turns": [
@@ -65,6 +72,49 @@ PARTICIPANTS: {participants}
 MEETING DATE: {meeting_date}
 
 Generate the JSON now:"""
+
+
+_STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "before", "by", "for", "from", "in",
+    "into", "is", "it", "of", "on", "or", "our", "that", "the", "their", "this", "to",
+    "today", "tomorrow", "we", "will", "with", "please", "can", "you", "your", "team",
+}
+
+
+def _tokenize(text: str) -> set[str]:
+    return {
+        t for t in re.findall(r"[a-zA-Z0-9]+", text.lower())
+        if len(t) > 2 and t not in _STOPWORDS
+    }
+
+
+def _filter_grounded_action_items(data: dict) -> list[dict]:
+    """Keep only action items that are explicitly grounded in transcript text."""
+    turns = data.get("transcript_turns") or []
+    transcript_text = "\n".join(str(t.get("text", "")) for t in turns)
+    transcript_tokens = _tokenize(transcript_text)
+
+    grounded: list[dict] = []
+    for item in data.get("action_items") or []:
+        if not isinstance(item, dict):
+            continue
+        description = str(item.get("description", "")).strip()
+        if not description:
+            continue
+
+        desc_tokens = _tokenize(description)
+        if not desc_tokens:
+            continue
+
+        overlap = len(desc_tokens & transcript_tokens)
+        assignee = item.get("assignee")
+        assignee_ok = assignee in (None, "", "null") or str(assignee) in transcript_text
+
+        # Require meaningful lexical overlap + assignee grounded in transcript when present.
+        if overlap >= 2 and assignee_ok:
+            grounded.append(item)
+
+    return grounded
 
 
 def _generate_one(topic: str, participants: list[tuple], meeting_date: str) -> dict | None:
@@ -89,6 +139,11 @@ def _generate_one(topic: str, participants: list[tuple], meeting_date: str) -> d
             if raw.startswith("json"):
                 raw = raw[4:]
         data = json.loads(raw)
+        grounded_items = _filter_grounded_action_items(data)
+        # Reject samples where model output has ungrounded or missing action items.
+        if (data.get("action_items") or []) and not grounded_items:
+            raise ValueError("No grounded action items found in transcript")
+        data["action_items"] = grounded_items
         data["meeting_date"] = meeting_date
         data["participants"] = participant_str
         data["roster"] = {"workers": [

@@ -28,6 +28,7 @@ class Settings(BaseSettings):
 
     # Pyannote
     hf_token: str = ""
+    enable_diarization: bool = True
 
     # LangSmith (optional)
     langchain_tracing_v2: bool = False

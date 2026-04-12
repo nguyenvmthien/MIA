@@ -59,26 +59,28 @@ def transcribe_and_diarize(audio_path: Path) -> tuple[list[TranscriptTurn], int]
     stt_ms = int((time.monotonic() - t0) * 1000)
     STAGE_LATENCY.labels(stage="stt").observe(stt_ms / 1000)
 
-    # ── Diarization ───────────────────────────────────────────────────────────
-    t1 = time.monotonic()
-    if not settings.hf_token:
-        raise STTError(
-            "HF_TOKEN is required for speaker diarization. "
-            "Set it in .env after accepting pyannote/speaker-diarization-3.1 terms."
+    # ── Diarization (optional for low-resource smoke tests) ──────────────────
+    if settings.enable_diarization:
+        t1 = time.monotonic()
+        if not settings.hf_token:
+            raise STTError(
+                "HF_TOKEN is required for speaker diarization. "
+                "Set it in .env after accepting pyannote/speaker-diarization-3.1 terms. "
+                "Or set ENABLE_DIARIZATION=false for non-diarized testing."
+            )
+
+        from pyannote.audio import Pipeline as PyannotePipeline
+
+        diarize_pipeline = PyannotePipeline.from_pretrained(
+            "pyannote/speaker-diarization-3.1",
+            token=settings.hf_token,
         )
+        diarize_pipeline.to(__import__("torch").device(settings.whisper_device))
+        diarize_segments = diarize_pipeline(str(audio_path))
+        result = whisperx.assign_word_speakers(diarize_segments, result)
 
-    from pyannote.audio import Pipeline as PyannotePipeline
-
-    diarize_pipeline = PyannotePipeline.from_pretrained(
-        "pyannote/speaker-diarization-3.1",
-        token=settings.hf_token,
-    )
-    diarize_pipeline.to(__import__("torch").device(settings.whisper_device))
-    diarize_segments = diarize_pipeline(str(audio_path))
-    result = whisperx.assign_word_speakers(diarize_segments, result)
-
-    diarize_ms = int((time.monotonic() - t1) * 1000)
-    STAGE_LATENCY.labels(stage="diarize").observe(diarize_ms / 1000)
+        diarize_ms = int((time.monotonic() - t1) * 1000)
+        STAGE_LATENCY.labels(stage="diarize").observe(diarize_ms / 1000)
 
     # ── Build TranscriptTurn list ─────────────────────────────────────────────
     turns: list[TranscriptTurn] = []
