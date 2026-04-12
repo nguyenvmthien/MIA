@@ -67,11 +67,14 @@ def transcribe_and_diarize(audio_path: Path) -> tuple[list[TranscriptTurn], int]
             "Set it in .env after accepting pyannote/speaker-diarization-3.1 terms."
         )
 
-    diarize_model = whisperx.DiarizationPipeline(
-        use_auth_token=settings.hf_token,
-        device=settings.whisper_device,
+    from pyannote.audio import Pipeline as PyannotePipeline
+
+    diarize_pipeline = PyannotePipeline.from_pretrained(
+        "pyannote/speaker-diarization-3.1",
+        token=settings.hf_token,
     )
-    diarize_segments = diarize_model(audio)
+    diarize_pipeline.to(__import__("torch").device(settings.whisper_device))
+    diarize_segments = diarize_pipeline(str(audio_path))
     result = whisperx.assign_word_speakers(diarize_segments, result)
 
     diarize_ms = int((time.monotonic() - t1) * 1000)

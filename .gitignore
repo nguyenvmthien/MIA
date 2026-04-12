@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+*.env.local
+
+# Data (audio, transcripts, models — too large for git)
+data/audio/
+data/transcripts/
+data/models/
+data/training/
+data/eval/
+
+# ML models & checkpoints
+models/
+*.gguf
+*.bin
+*.safetensors
+mlruns/
+
+# OS
+.DS_Store
+*.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Docker
+docker-compose.override.yml
