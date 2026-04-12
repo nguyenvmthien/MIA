@@ -157,8 +157,11 @@ def parse_and_validate(
         if raw_assignee:
             # LLM sometimes copies the prompt format "Alice Chen (aka Alice) [PM]".
             # Strip the "(aka ...)" and "[role]" suffixes before roster lookup.
-            normalized_assignee = re.sub(r'\s*\(aka[^)]*\)|\s*\[[^\]]*\]', '', str(raw_assignee)).strip()
-            matched_worker = roster.find_by_name(normalized_assignee) or roster.find_by_name(str(raw_assignee))
+            _raw = str(raw_assignee)
+            normalized_assignee = re.sub(r'\s*\(aka[^)]*\)|\s*\[[^\]]*\]', '', _raw).strip()
+            matched_worker = (
+                roster.find_by_name(normalized_assignee) or roster.find_by_name(_raw)
+            )
             if matched_worker:
                 assignee_name = matched_worker.name
                 assignee_id = matched_worker.worker_id

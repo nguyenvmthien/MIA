@@ -95,3 +95,24 @@ select = ["E", "F", "I", "UP"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["meeting_agent"]
+# Exclude modules that require external services (WhisperX, ffmpeg, Ollama, pyannote)
+# These are covered by integration/Docker tests, not unit tests.
+omit = [
+    "*/pipeline/stt.py",
+    "*/pipeline/preprocess.py",
+    "*/pipeline/run.py",
+    "*/pipeline/rag.py",
+    "*/pipeline/router.py",
+    "*/pipeline/orchestrator.py",
+    "*/cli.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]

@@ -29,9 +29,9 @@ class TaskCorrection(BaseModel):
     corrected_due_date: str | None = None
     is_false_positive: bool = False  # task shouldn't have been extracted at all
     is_missing: bool = False          # task was missed and added manually
-    submitted_at: datetime = None
+    submitted_at: datetime | None = None
 
-    def model_post_init(self, __context):
+    def model_post_init(self, __context) -> None:
         if self.submitted_at is None:
             self.submitted_at = datetime.utcnow()
 

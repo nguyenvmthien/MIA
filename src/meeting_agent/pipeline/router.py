@@ -219,11 +219,12 @@ def routed_chat(model: str, messages: list[dict], options: dict | None = None) -
     # Single-endpoint fallback — use Client so OLLAMA_BASE_URL is respected
     import ollama as ollama_client  # type: ignore
     client = ollama_client.Client(host=settings.ollama_base_url)
-    return client.chat(
+    response = client.chat(
         model=model,
         messages=messages,
         options=options or {},
     )
+    return response.model_dump()  # type: ignore[union-attr]
 
 
 def router_stats() -> list[dict]:

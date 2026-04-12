@@ -231,6 +231,24 @@ cp .env.example .env
 docker compose up
 ```
 
+CPU-only (default):
+```bash
+docker compose up -d
+```
+
+With NVIDIA GPU (optional):
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+```
+
+`docker-compose.gpu.yml` only adds GPU device reservation for the `ollama` service.
+
+Notes:
+- No GPU machine: use `docker compose up -d` (default CPU mode).
+- NVIDIA GPU machine: use `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`.
+- If you edited healthcheck/service definitions in compose, use recreate to apply changes:
+  `docker compose up -d --force-recreate <service>`.
+
 | Service    | URL                       | Credentials  |
 |------------|---------------------------|--------------|
 | API        | http://localhost:8000     | —            |
@@ -239,6 +257,21 @@ docker compose up
 | Grafana    | http://localhost:3000     | admin/admin  |
 
 Wait ~60 seconds for Ollama to pull the models on first start.
+
+Observability stack:
+- Prometheus: collects metrics from API (`/metrics`) and stores time-series data.
+- Grafana: visualizes metrics from Prometheus (dashboards, charts, alerts UI).
+- LangSmith: traces LLM execution (prompt/response flow) for debugging quality and latency.
+
+Why Grafana can look empty:
+- No traffic yet -> no useful time-series to draw.
+- Wrong time range in dashboard.
+- No provisioned dashboard/data source.
+
+Quick smoke traffic for dashboards:
+```bash
+for i in {1..30}; do curl -s http://localhost:8000/health >/dev/null; done
+```
 
 To stop:
 ```bash

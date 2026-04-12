@@ -75,6 +75,8 @@ def transcribe_and_diarize(audio_path: Path) -> tuple[list[TranscriptTurn], int]
             "pyannote/speaker-diarization-3.1",
             token=settings.hf_token,
         )
+        if diarize_pipeline is None:
+            raise STTError("Failed to load pyannote speaker-diarization-3.1")
         diarize_pipeline.to(__import__("torch").device(settings.whisper_device))
         diarize_segments = diarize_pipeline(str(audio_path))
         result = whisperx.assign_word_speakers(diarize_segments, result)

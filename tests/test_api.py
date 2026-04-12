@@ -1,7 +1,6 @@
 """Integration tests for the FastAPI application."""
 
 import json
-import uuid
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
