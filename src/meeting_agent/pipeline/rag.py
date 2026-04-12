@@ -25,9 +25,10 @@ except ImportError:
 def _embed(texts: list[str]) -> np.ndarray:
     """Get embeddings from Ollama (nomic-embed-text)."""
     import ollama as ollama_client
+    client = ollama_client.Client(host=settings.ollama_base_url)
     embeddings = []
     for text in texts:
-        resp = ollama_client.embeddings(model=settings.ollama_embed_model, prompt=text)
+        resp = client.embeddings(model=settings.ollama_embed_model, prompt=text)
         embeddings.append(resp["embedding"])
     return np.array(embeddings, dtype=np.float32)
 

@@ -216,9 +216,10 @@ def routed_chat(model: str, messages: list[dict], options: dict | None = None) -
     if _router is not None:
         return _router.chat(model, messages, options)
 
-    # Single-endpoint fallback
+    # Single-endpoint fallback — use Client so OLLAMA_BASE_URL is respected
     import ollama as ollama_client  # type: ignore
-    return ollama_client.chat(
+    client = ollama_client.Client(host=settings.ollama_base_url)
+    return client.chat(
         model=model,
         messages=messages,
         options=options or {},

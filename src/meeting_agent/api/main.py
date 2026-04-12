@@ -117,7 +117,9 @@ async def get_meeting(meeting_id: str):
         )
 
     if result.state == "SUCCESS":
-        return result.result  # already a dict (model_dump)
+        data = result.result  # already a dict (model_dump)
+        data.setdefault("status", data.get("job_status", "completed"))
+        return data
 
     return {"meeting_id": meeting_id, "status": result.state.lower()}
 
