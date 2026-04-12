@@ -158,32 +158,6 @@ Audio file
 
 ## How to run
 
-### Quick start — `run.sh`
-
-A single script handles the full scratch setup. Make it executable once, then pick a mode:
-
-```bash
-chmod +x run.sh
-
-./run.sh            # Docker Compose — starts everything (recommended)
-./run.sh local      # Local dev mode — no Docker, uses your local services
-./run.sh stop       # Stop Docker Compose services
-./run.sh clean      # Stop + wipe all volumes (Postgres, Ollama models, Grafana, Prometheus)
-```
-
-`run.sh` will:
-- Check and install missing system dependencies (ffmpeg on macOS via Homebrew)
-- Copy `.env.example → .env` if no `.env` exists, then prompt before continuing
-- Pull Ollama models (`qwen2.5:3b`, `nomic-embed-text`)
-- Create a `.venv` and install all Python dependencies (local mode)
-- Start all services and print the service URLs
-
-**Minimum required before running:**
-1. Set `HF_TOKEN` in `.env` — free token from https://huggingface.co/pyannote/speaker-diarization-3.1
-2. Docker Desktop running (Docker mode) **or** Postgres + Redis + Ollama running locally (local mode)
-
----
-
 ### Option A — Local dev (no Docker)
 
 #### 1. Prerequisites

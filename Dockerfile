@@ -9,16 +9,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install dependencies first for layer caching.
-# A stub __init__.py lets pip resolve the package metadata without the real source.
+# Install Python dependencies first (layer cache)
 COPY pyproject.toml ./
-RUN mkdir -p src/meeting_agent && touch src/meeting_agent/__init__.py \
-    && pip install --no-cache-dir -e ".[dev]" \
-    && rm -rf src/meeting_agent
+RUN pip install --no-cache-dir -e ".[dev]"
 
-# Copy real source and reinstall the package (deps already cached above)
+# Copy source
 COPY src/ ./src/
-RUN pip install --no-cache-dir --no-deps -e .
 COPY .env.example ./.env.example
 
 # Create data directories

@@ -37,14 +37,14 @@ services:
       - ollama_data:/root/.ollama
     # Pull the model on first start
     entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 5 && ollama pull qwen2.5:3b && ollama pull nomic-embed-text && wait"]
-    # Uncomment below if running on a machine with NVIDIA GPU
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # Comment out the 'deploy' block above if you have no GPU
 
   # ── API (FastAPI) ──────────────────────────────────────────────────────────
   api:
