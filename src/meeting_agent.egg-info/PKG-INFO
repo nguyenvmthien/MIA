@@ -29,6 +29,7 @@ Requires-Dist: httpx>=0.27.0
 Requires-Dist: tenacity>=8.3.0
 Requires-Dist: rich>=13.7.1
 Requires-Dist: typer>=0.12.3
+Requires-Dist: streamlit>=1.35.0
 Provides-Extra: train
 Requires-Dist: torch>=2.3.0; extra == "train"
 Requires-Dist: transformers>=4.41.0; extra == "train"
@@ -63,6 +64,7 @@ Audio → WhisperX (ASR+Diarize) → Qwen2.5-3B (LLM) → Action Items JSON
 3. [How to run](#how-to-run)
    - [Option A — Local dev (no Docker)](#option-a--local-dev-no-docker)
    - [Option B — Docker Compose (recommended)](#option-b--docker-compose-recommended)
+   - [Streamlit UI](#streamlit-ui)
    - [Using the CLI](#using-the-cli)
    - [Using the REST API](#using-the-rest-api)
    - [Fine-tuning](#fine-tuning)
@@ -145,6 +147,7 @@ Audio file
 │   ├── collect.py                 Audio dir → JSONL training data
 │   ├── validate.py                Bias, leakage, schema, duplicate checks
 │   └── synthetic.py               LLM-generated synthetic meeting data
+├── streamlit_app.py               Streamlit web UI
 ├── tests/                         Unit tests (43 passing)
 ├── docs/                          Architecture & design documents
 ├── docker/                        Prometheus config, Grafana provisioning
@@ -222,7 +225,7 @@ meeting-agent serve --reload
 
 ### Option B — Docker Compose (recommended)
 
-Starts everything: API, Celery worker, Ollama, Postgres, Redis, Prometheus, Grafana.
+Starts everything: API, Celery worker, Ollama, Postgres, Redis, Prometheus, Grafana, and the Streamlit UI.
 
 ```bash
 cp .env.example .env
@@ -249,12 +252,14 @@ Notes:
 - If you edited healthcheck/service definitions in compose, use recreate to apply changes:
   `docker compose up -d --force-recreate <service>`.
 
-| Service    | URL                       | Credentials  |
-|------------|---------------------------|--------------|
-| API        | http://localhost:8000     | —            |
-| API docs   | http://localhost:8000/docs| —            |
-| Prometheus | http://localhost:9090     | —            |
-| Grafana    | http://localhost:3000     | admin/admin  |
+| Service      | URL                        | Credentials                      |
+|--------------|----------------------------|----------------------------------|
+| **UI**       | http://localhost:8501      | —                                |
+| API          | http://localhost:8000      | —                                |
+| API docs     | http://localhost:8000/docs | —                                |
+| Prometheus   | http://localhost:9090      | —                                |
+| Grafana      | http://localhost:3000      | admin / admin                    |
+| pgAdmin      | http://localhost:5050      | admin@meeting.local / admin      |
 
 Wait ~60 seconds for Ollama to pull the models on first start.
 
@@ -282,6 +287,31 @@ To wipe all data (including models):
 ```bash
 docker compose down -v
 ```
+
+---
+
+### Streamlit UI
+
+A browser-based UI for submitting meetings, viewing results, and submitting corrections.
+
+**With Docker Compose** (included in the default stack):
+```
+http://localhost:8501
+```
+
+**Local dev** (while the API is running at localhost:8000):
+```bash
+pip install streamlit httpx
+streamlit run streamlit_app.py
+```
+
+The UI has three tabs:
+
+| Tab | What it does |
+|-----|--------------|
+| **Upload** | Drag-and-drop audio, paste roster JSON, real-time polling with status hints |
+| **Results** | Action items (open / human-review / unresolved), run metrics, stage timings |
+| **Feedback** | Correct any task field and submit to the feedback loop |
 
 ---
 
@@ -582,7 +612,19 @@ Gold set format (each line):
 }
 ```
 
-Quality targets: Precision ≥ 0.85 · Recall ≥ 0.90 · Hallucination ≤ 5%
+**Baseline results** (qwen2.5:3b, no fine-tuning, 5-sample smoke set):
+
+| Metric | Score | Target |
+|--------|-------|--------|
+| Precision | 0.767 | ≥ 0.85 |
+| Recall | 0.700 | ≥ 0.90 |
+| F1 | 0.727 | — |
+| Schema failure rate | 0.0% | ≤ 5% |
+| Hallucination flags | 0 | ≤ 5% |
+
+Full analysis: [docs/eval-results.md](docs/eval-results.md)
+
+The base model meets schema and hallucination targets. Precision/Recall gaps are expected at this model size and close with fine-tuning (see [Fine-tuning](#fine-tuning) section).
 
 ---
 

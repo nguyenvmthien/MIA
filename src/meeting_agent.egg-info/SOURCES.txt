@@ -35,7 +35,12 @@ src/meeting_agent/schemas/meeting.py
 src/meeting_agent/schemas/task.py
 src/meeting_agent/schemas/transcript.py
 src/meeting_agent/schemas/worker.py
+tests/test_anomaly.py
+tests/test_api.py
 tests/test_assignment.py
+tests/test_cache.py
+tests/test_feedback.py
 tests/test_guardrails.py
+tests/test_pii.py
 tests/test_prompt_builder.py
 tests/test_schemas.py
