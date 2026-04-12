@@ -1,0 +1,93 @@
+Metadata-Version: 2.4
+Name: meeting-agent
+Version: 0.1.0
+Summary: Meeting AI Agent — diarized transcript processing and action item extraction
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.111.0
+Requires-Dist: uvicorn[standard]>=0.29.0
+Requires-Dist: python-multipart>=0.0.9
+Requires-Dist: pydantic>=2.7.0
+Requires-Dist: pydantic-settings>=2.3.0
+Requires-Dist: ffmpeg-python>=0.2.0
+Requires-Dist: noisereduce>=3.0.2
+Requires-Dist: soundfile>=0.12.1
+Requires-Dist: librosa>=0.10.2
+Requires-Dist: whisperx>=3.1.5
+Requires-Dist: ollama>=0.2.1
+Requires-Dist: faiss-cpu>=1.8.0
+Requires-Dist: numpy>=1.26.0
+Requires-Dist: celery>=5.4.0
+Requires-Dist: redis>=5.0.4
+Requires-Dist: sqlalchemy>=2.0.30
+Requires-Dist: alembic>=1.13.1
+Requires-Dist: psycopg2-binary>=2.9.9
+Requires-Dist: prometheus-client>=0.20.0
+Requires-Dist: langsmith>=0.1.77
+Requires-Dist: python-dotenv>=1.0.1
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: tenacity>=8.3.0
+Requires-Dist: rich>=13.7.1
+Requires-Dist: typer>=0.12.3
+Provides-Extra: train
+Requires-Dist: torch>=2.3.0; extra == "train"
+Requires-Dist: transformers>=4.41.0; extra == "train"
+Requires-Dist: peft>=0.11.0; extra == "train"
+Requires-Dist: trl>=0.9.0; extra == "train"
+Requires-Dist: datasets>=2.19.0; extra == "train"
+Requires-Dist: accelerate>=0.31.0; extra == "train"
+Requires-Dist: bitsandbytes>=0.43.1; extra == "train"
+Requires-Dist: unsloth>=2024.6; extra == "train"
+Provides-Extra: dev
+Requires-Dist: pytest>=8.2.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.23.7; extra == "dev"
+Requires-Dist: pytest-cov>=5.0.0; extra == "dev"
+Requires-Dist: httpx>=0.27.0; extra == "dev"
+Requires-Dist: ruff>=0.4.7; extra == "dev"
+Requires-Dist: mypy>=1.10.0; extra == "dev"
+
+# Meeting Agent MVP
+
+This project implements a batch-first meeting processing pipeline:
+1. STT + diarization stage (WhisperX adapter included)
+2. LLM extraction stage (rule-based local fallback included)
+3. Task assignment to workers based on name/alias/skill matching
+4. Structured JSON output for summaries and task delivery
+
+## Quick start
+
+### 1) Install package
+
+```bash
+pip install -e .
+```
+
+### 2) Run local mock mode
+
+```bash
+meeting-agent \
+  --meeting-id m_001 \
+  --audio examples/sample_meeting.wav \
+  --roster examples/workers.json \
+  --output examples/output.json \
+  --mode mock
+```
+
+> In `mock` mode, the STT stage reads `examples/sample_meeting.turns.json`.
+
+## Folder structure
+
+- `src/meeting_agent/models.py`: Data contracts for transcript, summary, tasks, and workers.
+- `src/meeting_agent/services/stt.py`: STT adapter (`MockSTTEngine`, `WhisperXEngine`).
+- `src/meeting_agent/services/llm.py`: LLM extractor (`RuleBasedExtractor`, `OllamaExtractor`).
+- `src/meeting_agent/assignment.py`: Worker resolution logic.
+- `src/meeting_agent/pipeline.py`: End-to-end orchestrator and metrics.
+- `src/meeting_agent/cli.py`: CLI entrypoint.
+- `tests/`: Unit/integration starter tests.
+
+## Next implementation steps
+
+- Wire real WhisperX in pipeline mode and configure diarization token.
+- Add Qwen GGUF backend via llama-cpp-python or local Ollama endpoint.
+- Add evaluation harness for precision/recall and hallucination tracking.
+- Add monitoring exporters for Prometheus/Grafana.
