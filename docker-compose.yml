@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
 
   # ── Database ───────────────────────────────────────────────────────────────
@@ -35,8 +33,14 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    # Pull the model on first start
+    # Start server, then pull required models (idempotent — skipped if cached)
     entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 5 && ollama pull qwen2.5:3b && ollama pull nomic-embed-text && wait"]
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list | grep -q qwen2.5"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
     # GPU reservations are disabled for macOS/CPU-only environments.
 
   # ── API (FastAPI) ──────────────────────────────────────────────────────────
@@ -62,7 +66,7 @@ services:
       redis:
         condition: service_healthy
       ollama:
-        condition: service_started
+        condition: service_healthy
 
   # ── Celery worker ──────────────────────────────────────────────────────────
   worker:
@@ -80,8 +84,10 @@ services:
     volumes:
       - ./data:/app/data
     depends_on:
-      - redis
-      - ollama
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
 
   # ── Prometheus ─────────────────────────────────────────────────────────────
   prometheus:

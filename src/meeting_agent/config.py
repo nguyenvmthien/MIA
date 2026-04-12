@@ -19,8 +19,8 @@ class Settings(BaseSettings):
     ollama_llm_model: str = "qwen2.5:3b"
     ollama_embed_model: str = "nomic-embed-text"
 
-    # WhisperX
-    whisper_model: str = "large-v3"
+    # WhisperX (use "large-v3" for production quality; "base" is fast for demos)
+    whisper_model: str = "base"
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
     whisper_batch_size: int = 16
