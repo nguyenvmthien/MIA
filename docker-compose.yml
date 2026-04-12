@@ -14,7 +14,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U meeting"]
+      test: ["CMD-SHELL", "pg_isready -U meeting -d meeting_agent"]
       interval: 10s
       retries: 5
 
@@ -37,14 +37,7 @@ services:
       - ollama_data:/root/.ollama
     # Pull the model on first start
     entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 5 && ollama pull qwen2.5:3b && ollama pull nomic-embed-text && wait"]
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    # Comment out the 'deploy' block above if you have no GPU
+    # GPU reservations are disabled for macOS/CPU-only environments.
 
   # ── API (FastAPI) ──────────────────────────────────────────────────────────
   api:
