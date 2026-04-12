@@ -15,6 +15,7 @@ Audio → WhisperX (ASR+Diarize) → Qwen2.5-3B (LLM) → Action Items JSON
 3. [How to run](#how-to-run)
    - [Option A — Local dev (no Docker)](#option-a--local-dev-no-docker)
    - [Option B — Docker Compose (recommended)](#option-b--docker-compose-recommended)
+   - [Streamlit UI](#streamlit-ui)
    - [Using the CLI](#using-the-cli)
    - [Using the REST API](#using-the-rest-api)
    - [Fine-tuning](#fine-tuning)
@@ -97,6 +98,7 @@ Audio file
 │   ├── collect.py                 Audio dir → JSONL training data
 │   ├── validate.py                Bias, leakage, schema, duplicate checks
 │   └── synthetic.py               LLM-generated synthetic meeting data
+├── streamlit_app.py               Streamlit web UI
 ├── tests/                         Unit tests (43 passing)
 ├── docs/                          Architecture & design documents
 ├── docker/                        Prometheus config, Grafana provisioning
@@ -174,7 +176,7 @@ meeting-agent serve --reload
 
 ### Option B — Docker Compose (recommended)
 
-Starts everything: API, Celery worker, Ollama, Postgres, Redis, Prometheus, Grafana.
+Starts everything: API, Celery worker, Ollama, Postgres, Redis, Prometheus, Grafana, and the Streamlit UI.
 
 ```bash
 cp .env.example .env
@@ -201,12 +203,14 @@ Notes:
 - If you edited healthcheck/service definitions in compose, use recreate to apply changes:
   `docker compose up -d --force-recreate <service>`.
 
-| Service    | URL                       | Credentials  |
-|------------|---------------------------|--------------|
-| API        | http://localhost:8000     | —            |
-| API docs   | http://localhost:8000/docs| —            |
-| Prometheus | http://localhost:9090     | —            |
-| Grafana    | http://localhost:3000     | admin/admin  |
+| Service      | URL                        | Credentials                      |
+|--------------|----------------------------|----------------------------------|
+| **UI**       | http://localhost:8501      | —                                |
+| API          | http://localhost:8000      | —                                |
+| API docs     | http://localhost:8000/docs | —                                |
+| Prometheus   | http://localhost:9090      | —                                |
+| Grafana      | http://localhost:3000      | admin / admin                    |
+| pgAdmin      | http://localhost:5050      | admin@meeting.local / admin      |
 
 Wait ~60 seconds for Ollama to pull the models on first start.
 
@@ -234,6 +238,31 @@ To wipe all data (including models):
 ```bash
 docker compose down -v
 ```
+
+---
+
+### Streamlit UI
+
+A browser-based UI for submitting meetings, viewing results, and submitting corrections.
+
+**With Docker Compose** (included in the default stack):
+```
+http://localhost:8501
+```
+
+**Local dev** (while the API is running at localhost:8000):
+```bash
+pip install streamlit httpx
+streamlit run streamlit_app.py
+```
+
+The UI has three tabs:
+
+| Tab | What it does |
+|-----|--------------|
+| **Upload** | Drag-and-drop audio, paste roster JSON, real-time polling with status hints |
+| **Results** | Action items (open / human-review / unresolved), run metrics, stage timings |
+| **Feedback** | Correct any task field and submit to the feedback loop |
 
 ---
 

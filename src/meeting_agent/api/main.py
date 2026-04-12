@@ -7,7 +7,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from meeting_agent.config import settings
@@ -15,6 +16,9 @@ from meeting_agent.pipeline.feedback import FeedbackSubmission, feedback_stats, 
 from meeting_agent.pipeline.router import router_stats
 from meeting_agent.pipeline.worker_task import celery_app, check_retrain_task, process_meeting_task
 from meeting_agent.schemas.worker import WorkerRoster
+
+
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 @asynccontextmanager
@@ -30,6 +34,14 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return {"message": "Meeting AI Agent API", "docs": "/docs", "ui": "http://localhost:8501"}
 
 
 # ── Health ────────────────────────────────────────────────────────────────────

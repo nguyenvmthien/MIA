@@ -14,8 +14,9 @@ COPY pyproject.toml README.md ./
 COPY src/ ./src/
 RUN pip install --no-cache-dir -e ".[dev]"
 
-# Copy source
+# Copy remaining source files
 COPY .env.example ./.env.example
+COPY streamlit_app.py ./
 
 # Create data directories
 RUN mkdir -p data/audio data/transcripts data/models
