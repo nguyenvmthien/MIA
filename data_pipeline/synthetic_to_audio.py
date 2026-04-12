@@ -132,7 +132,7 @@ def convert(input_path: Path, out_dir: Path, start: int, limit: int | None, over
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Convert synthetic meeting JSONL to audio files")
     parser.add_argument("--input", default="data/training/synthetic.jsonl", help="Input JSONL path")
-    parser.add_argument("--out-dir", default="data/audio/synthetic", help="Output directory for .mp3")
+    parser.add_argument("--out-dir", default="data/audio/synthetic", help="Output directory for .mp3")  # noqa: E501
     parser.add_argument("--start", type=int, default=0, help="Start row index in JSONL")
     parser.add_argument("--limit", type=int, default=None, help="Max samples to convert")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing output files")

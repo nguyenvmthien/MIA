@@ -17,7 +17,8 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: pip install -e ".[dev]"
-      # - run: ruff check src/ tests/ train/ data_pipeline/
+      - run: ruff check src/ tests/ train/ data_pipeline/
+      # mypy skipped — optional type-only deps (datasets, torch) not installed in CI
       # - run: mypy src/meeting_agent --ignore-missing-imports
 
   unit-tests:

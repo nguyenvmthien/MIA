@@ -117,40 +117,79 @@ with tab_upload:
                 st.audio(audio_file)
 
         with col_right:
-            st.subheader("Participant roster (optional)")
-            use_example = st.checkbox("Load example roster", value=True)
-            example_roster = {
-                "workers": [
-                    {
-                        "worker_id": "w1",
-                        "name": "Alice Chen",
-                        "email": "alice@example.com",
-                        "role": "PM",
-                        "aliases": ["Alice"],
-                    },
-                    {
-                        "worker_id": "w2",
-                        "name": "Bob Kim",
-                        "email": "bob@example.com",
-                        "role": "Engineer",
-                        "aliases": ["Bob"],
-                    },
-                    {
-                        "worker_id": "w3",
-                        "name": "Carol Davis",
-                        "email": "carol@example.com",
-                        "role": "Designer",
-                        "aliases": ["Carol"],
-                    },
-                ]
-            }
-            default_roster = json.dumps(example_roster, indent=2) if use_example else '{"workers": []}'
-            roster_text = st.text_area(
-                "Roster JSON",
-                value=default_roster,
-                height=240,
-                help='Format: {"workers": [{"worker_id": "w1", "name": "Alice", ...}]}',
+            st.subheader("Participants")
+
+            # ── Load worker database ──────────────────────────────────────────
+            @st.cache_data(ttl=30)
+            def _fetch_workers():
+                try:
+                    r = httpx.get(f"{API_URL}/workers", timeout=5)
+                    r.raise_for_status()
+                    return r.json().get("workers", [])
+                except Exception:
+                    return []
+
+            all_workers = _fetch_workers()
+            worker_by_id = {w["worker_id"]: w for w in all_workers}
+            worker_options = {w["worker_id"]: f"{w['name']} ({w.get('role') or 'no role'})" for w in all_workers}
+
+            selected_ids = st.multiselect(
+                "Select meeting participants",
+                options=list(worker_options.keys()),
+                format_func=lambda wid: worker_options.get(wid, wid),
+                placeholder="Choose participants…",
+                help="Select from registered workers. Add new ones below if needed.",
             )
+
+            # Show selected worker cards
+            if selected_ids:
+                for wid in selected_ids:
+                    w = worker_by_id[wid]
+                    aliases = ", ".join(w.get("aliases") or [])
+                    st.caption(
+                        f"✅ **{w['name']}** — {w.get('role') or '—'}"
+                        + (f"  _(aka {aliases})_" if aliases else "")
+                    )
+
+            # ── Add new worker inline ─────────────────────────────────────────
+            with st.expander("➕ Add a new participant to the database"):
+                new_name = st.text_input("Full name *", key="new_worker_name", placeholder="e.g. Dave Lee")
+                new_role = st.text_input("Role", key="new_worker_role", placeholder="e.g. Engineer")
+                new_email = st.text_input("Email", key="new_worker_email", placeholder="dave@example.com")
+                new_aliases_raw = st.text_input(
+                    "Aliases (comma-separated)",
+                    key="new_worker_aliases",
+                    placeholder="Dave, D. Lee",
+                )
+
+                if st.button("Add participant", key="add_worker_btn"):
+                    if not new_name.strip():
+                        st.error("Name is required.")
+                    else:
+                        aliases_list = [a.strip() for a in new_aliases_raw.split(",") if a.strip()]
+                        payload = {
+                            "worker_id": "",
+                            "name": new_name.strip(),
+                            "role": new_role.strip() or None,
+                            "email": new_email.strip() or None,
+                            "aliases": aliases_list,
+                            "skills": [],
+                        }
+                        try:
+                            resp_w = httpx.post(f"{API_URL}/workers", json=payload, timeout=10)
+                            if resp_w.status_code == 409:
+                                st.warning(f"'{new_name}' already exists in the database.")
+                            else:
+                                resp_w.raise_for_status()
+                                created = resp_w.json()
+                                st.success(f"Added **{created['name']}** (ID: {created['worker_id']})")
+                                st.cache_data.clear()
+                                st.rerun()
+                        except Exception as e:
+                            st.error(f"Failed to add worker: {e}")
+
+        # Build roster dict from selected workers
+        roster_dict = {"workers": [worker_by_id[wid] for wid in selected_ids]}
 
         st.divider()
         submit_btn = st.button(
@@ -158,12 +197,6 @@ with tab_upload:
         )
 
         if submit_btn and audio_file:
-            try:
-                roster_dict = json.loads(roster_text)
-            except json.JSONDecodeError as e:
-                st.error(f"Invalid roster JSON: {e}")
-                st.stop()
-
             with st.spinner("Submitting to backend..."):
                 try:
                     resp = httpx.post(

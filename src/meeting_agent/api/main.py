@@ -2,29 +2,63 @@
 
 import json
 import shutil
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, status
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
+# Import metrics so they are registered in the API process (required for /metrics to expose them)
+import meeting_agent.monitoring.metrics  # noqa: F401
 from meeting_agent.config import settings
 from meeting_agent.pipeline.feedback import FeedbackSubmission, feedback_stats, save_feedback
 from meeting_agent.pipeline.router import router_stats
+from meeting_agent.pipeline.worker_registry import add_worker, delete_worker, list_workers
 from meeting_agent.pipeline.worker_task import celery_app, check_retrain_task, process_meeting_task
-from meeting_agent.schemas.worker import WorkerRoster
+from meeting_agent.schemas.worker import Worker, WorkerRoster
+
+# ── HTTP instrumentation metrics ──────────────────────────────────────────────
+_HTTP_REQUESTS = Counter(
+    "http_requests_total",
+    "Total HTTP requests",
+    labelnames=["method", "endpoint", "status_code"],
+)
+_HTTP_DURATION = Histogram(
+    "http_request_duration_seconds",
+    "HTTP request duration in seconds",
+    labelnames=["method", "endpoint"],
+    buckets=[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
+)
 
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+_SEED_WORKERS = [
+    Worker(worker_id="w1", name="Alice Chen", role="PM",
+           email="alice@example.com", aliases=["Alice"]),
+    Worker(worker_id="w2", name="Bob Kim", role="Engineer",
+           email="bob@example.com", aliases=["Bob"]),
+    Worker(worker_id="w3", name="Carol Davis", role="Designer",
+           email="carol@example.com", aliases=["Carol"]),
+]
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Path(settings.audio_storage_path).mkdir(parents=True, exist_ok=True)
     Path(settings.transcript_storage_path).mkdir(parents=True, exist_ok=True)
+    # Seed worker DB with example workers if empty
+    if not list_workers():
+        for w in _SEED_WORKERS:
+            try:
+                add_worker(w)
+            except ValueError:
+                pass
     yield
 
 
@@ -37,6 +71,24 @@ app = FastAPI(
 
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.middleware("http")
+async def prometheus_middleware(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration = time.perf_counter() - start
+    # Normalise dynamic path segments so cardinality stays low
+    path = request.url.path
+    if path.startswith("/meetings/") and len(path.split("/")) > 2:
+        path = "/meetings/{meeting_id}"
+    elif path.startswith("/workers/") and len(path.split("/")) > 2:
+        path = "/workers/{worker_id}"
+    _HTTP_REQUESTS.labels(  # noqa: E501
+        method=request.method, endpoint=path, status_code=response.status_code
+    ).inc()
+    _HTTP_DURATION.labels(method=request.method, endpoint=path).observe(duration)
+    return response
 
 
 @app.get("/", include_in_schema=False)
@@ -185,6 +237,41 @@ async def get_router_stats():
 async def get_feedback_stats():
     """Return aggregate statistics about accumulated user feedback."""
     return feedback_stats()
+
+
+# ── Worker registry endpoints ─────────────────────────────────────────────────
+
+@app.get("/workers", tags=["workers"])
+async def get_workers():
+    """List all registered workers (the participant database)."""
+    return {"workers": [w.model_dump() for w in list_workers()]}
+
+
+@app.post("/workers", status_code=status.HTTP_201_CREATED, tags=["workers"])
+async def create_worker(worker: Worker):
+    """
+    Add a new worker to the participant database.
+
+    If a worker with the same name already exists, returns 409 Conflict.
+    The worker_id is auto-generated if empty or not provided.
+    """
+    import uuid as _uuid
+    if not worker.worker_id:
+        worker = worker.model_copy(update={"worker_id": str(_uuid.uuid4())[:8]})
+    try:
+        created = add_worker(worker)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return created.model_dump()
+
+
+@app.delete("/workers/{worker_id}", tags=["workers"])
+async def remove_worker(worker_id: str):
+    """Remove a worker from the participant database by worker_id."""
+    found = delete_worker(worker_id)
+    if not found:
+        raise HTTPException(status_code=404, detail=f"Worker '{worker_id}' not found.")
+    return {"worker_id": worker_id, "deleted": True}
 
 
 @app.delete("/meetings/{meeting_id}", tags=["meetings"])

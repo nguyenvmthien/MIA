@@ -1,0 +1,32 @@
+[
+  {
+    "worker_id": "w1",
+    "name": "Alice Chen",
+    "aliases": [
+      "Alice"
+    ],
+    "role": "PM",
+    "email": "alice@example.com",
+    "skills": []
+  },
+  {
+    "worker_id": "w2",
+    "name": "Bob Kim",
+    "aliases": [
+      "Bob"
+    ],
+    "role": "Engineer",
+    "email": "bob@example.com",
+    "skills": []
+  },
+  {
+    "worker_id": "w3",
+    "name": "Carol Davis",
+    "aliases": [
+      "Carol"
+    ],
+    "role": "Designer",
+    "email": "carol@example.com",
+    "skills": []
+  }
+]

@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     # Storage
     audio_storage_path: str = "./data/audio"
     transcript_storage_path: str = "./data/transcripts"
+    workers_storage_path: str = "./data/workers.json"
 
     # App
     log_level: str = "INFO"
