@@ -58,3 +58,15 @@ JOBS_IN_FLIGHT = Gauge(
     "meeting_jobs_in_flight",
     "Number of meeting jobs currently being processed",
 )
+
+# ── Pre-initialize labeled metrics so they show up as 0 in Prometheus ─────────
+# Without this, labeled counters/histograms only appear after the first .inc()
+# call, causing Grafana to show "No data" for panels that expect these series.
+def _preinit() -> None:
+    JOBS_TOTAL.labels(status="completed")
+    JOBS_TOTAL.labels(status="failed")
+    for stage in ("ingest", "preprocess", "stt", "llm", "assignment"):
+        STAGE_LATENCY.labels(stage=stage)
+
+
+_preinit()
