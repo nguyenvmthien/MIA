@@ -4,7 +4,8 @@ import { useSession, signIn, signOut } from "next-auth/react"
 import { useState, useCallback, useEffect, useRef } from "react"
 import {
   Upload, Users, CheckCircle2, Circle, Calendar,
-  LogOut, Loader2, ChevronDown, ChevronUp, AlertCircle, Mic
+  LogOut, Loader2, ChevronDown, ChevronUp, AlertCircle, Mic,
+  Sparkles, ArrowRight, UserPlus, X
 } from "lucide-react"
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -35,23 +36,28 @@ function StepBar({ current }: { current: Step }) {
     { id: "done", label: "Done" },
   ]
   const idx = steps.findIndex(s => s.id === current)
+
   return (
-    <div className="flex items-center gap-0 mb-10">
+    <div className="flex items-center justify-between mb-10 px-1">
       {steps.map((s, i) => (
-        <div key={s.id} className="flex items-center">
-          <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium transition-all
-            ${i < idx ? "text-emerald-400" : i === idx ? "text-white" : "text-gray-500"}`}>
-            {i < idx
-              ? <CheckCircle2 size={16} className="text-emerald-400" />
-              : <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center text-[10px] font-bold
-                  ${i === idx ? "border-indigo-400 text-indigo-400" : "border-gray-600"}`}>
-                  {i + 1}
-                </div>
-            }
-            {s.label}
+        <div key={s.id} className="flex items-center flex-1">
+          <div className="flex flex-col items-center gap-1.5">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-all duration-300
+              ${i < idx
+                ? "bg-violet-600 text-white shadow-lg shadow-violet-900/50"
+                : i === idx
+                ? "bg-violet-500 text-white ring-4 ring-violet-500/20 shadow-lg shadow-violet-900/50"
+                : "bg-slate-800 text-slate-500 border border-slate-700"}`}>
+              {i < idx ? <CheckCircle2 size={14} strokeWidth={2.5} /> : i + 1}
+            </div>
+            <span className={`text-[11px] font-medium whitespace-nowrap transition-colors
+              ${i <= idx ? "text-slate-300" : "text-slate-600"}`}>
+              {s.label}
+            </span>
           </div>
           {i < steps.length - 1 && (
-            <div className={`w-8 h-px ${i < idx ? "bg-emerald-700" : "bg-gray-700"}`} />
+            <div className={`flex-1 h-px mx-2 mb-4 transition-colors duration-300
+              ${i < idx ? "bg-violet-600" : "bg-slate-800"}`} />
           )}
         </div>
       ))}
@@ -61,11 +67,7 @@ function StepBar({ current }: { current: Step }) {
 
 // ── Upload step ────────────────────────────────────────────────────────────────
 
-function UploadStep({
-  onSubmit,
-}: {
-  onSubmit: (file: File, roster: Worker[]) => void
-}) {
+function UploadStep({ onSubmit }: { onSubmit: (file: File, roster: Worker[]) => void }) {
   const [file, setFile] = useState<File | null>(null)
   const [dragging, setDragging] = useState(false)
   const [workers, setWorkers] = useState<Worker[]>([])
@@ -99,85 +101,127 @@ function UploadStep({
   }, [])
 
   const selectedWorkers = workers.filter(w => selected.includes(w.worker_id))
+  const canSubmit = file && selected.length > 0
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Drop zone */}
       <div
         onClick={() => fileRef.current?.click()}
         onDragOver={e => { e.preventDefault(); setDragging(true) }}
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
-        className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all
-          ${dragging ? "border-indigo-400 bg-indigo-950/30" : "border-gray-700 hover:border-gray-500 hover:bg-gray-900/50"}
-          ${file ? "border-emerald-600 bg-emerald-950/20" : ""}`}
+        className={`relative border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all duration-200 group
+          ${dragging
+            ? "border-violet-400 bg-violet-950/30 scale-[1.01]"
+            : file
+            ? "border-emerald-500/60 bg-emerald-950/20 hover:border-emerald-400/80"
+            : "border-slate-700 hover:border-slate-500 hover:bg-slate-800/30"}`}
       >
         <input ref={fileRef} type="file" accept=".mp3,.wav,.m4a,.ogg,.mp4,.webm" className="hidden"
           onChange={e => e.target.files?.[0] && setFile(e.target.files[0])} />
+
         {file ? (
-          <div className="flex flex-col items-center gap-2">
-            <CheckCircle2 size={36} className="text-emerald-400" />
-            <p className="font-medium text-emerald-300">{file.name}</p>
-            <p className="text-sm text-gray-500">{(file.size / 1024 / 1024).toFixed(1)} MB — click to change</p>
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-12 h-12 rounded-full bg-emerald-500/15 flex items-center justify-center">
+              <CheckCircle2 size={24} className="text-emerald-400" />
+            </div>
+            <div>
+              <p className="font-semibold text-emerald-300 text-sm">{file.name}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{(file.size / 1024 / 1024).toFixed(1)} MB · click to change</p>
+            </div>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-3">
-            <Upload size={36} className="text-gray-500" />
-            <p className="font-medium text-gray-300">Drop audio file here</p>
-            <p className="text-sm text-gray-500">MP3, WAV, M4A, OGG, MP4, WebM</p>
+            <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center group-hover:bg-slate-700 transition-colors">
+              <Upload size={20} className="text-slate-400 group-hover:text-slate-300 transition-colors" />
+            </div>
+            <div>
+              <p className="font-medium text-slate-300 text-sm">Drop audio file here</p>
+              <p className="text-xs text-slate-500 mt-0.5">MP3 · WAV · M4A · OGG · MP4 · WebM</p>
+            </div>
           </div>
         )}
       </div>
 
       {/* Participants */}
-      <div>
-        <div className="flex items-center gap-2 mb-3">
-          <Users size={16} className="text-gray-400" />
-          <h3 className="font-medium text-gray-200">Participants</h3>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Users size={14} className="text-slate-400" />
+            <h3 className="text-sm font-medium text-slate-300">Participants</h3>
+          </div>
+          {selected.length > 0 && (
+            <span className="text-xs text-violet-400 font-medium bg-violet-500/10 px-2 py-0.5 rounded-full">
+              {selected.length} selected
+            </span>
+          )}
         </div>
-        <div className="flex flex-wrap gap-2 mb-3">
+
+        <div className="flex flex-wrap gap-2">
           {workers.map(w => (
             <button key={w.worker_id}
-              onClick={() => setSelected(prev => prev.includes(w.worker_id) ? prev.filter(id => id !== w.worker_id) : [...prev, w.worker_id])}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-all
+              onClick={() => setSelected(prev =>
+                prev.includes(w.worker_id) ? prev.filter(id => id !== w.worker_id) : [...prev, w.worker_id]
+              )}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150
                 ${selected.includes(w.worker_id)
-                  ? "bg-indigo-600 border-indigo-500 text-white"
-                  : "bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-500"}`}>
-              {w.name}{w.role ? ` · ${w.role}` : ""}
+                  ? "bg-violet-600 border-violet-500 text-white shadow-sm shadow-violet-900/50"
+                  : "bg-slate-800/80 border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-300"}`}>
+              {w.name}{w.role ? <span className="opacity-60"> · {w.role}</span> : ""}
             </button>
           ))}
           <button onClick={() => setAddOpen(!addOpen)}
-            className="px-3 py-1.5 rounded-full text-sm border border-dashed border-gray-600 text-gray-400 hover:border-gray-400 transition-all">
-            + Add
+            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150 flex items-center gap-1
+              ${addOpen ? "border-violet-500 text-violet-400 bg-violet-500/10" : "border-dashed border-slate-600 text-slate-500 hover:border-slate-400 hover:text-slate-400"}`}>
+            <UserPlus size={12} />
+            Add person
           </button>
         </div>
 
         {addOpen && (
-          <div className="bg-gray-900 border border-gray-700 rounded-xl p-4 space-y-3">
-            <div className="grid grid-cols-3 gap-3">
-              <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Full name *"
-                className="col-span-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-indigo-500" />
-              <input value={newRole} onChange={e => setNewRole(e.target.value)} placeholder="Role"
-                className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-indigo-500" />
-              <input value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="Email"
-                className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-indigo-500" />
+          <div className="bg-slate-900 border border-slate-700/80 rounded-xl p-4 space-y-3 shadow-xl">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-slate-400">New participant</span>
+              <button onClick={() => setAddOpen(false)} className="text-slate-600 hover:text-slate-400 transition-colors">
+                <X size={14} />
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { val: newName, set: setNewName, ph: "Full name *", cols: "col-span-1" },
+                { val: newRole, set: setNewRole, ph: "Role", cols: "" },
+                { val: newEmail, set: setNewEmail, ph: "Email", cols: "" },
+              ].map(({ val, set, ph, cols }) => (
+                <input key={ph} value={val} onChange={e => set(e.target.value)} placeholder={ph}
+                  className={`${cols} bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-500
+                    focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/30 transition-all`} />
+              ))}
             </div>
             <button onClick={addWorker} disabled={!newName.trim()}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 rounded-lg text-sm font-medium transition-colors">
+              className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-xs font-semibold transition-colors">
               Save participant
             </button>
           </div>
         )}
       </div>
 
-      <button
-        disabled={!file || selected.length === 0}
-        onClick={() => file && onSubmit(file, selectedWorkers)}
-        className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl font-semibold transition-colors"
-      >
-        Submit Meeting
-      </button>
-      {!file && <p className="text-center text-xs text-gray-500">Select a file and at least one participant</p>}
+      <div className="space-y-2 pt-1">
+        <button
+          disabled={!canSubmit}
+          onClick={() => file && onSubmit(file, selectedWorkers)}
+          className="w-full py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-sm font-semibold transition-all duration-150 flex items-center justify-center gap-2 shadow-lg shadow-violet-900/30"
+        >
+          <Sparkles size={15} />
+          Analyse Meeting
+          <ArrowRight size={15} />
+        </button>
+        {!canSubmit && (
+          <p className="text-center text-xs text-slate-600">
+            {!file ? "Select an audio file" : "Select at least one participant"}
+          </p>
+        )}
+      </div>
     </div>
   )
 }
@@ -206,36 +250,55 @@ function ProcessingStep({ meetingId, onDone }: { meetingId: string; onDone: (r: 
   }, [meetingId, onDone])
 
   const stages = [
-    { id: "pending", label: "Queued" },
-    { id: "processing", label: "Transcribing + extracting tasks" },
-    { id: "completed", label: "Done" },
+    { id: "pending", label: "Queued", desc: "Waiting for worker" },
+    { id: "processing", label: "Transcribing", desc: "Extracting tasks from audio" },
+    { id: "completed", label: "Complete", desc: "Ready for review" },
   ]
   const currentIdx = stages.findIndex(s => s.id === status)
 
   return (
-    <div className="flex flex-col items-center gap-8 py-12">
+    <div className="flex flex-col items-center gap-10 py-10">
       {error ? (
-        <div className="flex items-center gap-3 text-red-400">
-          <AlertCircle size={24} />
+        <div className="flex items-center gap-3 text-red-400 bg-red-950/30 border border-red-800/60 rounded-xl px-5 py-4 text-sm">
+          <AlertCircle size={18} className="flex-shrink-0" />
           <span>{error}</span>
         </div>
       ) : (
         <>
-          <Loader2 size={48} className="animate-spin text-indigo-400" />
-          <div className="space-y-3 w-full max-w-sm">
+          <div className="relative">
+            <div className="w-16 h-16 rounded-full bg-violet-500/10 flex items-center justify-center">
+              <Loader2 size={28} className="animate-spin text-violet-400" />
+            </div>
+            <div className="absolute inset-0 rounded-full animate-ping bg-violet-500/5" />
+          </div>
+
+          <div className="w-full max-w-xs space-y-4">
             {stages.map((s, i) => (
-              <div key={s.id} className={`flex items-center gap-3 text-sm transition-all
-                ${i < currentIdx ? "text-emerald-400" : i === currentIdx ? "text-white" : "text-gray-600"}`}>
-                {i < currentIdx
-                  ? <CheckCircle2 size={16} />
-                  : i === currentIdx
-                  ? <Loader2 size={16} className="animate-spin" />
-                  : <Circle size={16} />}
-                {s.label}
+              <div key={s.id} className={`flex items-center gap-4 transition-all duration-300
+                ${i < currentIdx ? "opacity-100" : i === currentIdx ? "opacity-100" : "opacity-30"}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-all
+                  ${i < currentIdx
+                    ? "bg-emerald-600"
+                    : i === currentIdx
+                    ? "bg-violet-600"
+                    : "bg-slate-800 border border-slate-700"}`}>
+                  {i < currentIdx
+                    ? <CheckCircle2 size={14} className="text-white" />
+                    : i === currentIdx
+                    ? <Loader2 size={14} className="text-white animate-spin" />
+                    : <Circle size={12} className="text-slate-600" />}
+                </div>
+                <div>
+                  <p className={`text-sm font-medium ${i === currentIdx ? "text-slate-100" : i < currentIdx ? "text-slate-400" : "text-slate-600"}`}>
+                    {s.label}
+                  </p>
+                  <p className="text-xs text-slate-600">{s.desc}</p>
+                </div>
               </div>
             ))}
           </div>
-          <p className="text-xs text-gray-500">Meeting ID: {meetingId}</p>
+
+          <p className="text-xs text-slate-700 font-mono">{meetingId}</p>
         </>
       )}
     </div>
@@ -250,11 +313,16 @@ function ReviewStep({
   onSkip,
 }: {
   result: MeetingResult
-  onConfirm: (tasks: Task[]) => void
-  onSkip: () => void
+  onConfirm: (allTasks: Task[]) => void
+  onSkip: (allTasks: Task[]) => void
 }) {
   const [tasks, setTasks] = useState<Task[]>(
-    result.action_items.map(t => ({ ...t, selected: true, edited_description: t.description, edited_assignee: t.assignee ?? "", edited_due_date: t.due_date ?? "" }))
+    result.action_items.map(t => ({
+      ...t, selected: true,
+      edited_description: t.description,
+      edited_assignee: t.assignee ?? "",
+      edited_due_date: t.due_date ?? ""
+    }))
   )
   const [summaryOpen, setSummaryOpen] = useState(true)
   const [syncing, setSyncing] = useState(false)
@@ -267,23 +335,30 @@ function ReviewStep({
 
   const handleConfirm = async () => {
     setSyncing(true)
-    onConfirm(tasks.filter(t => t.selected))
+    onConfirm(tasks)  // pass ALL tasks — parent extracts selected vs. deselected for feedback
   }
 
-  const priorityColor: Record<string, string> = { high: "text-red-400", medium: "text-yellow-400", low: "text-green-400" }
+  const priorityStyles: Record<string, string> = {
+    high: "bg-red-500/10 text-red-400 border-red-500/20",
+    medium: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+    low: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  }
+
+  const confidenceColor = (c: number) =>
+    c >= 0.8 ? "text-emerald-400" : c >= 0.6 ? "text-amber-400" : "text-red-400"
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Summary */}
       {result.summary_text && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div className="bg-slate-900/80 border border-slate-700/60 rounded-xl overflow-hidden">
           <button onClick={() => setSummaryOpen(!summaryOpen)}
-            className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-300 hover:bg-gray-800/50 transition-colors">
-            Meeting Summary
-            {summaryOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:bg-slate-800/50 transition-colors">
+            <span>Meeting Summary</span>
+            {summaryOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
           {summaryOpen && (
-            <div className="px-4 pb-4 text-sm text-gray-400 leading-relaxed border-t border-gray-800 pt-3">
+            <div className="px-4 pb-4 text-sm text-slate-400 leading-relaxed border-t border-slate-800 pt-3">
               {result.summary_text}
             </div>
           )}
@@ -291,71 +366,87 @@ function ReviewStep({
       )}
 
       {/* Task list */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-medium text-gray-200">Action Items ({tasks.length})</h3>
-          <span className="text-xs text-gray-500">{selectedCount} selected for Calendar</span>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between py-1">
+          <h3 className="text-sm font-semibold text-slate-300">
+            Action Items
+            <span className="ml-2 text-xs font-normal text-slate-500">{tasks.length} total</span>
+          </h3>
+          {selectedCount > 0 && (
+            <span className="text-xs text-violet-400 bg-violet-500/10 px-2 py-0.5 rounded-full font-medium">
+              {selectedCount} for Calendar
+            </span>
+          )}
         </div>
 
-        {tasks.length === 0 && (
-          <p className="text-center text-gray-500 py-8">No action items extracted.</p>
-        )}
-
-        <div className="space-y-3">
-          {tasks.map(task => (
-            <div key={task.task_id}
-              className={`border rounded-xl p-4 transition-all ${task.selected ? "border-indigo-600/60 bg-indigo-950/20" : "border-gray-700 bg-gray-900/50 opacity-60"}`}>
-              <div className="flex items-start gap-3">
-                <button onClick={() => toggle(task.task_id)} className="mt-0.5 flex-shrink-0">
-                  {task.selected
-                    ? <CheckCircle2 size={20} className="text-indigo-400" />
-                    : <Circle size={20} className="text-gray-600" />}
-                </button>
-                <div className="flex-1 space-y-2">
-                  <input
-                    value={task.edited_description ?? ""}
-                    onChange={e => update(task.task_id, "edited_description", e.target.value)}
-                    className="w-full bg-transparent text-sm text-gray-100 font-medium focus:outline-none focus:bg-gray-800 rounded px-1 -ml-1"
-                  />
-                  <div className="flex flex-wrap gap-3">
-                    <div className="flex items-center gap-1 text-xs text-gray-400">
-                      <span>👤</span>
-                      <input value={task.edited_assignee ?? ""} onChange={e => update(task.task_id, "edited_assignee", e.target.value)}
-                        placeholder="Assignee"
-                        className="bg-transparent focus:outline-none focus:bg-gray-800 rounded px-1 w-24" />
+        {tasks.length === 0 ? (
+          <div className="text-center py-12 text-slate-600">
+            <Circle size={32} className="mx-auto mb-3 opacity-40" />
+            <p className="text-sm">No action items extracted.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {tasks.map(task => (
+              <div key={task.task_id}
+                className={`rounded-xl p-4 border transition-all duration-150 cursor-default
+                  ${task.selected
+                    ? "border-violet-600/50 bg-violet-950/20 shadow-sm"
+                    : "border-slate-800 bg-slate-900/30 opacity-50"}`}>
+                <div className="flex items-start gap-3">
+                  <button onClick={() => toggle(task.task_id)} className="mt-0.5 flex-shrink-0 transition-transform hover:scale-110">
+                    {task.selected
+                      ? <CheckCircle2 size={18} className="text-violet-400" />
+                      : <Circle size={18} className="text-slate-700" />}
+                  </button>
+                  <div className="flex-1 space-y-2.5">
+                    <input
+                      value={task.edited_description ?? ""}
+                      onChange={e => update(task.task_id, "edited_description", e.target.value)}
+                      className="w-full bg-transparent text-sm text-slate-100 font-medium focus:outline-none hover:bg-slate-800/50 focus:bg-slate-800 rounded-md px-1.5 py-0.5 -ml-1.5 transition-colors"
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex items-center gap-1.5 bg-slate-800/60 rounded-md px-2 py-1">
+                        <span className="text-slate-500 text-[11px]">👤</span>
+                        <input value={task.edited_assignee ?? ""} onChange={e => update(task.task_id, "edited_assignee", e.target.value)}
+                          placeholder="Assignee"
+                          className="bg-transparent text-xs text-slate-400 focus:outline-none focus:text-slate-200 w-20 transition-colors" />
+                      </div>
+                      <div className="flex items-center gap-1.5 bg-slate-800/60 rounded-md px-2 py-1">
+                        <span className="text-slate-500 text-[11px]">📅</span>
+                        <input type="date" value={task.edited_due_date ?? ""} onChange={e => update(task.task_id, "edited_due_date", e.target.value)}
+                          className="bg-transparent text-xs text-slate-400 focus:outline-none focus:text-slate-200 transition-colors" />
+                      </div>
+                      {task.priority && (
+                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${priorityStyles[task.priority] ?? "bg-slate-800 text-slate-400 border-slate-700"}`}>
+                          {task.priority}
+                        </span>
+                      )}
+                      {task.extraction_confidence !== undefined && (
+                        <span className={`text-[11px] ${confidenceColor(task.extraction_confidence)}`}>
+                          {Math.round(task.extraction_confidence * 100)}% confidence
+                        </span>
+                      )}
                     </div>
-                    <div className="flex items-center gap-1 text-xs text-gray-400">
-                      <span>📅</span>
-                      <input type="date" value={task.edited_due_date ?? ""} onChange={e => update(task.task_id, "edited_due_date", e.target.value)}
-                        className="bg-transparent focus:outline-none focus:bg-gray-800 rounded px-1" />
-                    </div>
-                    {task.priority && (
-                      <span className={`text-xs font-medium ${priorityColor[task.priority] ?? "text-gray-400"}`}>
-                        {task.priority}
-                      </span>
-                    )}
-                    {task.extraction_confidence !== undefined && (
-                      <span className="text-xs text-gray-500">{Math.round(task.extraction_confidence * 100)}% confidence</span>
-                    )}
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Actions */}
       <div className="flex gap-3 pt-2">
-        <button onClick={onSkip} className="flex-1 py-3 border border-gray-700 hover:border-gray-500 rounded-xl text-sm text-gray-400 transition-colors">
-          Skip Calendar sync
+        <button onClick={() => onSkip(tasks)}
+          className="flex-1 py-3 border border-slate-700 hover:border-slate-500 rounded-xl text-sm text-slate-400 hover:text-slate-300 transition-all">
+          Skip sync
         </button>
         <button
           onClick={handleConfirm}
           disabled={selectedCount === 0 || syncing}
-          className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl font-semibold text-sm transition-colors flex items-center justify-center gap-2"
+          className="flex-[2] py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl font-semibold text-sm transition-all shadow-lg shadow-violet-900/30 flex items-center justify-center gap-2"
         >
-          {syncing ? <Loader2 size={16} className="animate-spin" /> : <Calendar size={16} />}
+          {syncing ? <Loader2 size={15} className="animate-spin" /> : <Calendar size={15} />}
           Create {selectedCount} Calendar Event{selectedCount !== 1 ? "s" : ""}
         </button>
       </div>
@@ -368,28 +459,37 @@ function ReviewStep({
 function DoneStep({ events, onReset }: { events: { task_description: string; html_link?: string; due_date?: string }[]; onReset: () => void }) {
   return (
     <div className="flex flex-col items-center gap-6 py-8 text-center">
-      <CheckCircle2 size={56} className="text-emerald-400" />
-      <div>
-        <h3 className="text-xl font-semibold text-gray-100">All done!</h3>
-        <p className="text-gray-400 mt-1">{events.length} Calendar event{events.length !== 1 ? "s" : ""} created.</p>
+      <div className="w-16 h-16 rounded-full bg-emerald-500/15 flex items-center justify-center ring-8 ring-emerald-500/5">
+        <CheckCircle2 size={32} className="text-emerald-400" />
       </div>
+      <div>
+        <h3 className="text-xl font-semibold text-slate-100">All done!</h3>
+        <p className="text-sm text-slate-400 mt-1">
+          {events.length} calendar event{events.length !== 1 ? "s" : ""} created successfully.
+        </p>
+      </div>
+
       {events.length > 0 && (
         <div className="w-full space-y-2 text-left">
           {events.map((ev, i) => (
-            <div key={i} className="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 text-sm">
-              <span className="text-gray-300 truncate">{ev.task_description}</span>
+            <div key={i} className="flex items-center justify-between bg-slate-900/80 border border-slate-800 rounded-xl px-4 py-3">
+              <span className="text-sm text-slate-300 truncate">{ev.task_description}</span>
               <div className="flex items-center gap-3 flex-shrink-0 ml-3">
-                {ev.due_date && <span className="text-gray-500">{ev.due_date}</span>}
+                {ev.due_date && <span className="text-xs text-slate-600">{ev.due_date}</span>}
                 {ev.html_link && (
                   <a href={ev.html_link} target="_blank" rel="noopener noreferrer"
-                    className="text-indigo-400 hover:text-indigo-300">Open ↗</a>
+                    className="text-xs text-violet-400 hover:text-violet-300 font-medium transition-colors">
+                    Open ↗
+                  </a>
                 )}
               </div>
             </div>
           ))}
         </div>
       )}
-      <button onClick={onReset} className="px-6 py-2.5 border border-gray-700 hover:border-gray-500 rounded-xl text-sm transition-colors">
+
+      <button onClick={onReset}
+        className="px-6 py-2.5 border border-slate-700 hover:border-slate-500 hover:bg-slate-800/50 rounded-xl text-sm text-slate-400 hover:text-slate-300 transition-all">
         Process another meeting
       </button>
     </div>
@@ -422,76 +522,195 @@ export default function Home() {
     }
   }
 
-  const handleConfirm = async (tasks: Task[]) => {
-    if (!session?.user?.email || !meetingId) return
-    try {
-      const r = await fetch("/api/calendar-sync", {
+  const handleConfirm = async (allTasks: Task[]) => {
+    // ── 1. Build implicit feedback from user edits ─────────────────────────
+    const corrections: object[] = []
+
+    for (const t of allTasks) {
+      const descChanged = t.edited_description !== undefined && t.edited_description !== t.description
+      const assigneeChanged = t.edited_assignee !== undefined && t.edited_assignee !== (t.assignee ?? "")
+      const dateChanged = t.edited_due_date !== undefined && t.edited_due_date !== (t.due_date ?? "")
+
+      if (!t.selected) {
+        // User deselected the task → treat as false positive
+        corrections.push({
+          meeting_id: meetingId,
+          task_id: t.task_id,
+          original_description: t.description,
+          original_assignee: t.assignee ?? null,
+          original_due_date: t.due_date ?? null,
+          is_false_positive: true,
+        })
+      } else if (descChanged || assigneeChanged || dateChanged) {
+        // User edited fields → correction record
+        corrections.push({
+          meeting_id: meetingId,
+          task_id: t.task_id,
+          original_description: t.description,
+          corrected_description: descChanged ? t.edited_description : null,
+          original_assignee: t.assignee ?? null,
+          corrected_assignee: assigneeChanged ? (t.edited_assignee || null) : null,
+          original_due_date: t.due_date ?? null,
+          corrected_due_date: dateChanged ? (t.edited_due_date || null) : null,
+          is_false_positive: false,
+        })
+      }
+    }
+
+    // Fire-and-forget — feedback is best-effort and must not block the UX
+    if (corrections.length > 0) {
+      fetch(`${API}/meetings/${meetingId}/feedback`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ meetingId, tasks }),
-      })
-      const data = await r.json()
-      setEvents(data.events ?? [])
-    } catch {
-      setEvents([])
+        body: JSON.stringify({ corrections, reviewer: session?.user?.email ?? null }),
+      }).catch(() => null)
     }
+
+    // ── 2. Sync selected tasks to Google Calendar ──────────────────────────
+    const selectedTasks = allTasks.filter(t => t.selected)
+    if (selectedTasks.length > 0 && session?.user?.email) {
+      try {
+        const r = await fetch("/api/calendar-sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ meetingId, tasks: selectedTasks }),
+        })
+        const data = await r.json()
+        setEvents(data.events ?? [])
+      } catch {
+        setEvents([])
+      }
+    }
+
     setStep("done")
   }
 
-  const reset = () => {
-    setStep("upload"); setMeetingId(""); setResult(null); setEvents([])
+  const handleSkip = async (allTasks: Task[]) => {
+    // Submit feedback for any edits even when skipping calendar sync
+    const corrections: object[] = []
+    for (const t of allTasks) {
+      const descChanged = t.edited_description !== undefined && t.edited_description !== t.description
+      const assigneeChanged = t.edited_assignee !== undefined && t.edited_assignee !== (t.assignee ?? "")
+      const dateChanged = t.edited_due_date !== undefined && t.edited_due_date !== (t.due_date ?? "")
+
+      if (!t.selected) {
+        corrections.push({
+          meeting_id: meetingId,
+          task_id: t.task_id,
+          original_description: t.description,
+          original_assignee: t.assignee ?? null,
+          original_due_date: t.due_date ?? null,
+          is_false_positive: true,
+        })
+      } else if (descChanged || assigneeChanged || dateChanged) {
+        corrections.push({
+          meeting_id: meetingId,
+          task_id: t.task_id,
+          original_description: t.description,
+          corrected_description: descChanged ? t.edited_description : null,
+          original_assignee: t.assignee ?? null,
+          corrected_assignee: assigneeChanged ? (t.edited_assignee || null) : null,
+          original_due_date: t.due_date ?? null,
+          corrected_due_date: dateChanged ? (t.edited_due_date || null) : null,
+          is_false_positive: false,
+        })
+      }
+    }
+
+    if (corrections.length > 0) {
+      await fetch(`${API}/meetings/${meetingId}/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ corrections, reviewer: session?.user?.email ?? null }),
+      }).catch(() => null)
+    }
+
+    setStep("done")
   }
+
+  const reset = () => { setStep("upload"); setMeetingId(""); setResult(null); setEvents([]) }
 
   if (status === "loading") {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Loader2 size={32} className="animate-spin text-indigo-400" />
+        <Loader2 size={28} className="animate-spin text-violet-400" />
       </div>
     )
   }
 
   if (!session) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen gap-8">
-        <div className="text-center space-y-3">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <Mic size={32} className="text-indigo-400" />
-            <h1 className="text-3xl font-bold">Meeting AI Agent</h1>
+      <div className="min-h-screen flex flex-col items-center justify-center px-4">
+        <div className="w-full max-w-sm space-y-8">
+          {/* Brand */}
+          <div className="text-center space-y-4">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-violet-600/20 border border-violet-500/30 mb-2">
+              <Mic size={24} className="text-violet-400" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-100">Meeting AI Agent</h1>
+              <p className="text-sm text-slate-400 mt-2 leading-relaxed">
+                Upload a meeting recording and get structured action items, automatically synced to Google Calendar.
+              </p>
+            </div>
           </div>
-          <p className="text-gray-400">Upload a meeting recording → get structured action items, auto-synced to Google Calendar.</p>
+
+          {/* Features */}
+          <div className="grid grid-cols-3 gap-3 text-center">
+            {[
+              { icon: "🎙️", label: "Transcribe" },
+              { icon: "✅", label: "Extract tasks" },
+              { icon: "📅", label: "Sync calendar" },
+            ].map(f => (
+              <div key={f.label} className="bg-slate-900/80 border border-slate-800 rounded-xl p-3">
+                <div className="text-lg mb-1">{f.icon}</div>
+                <p className="text-[11px] text-slate-500 font-medium">{f.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Sign in */}
+          <button
+            onClick={() => signIn("google")}
+            className="w-full flex items-center justify-center gap-3 px-5 py-3 bg-white hover:bg-slate-100 text-slate-900 rounded-xl font-semibold text-sm transition-all shadow-lg"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+            </svg>
+            Continue with Google
+          </button>
         </div>
-        <button
-          onClick={() => signIn("google")}
-          className="flex items-center gap-3 px-6 py-3 bg-white text-gray-900 rounded-xl font-semibold hover:bg-gray-100 transition-colors"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24">
-            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-          </svg>
-          Sign in with Google
-        </button>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-slate-950">
       {/* Header */}
-      <header className="border-b border-gray-800 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Mic size={20} className="text-indigo-400" />
-          <span className="font-semibold">Meeting AI Agent</span>
+      <header className="border-b border-slate-800/80 px-6 py-3.5 flex items-center justify-between backdrop-blur-sm sticky top-0 bg-slate-950/90 z-10">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-violet-600/20 border border-violet-500/30 flex items-center justify-center">
+            <Mic size={13} className="text-violet-400" />
+          </div>
+          <span className="font-semibold text-sm text-slate-200">Meeting AI Agent</span>
         </div>
         <div className="flex items-center gap-3">
+          <a href="/roster"
+            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors px-2 py-1 rounded-lg hover:bg-slate-800">
+            <Users size={13} />
+            Roster
+          </a>
           {session.user?.image && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={session.user.image} alt="" className="w-7 h-7 rounded-full" />
+            <img src={session.user.image} alt="" className="w-7 h-7 rounded-full ring-2 ring-slate-700" />
           )}
-          <span className="text-sm text-gray-400">{session.user?.email}</span>
-          <button onClick={() => signOut()} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-300 transition-colors">
-            <LogOut size={15} />
+          <span className="text-xs text-slate-500 hidden sm:block">{session.user?.email}</span>
+          <button onClick={() => signOut()}
+            className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-400 transition-colors px-2 py-1 rounded-lg hover:bg-slate-800">
+            <LogOut size={13} />
             Sign out
           </button>
         </div>
@@ -499,23 +718,26 @@ export default function Home() {
 
       {/* Main */}
       <main className="flex-1 flex justify-center px-4 py-10">
-        <div className="w-full max-w-xl">
+        <div className="w-full max-w-lg">
           <StepBar current={step} />
 
           {submitError && (
-            <div className="mb-4 flex items-center gap-2 text-red-400 text-sm bg-red-950/30 border border-red-800 rounded-lg px-4 py-3">
-              <AlertCircle size={16} /> {submitError}
+            <div className="mb-5 flex items-center gap-3 text-red-400 text-sm bg-red-950/30 border border-red-800/60 rounded-xl px-4 py-3">
+              <AlertCircle size={15} className="flex-shrink-0" />
+              {submitError}
             </div>
           )}
 
-          {step === "upload" && <UploadStep onSubmit={handleSubmit} />}
-          {step === "processing" && meetingId && (
-            <ProcessingStep meetingId={meetingId} onDone={r => { setResult(r); setStep("review") }} />
-          )}
-          {step === "review" && result && (
-            <ReviewStep result={result} onConfirm={handleConfirm} onSkip={() => setStep("done")} />
-          )}
-          {step === "done" && <DoneStep events={events} onReset={reset} />}
+          <div className="bg-slate-900/50 border border-slate-800/80 rounded-2xl p-6 shadow-2xl">
+            {step === "upload" && <UploadStep onSubmit={handleSubmit} />}
+            {step === "processing" && meetingId && (
+              <ProcessingStep meetingId={meetingId} onDone={r => { setResult(r); setStep("review") }} />
+            )}
+            {step === "review" && result && (
+              <ReviewStep result={result} onConfirm={handleConfirm} onSkip={handleSkip} />
+            )}
+            {step === "done" && <DoneStep events={events} onReset={reset} />}
+          </div>
         </div>
       </main>
     </div>

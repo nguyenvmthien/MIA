@@ -1,0 +1,21 @@
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    build-essential \
+    git \
+    libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY pyproject.toml README.md ./
+COPY src/ ./src/
+
+# Worker needs full pipeline: whisperx, torch, faiss, noisereduce, etc.
+RUN pip install --no-cache-dir -e "." \
+    && pip install --no-cache-dir cryptography
+
+RUN mkdir -p data/audio data/transcripts data/tokens data/models
+
+ENV PYTHONUNBUFFERED=1

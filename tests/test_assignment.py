@@ -4,15 +4,6 @@ import pytest
 
 from meeting_agent.pipeline.assignment import _confidence_score, _fuzzy_score, resolve_assignments
 from meeting_agent.schemas.task import ExtractedTask, TaskStatus
-from meeting_agent.schemas.worker import Worker, WorkerRoster
-
-
-@pytest.fixture
-def roster():
-    return WorkerRoster(workers=[
-        Worker(worker_id="w1", name="Alice Chen", aliases=["Alice"]),
-        Worker(worker_id="w2", name="Bob Kim", aliases=["Bob"]),
-    ])
 
 
 # ── Fuzzy scoring ─────────────────────────────────────────────────────────────

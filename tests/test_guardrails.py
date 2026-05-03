@@ -15,7 +15,7 @@ from meeting_agent.pipeline.guardrails import (
 )
 from meeting_agent.schemas.task import TaskStatus
 from meeting_agent.schemas.transcript import TranscriptTurn
-from meeting_agent.schemas.worker import Worker, WorkerRoster
+from meeting_agent.schemas.worker import Worker
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -87,23 +87,6 @@ def test_check_hallucination_null_assignee_never_flags():
 
 
 # ── parse_and_validate ────────────────────────────────────────────────────────
-
-@pytest.fixture
-def roster():
-    return WorkerRoster(workers=[
-        Worker(worker_id="w1", name="Alice Chen", aliases=["Alice"]),
-        Worker(worker_id="w2", name="Bob Kim", aliases=["Bob"]),
-    ])
-
-
-@pytest.fixture
-def turns():
-    return [
-        TranscriptTurn(turn_id="t1", speaker_id="S1", speaker_name="Alice Chen",
-                       start_ms=0, end_ms=5000,
-                       text="Alice can you write the API docs by Friday?"),
-    ]
-
 
 def test_parse_valid_output(roster, turns):
     raw = json.dumps([{

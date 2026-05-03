@@ -62,6 +62,18 @@ def add_worker(worker: Worker) -> Worker:
     return worker
 
 
+def update_worker(worker_id: str, updated: Worker) -> Worker | None:
+    """Replace a worker record. Returns the updated worker, or None if not found."""
+    with _lock:
+        workers = _load_all()
+        for i, w in enumerate(workers):
+            if w.worker_id == worker_id:
+                workers[i] = updated.model_copy(update={"worker_id": worker_id})
+                _save_all(workers)
+                return workers[i]
+    return None
+
+
 def delete_worker(worker_id: str) -> bool:
     """Delete a worker by ID. Returns True if found and deleted."""
     with _lock:

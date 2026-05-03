@@ -12,6 +12,7 @@ except ImportError:
     _redis_available = False
 
 from meeting_agent.config import settings
+from meeting_agent.monitoring.metrics import CACHE_HITS, CACHE_MISSES
 
 log = logging.getLogger(__name__)
 
@@ -65,10 +66,12 @@ def cached_llm_call(
             cached = client.get(key)
             if cached:
                 log.debug("Prompt cache HIT for key %s", key[:16])
+                CACHE_HITS.inc()
                 return cached, 0
         except Exception as exc:
             log.warning("Redis GET failed: %s", exc)
 
+    CACHE_MISSES.inc()
     content, tokens = call_fn(system_prompt, user_prompt)
 
     if client:

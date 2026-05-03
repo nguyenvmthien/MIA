@@ -19,7 +19,7 @@ from datetime import date, timedelta
 from tenacity import retry, stop_after_attempt, wait_fixed
 
 from meeting_agent.config import settings
-from meeting_agent.monitoring.metrics import LLM_CALLS, LLM_TOKENS, STAGE_LATENCY
+from meeting_agent.monitoring.metrics import LLM_CALLS, LLM_CHUNKS, LLM_TOKENS, RAG_QUERIES, STAGE_LATENCY
 from meeting_agent.pipeline.cache import cached_llm_call
 from meeting_agent.pipeline.guardrails import GuardrailError, parse_and_validate
 from meeting_agent.pipeline.pii import mask_pii
@@ -183,6 +183,10 @@ def extract_action_items(
             relevant = speaker_index.query(transcript_text, top_k=3)
             if relevant:
                 rag_context = "\nRELEVANT CONTEXT:\n" + "\n".join(relevant)
+                RAG_QUERIES.labels(result="hit").inc()
+            else:
+                RAG_QUERIES.labels(result="miss").inc()
+        LLM_CHUNKS.inc()
 
         user_prompt = EXTRACT_TASKS_USER.format(
             meeting_date=meeting_date,

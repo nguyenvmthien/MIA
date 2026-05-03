@@ -11,8 +11,16 @@ from datetime import date, datetime
 from pathlib import Path
 
 from meeting_agent.monitoring.anomaly import check_run as anomaly_check
-from meeting_agent.monitoring.metrics import TASKS_EXTRACTED, TASKS_UNRESOLVED
-from meeting_agent.pipeline.assignment import resolve_assignments
+from meeting_agent.monitoring.metrics import (
+    AUDIO_DURATION,
+    JOBS_TOTAL,
+    PARTICIPANTS_COUNT,
+    PIPELINE_ERRORS,
+    TASKS_EXTRACTED,
+    TASKS_PER_MEETING,
+    TASKS_UNRESOLVED,
+)
+from meeting_agent.pipeline.assignment import resolve_assignments, resolve_participants
 from meeting_agent.pipeline.ingest import ingest_audio
 from meeting_agent.pipeline.orchestrator import extract_action_items, summarize_meeting
 from meeting_agent.pipeline.preprocess import preprocess_audio
@@ -67,7 +75,16 @@ def run_pipeline(
         timings.stt_ms = int((time.monotonic() - t) * 1000)
 
         summary.duration_ms = duration_ms
-        summary.participants = sorted({turn.display_name for turn in turns})
+        participant_records = resolve_participants(turns, roster)
+        summary.participants = sorted({p["display_name"] for p in participant_records})
+        summary.meeting_participants = participant_records
+        summary.transcript_turns = [
+            {"speaker_id": t.speaker_id, "speaker_name": t.display_name,
+             "start_ms": t.start_ms, "end_ms": t.end_ms, "text": t.text}
+            for t in turns
+        ]
+        AUDIO_DURATION.observe(duration_ms / 1000)
+        PARTICIPANTS_COUNT.observe(len(summary.participants))
 
         meeting_date = date.today().isoformat()
 
@@ -99,6 +116,8 @@ def run_pipeline(
         TASKS_UNRESOLVED.inc(
             len(summary.unresolved_items) + len(summary.human_review_items)
         )
+        TASKS_PER_MEETING.observe(len(resolved_tasks))
+        JOBS_TOTAL.labels(status="completed").inc()
 
         metrics = RunMetrics(
             total_tokens_used=total_tokens,
@@ -125,6 +144,8 @@ def run_pipeline(
     except Exception as exc:
         summary.job_status = JobStatus.failed
         summary.error = str(exc)
+        JOBS_TOTAL.labels(status="failed").inc()
+        PIPELINE_ERRORS.labels(stage="run", error_type=type(exc).__name__).inc()
         raise
 
     return summary

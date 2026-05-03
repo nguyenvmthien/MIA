@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "meeting-agent",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "meeting_agent",
+      "Username": "meeting",
+      "SSLMode": "prefer",
+      "Password": "meeting"
+    }
+  }
+}

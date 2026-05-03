@@ -13,6 +13,9 @@ export async function POST(req: NextRequest) {
   const userId = session.user.email
   const accessToken = session.accessToken
 
+  if (session.error === "RefreshTokenError") {
+    return NextResponse.json({ error: "Google token expired — please sign in again" }, { status: 401 })
+  }
   if (!accessToken) {
     return NextResponse.json({ error: "No Google access token" }, { status: 401 })
   }

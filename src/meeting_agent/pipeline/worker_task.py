@@ -1,8 +1,22 @@
 """Celery task definition for async meeting processing."""
 
+import logging
+import sys
+from datetime import datetime
+from pathlib import Path
+
 from celery import Celery
 
 from meeting_agent.config import settings
+
+log = logging.getLogger(__name__)
+
+_TRAIN_DIR = str(Path(__file__).parent.parent.parent.parent / "train")
+
+
+def _ensure_train_path() -> None:
+    if _TRAIN_DIR not in sys.path:
+        sys.path.insert(0, _TRAIN_DIR)
 
 celery_app = Celery(
     "meeting_agent",
@@ -34,9 +48,7 @@ celery_app.conf.update(
 @celery_app.task(name="meeting_agent.check_retrain")
 def check_retrain_task() -> dict:
     """Periodic task: check feedback threshold and trigger retraining if met."""
-    import sys
-    from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "train"))
+    _ensure_train_path()
     from retrain import run_retrain  # type: ignore
     result = run_retrain()
     return result
@@ -45,17 +57,13 @@ def check_retrain_task() -> dict:
 @celery_app.task(name="meeting_agent.drift_check")
 def drift_check_task() -> dict:
     """Weekly task: compute PSI drift and log alert if threshold exceeded."""
-    import sys
-    from pathlib import Path
-    import logging
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "train"))
+    _ensure_train_path()
     from drift_detector import run_drift_check  # type: ignore
     report = run_drift_check()
-    _log = logging.getLogger(__name__)
-    _log.info("Drift check: overall=%s max_psi=%.4f",
-              report.get("overall_level"), report.get("max_psi", 0))
+    log.info("Drift check: overall=%s max_psi=%.4f",
+             report.get("overall_level"), report.get("max_psi", 0))
     if report.get("overall_level") == "alert":
-        _log.warning("DRIFT ALERT detected — consider retraining. max_psi=%.4f", report.get("max_psi", 0))
+        log.warning("DRIFT ALERT detected — consider retraining. max_psi=%.4f", report.get("max_psi", 0))
     return report
 
 
@@ -76,22 +84,51 @@ def process_meeting_task(self, audio_path: str, roster_dict: dict, meeting_id: s
         JOBS_TOTAL.labels(status="completed").inc()
         result_dict = result.model_dump(mode="json")
 
+        # Persist full result to PostgreSQL (primary store)
+        _persist_to_db(result_dict, meeting_id)
+
         # Log drift features for PSI monitoring
         _log_drift_record(result_dict, meeting_id)
 
         return result_dict
     except Exception as exc:
         JOBS_TOTAL.labels(status="failed").inc()
+        # Mark the meeting as failed in the DB before propagating
+        _mark_failed_in_db(meeting_id, str(exc))
         raise self.retry(exc=exc, max_retries=0)  # no retry at job level
     finally:
         JOBS_IN_FLIGHT.dec()
 
 
+def _persist_to_db(result_dict: dict, meeting_id: str) -> None:
+    """Write the completed MeetingSummary to PostgreSQL (best-effort, non-fatal)."""
+    try:
+        from meeting_agent.db.repository import upsert_meeting_result
+        upsert_meeting_result(result_dict)
+    except Exception as exc:
+        log.error("Failed to persist meeting %s to DB (result still in Redis): %s", meeting_id, exc)
+
+
+def _mark_failed_in_db(meeting_id: str, error: str) -> None:
+    """Update the meeting row to status=failed (best-effort)."""
+    try:
+        from meeting_agent.db.repository import upsert_meeting_result
+        upsert_meeting_result({
+            "meeting_id": meeting_id,
+            "job_status": "failed",
+            "processed_at": datetime.utcnow().isoformat(),
+            "error": error,
+            "action_items": [],
+            "unresolved_items": [],
+            "human_review_items": [],
+        })
+    except Exception:
+        pass
+
+
 def _log_drift_record(result_dict: dict, meeting_id: str) -> None:
     try:
-        import sys
-        from pathlib import Path
-        sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "train"))
+        _ensure_train_path()
         from drift_detector import append_record  # type: ignore
 
         tasks = result_dict.get("action_items", [])
@@ -111,5 +148,4 @@ def _log_drift_record(result_dict: dict, meeting_id: str) -> None:
             "assignee_hit_rate": assignee_rate,
         })
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).debug("Drift record logging failed (non-fatal): %s", e)
+        log.debug("Drift record logging failed (non-fatal): %s", e)

@@ -1,0 +1,32 @@
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY pyproject.toml README.md ./
+COPY src/ ./src/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./
+COPY streamlit_app.py ./
+COPY train/ ./train/
+
+# Install only core deps, skip whisperx/torch (not needed by API or UI)
+RUN pip install --no-cache-dir \
+    fastapi uvicorn[standard] python-multipart \
+    pydantic pydantic-settings \
+    celery redis \
+    sqlalchemy alembic psycopg2-binary \
+    prometheus-client langsmith \
+    python-dotenv httpx tenacity rich typer \
+    cryptography \
+    ollama \
+    streamlit \
+    && pip install --no-cache-dir -e . --no-deps
+
+RUN mkdir -p data/audio data/transcripts data/tokens data/workers.json
+
+ENV PYTHONUNBUFFERED=1
+EXPOSE 8000

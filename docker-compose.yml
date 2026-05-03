@@ -1,18 +1,25 @@
+x-db-env: &db-env
+  DATABASE_URL: postgresql://${POSTGRES_USER:-meeting}:${POSTGRES_PASSWORD:-meeting}@postgres:5432/${POSTGRES_DB:-meeting_agent}
+  REDIS_URL: redis://redis:6379/0
+  CELERY_BROKER_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: redis://redis:6379/1
+  OLLAMA_BASE_URL: http://ollama:11434
+
 services:
 
   # ── Database ───────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: meeting
-      POSTGRES_PASSWORD: meeting
-      POSTGRES_DB: meeting_agent
+      POSTGRES_USER: ${POSTGRES_USER:-meeting}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-meeting}
+      POSTGRES_DB: ${POSTGRES_DB:-meeting_agent}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U meeting -d meeting_agent"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-meeting} -d ${POSTGRES_DB:-meeting_agent}"]
       interval: 10s
       retries: 5
 
@@ -33,7 +40,6 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    # Start server, then pull required models (idempotent — skipped if cached)
     entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 5 && ollama pull qwen2.5:3b && ollama pull nomic-embed-text && wait"]
     healthcheck:
       test: ["CMD-SHELL", "ollama list | grep -q qwen2.5"]
@@ -41,28 +47,36 @@ services:
       timeout: 10s
       retries: 20
       start_period: 30s
-    # GPU reservations are disabled for macOS/CPU-only environments.
+
+  # ── DB Migration (runs once, then exits) ───────────────────────────────────
+  migrator:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: alembic upgrade head
+    env_file: .env
+    environment:
+      <<: *db-env
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   # ── API (FastAPI) ──────────────────────────────────────────────────────────
   api:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.api
     command: uvicorn meeting_agent.api.main:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
     env_file: .env
     environment:
-      OLLAMA_BASE_URL: http://ollama:11434
-      DATABASE_URL: postgresql://meeting:meeting@postgres:5432/meeting_agent
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      <<: *db-env
     volumes:
       - ./data:/app/data
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       ollama:
@@ -72,15 +86,11 @@ services:
   worker:
     build:
       context: .
-      dockerfile: Dockerfile
-    command: celery -A meeting_agent.pipeline.worker_task.celery_app worker --loglevel=info --concurrency=2
+      dockerfile: Dockerfile.worker
+    command: celery -A meeting_agent.pipeline.worker_task.celery_app worker --loglevel=info --concurrency=${CELERY_WORKER_CONCURRENCY:-2}
     env_file: .env
     environment:
-      OLLAMA_BASE_URL: http://ollama:11434
-      DATABASE_URL: postgresql://meeting:meeting@postgres:5432/meeting_agent
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      <<: *db-env
     volumes:
       - ./data:/app/data
     depends_on:
@@ -93,7 +103,7 @@ services:
   ui:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.api
     command: streamlit run streamlit_app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
     ports:
       - "8501:8501"
@@ -113,9 +123,11 @@ services:
   pgadmin:
     image: dpage/pgadmin4:latest
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@meeting.local
-      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@local.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
       PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
     ports:
       - "5050:80"
     depends_on:
@@ -123,6 +135,8 @@ services:
         condition: service_healthy
     volumes:
       - pgadmin_data:/var/lib/pgadmin
+      - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ./docker/pgadmin/pgpass:/pgpass:ro
 
   # ── Prometheus ─────────────────────────────────────────────────────────────
   prometheus:
@@ -142,7 +156,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana

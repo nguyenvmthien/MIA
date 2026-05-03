@@ -1,11 +1,14 @@
 """FastAPI application — entry point for the Meeting AI Agent REST API."""
 
 import json
+import logging
 import os
 import shutil
+import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, status
@@ -20,9 +23,14 @@ import meeting_agent.monitoring.metrics  # noqa: F401
 from meeting_agent.api.calendar_router import router as calendar_router
 from meeting_agent.api.ws_router import router as ws_router
 from meeting_agent.config import settings
+from meeting_agent.db.repository import (
+    delete_meeting as db_delete_meeting,
+    get_meeting as db_get_meeting,
+    insert_meeting_stub,
+)
 from meeting_agent.pipeline.feedback import FeedbackSubmission, feedback_stats, save_feedback
 from meeting_agent.pipeline.router import router_stats
-from meeting_agent.pipeline.worker_registry import add_worker, delete_worker, list_workers
+from meeting_agent.pipeline.worker_registry import add_worker, delete_worker, list_workers, update_worker
 from meeting_agent.pipeline.worker_task import celery_app, check_retrain_task, process_meeting_task
 from meeting_agent.schemas.worker import Worker, WorkerRoster
 
@@ -39,17 +47,17 @@ _HTTP_DURATION = Histogram(
     buckets=[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
 )
 
-
+    
 STATIC_DIR = Path(__file__).parent / "static"
 
 
 _SEED_WORKERS = [
-    Worker(worker_id="w1", name="Alice Chen", role="PM",
-           email="alice@example.com", aliases=["Alice"]),
+    Worker(worker_id="w1", name="Alice Chen", role="Manager",
+           email="thien792003@gmail.com", aliases=["Alice"]),
     Worker(worker_id="w2", name="Bob Kim", role="Engineer",
-           email="bob@example.com", aliases=["Bob"]),
-    Worker(worker_id="w3", name="Carol Davis", role="Designer",
-           email="carol@example.com", aliases=["Carol"]),
+           email="jamesnguyen070903@gmail.com", aliases=["Bob", "Bobby"]),
+    Worker(worker_id="w3", name="Carol Davis", role="Engineer",
+           email="minhthien792003@gmail.com", aliases=["Carol"]),
 ]
 
 
@@ -162,6 +170,13 @@ async def submit_meeting(
     with dest_path.open("wb") as f:
         shutil.copyfileobj(audio.file, f)
 
+    # Insert a pending row in the DB immediately so the meeting is queryable
+    # even before the Celery worker picks up the job.
+    try:
+        insert_meeting_stub(meeting_id, audio.filename)
+    except Exception as exc:
+        logging.getLogger(__name__).warning("Could not insert meeting stub (non-fatal): %s", exc)
+
     # Dispatch async task
     process_meeting_task.apply_async(
         kwargs={
@@ -180,28 +195,44 @@ async def get_meeting(meeting_id: str):
     """
     Poll for the result of a previously submitted meeting job.
 
-    Returns the full MeetingSummary JSON once processing is complete.
+    Strategy:
+      1. If the job is still in-flight (Redis says PENDING/STARTED), return live status.
+      2. Once complete, serve the persisted result from PostgreSQL (canonical, permanent).
+      3. Fall back to the Redis Celery result if the DB row isn't there yet.
     """
-    result = celery_app.AsyncResult(meeting_id)
+    celery_result = celery_app.AsyncResult(meeting_id)
 
-    if result.state == "PENDING":
-        return {"meeting_id": meeting_id, "status": "pending"}
+    # Job is still running — skip DB lookup
+    if celery_result.state in ("PENDING", "STARTED"):
+        status_str = "pending" if celery_result.state == "PENDING" else "processing"
+        return {"meeting_id": meeting_id, "status": status_str}
 
-    if result.state == "STARTED":
-        return {"meeting_id": meeting_id, "status": "processing"}
-
-    if result.state == "FAILURE":
+    # Job failed according to Celery
+    if celery_result.state == "FAILURE":
+        db_row = db_get_meeting(meeting_id)
+        if db_row:
+            return db_row
         return JSONResponse(
             status_code=500,
-            content={"meeting_id": meeting_id, "status": "failed", "error": str(result.result)},
+            content={"meeting_id": meeting_id, "status": "failed", "error": str(celery_result.result)},
         )
 
-    if result.state == "SUCCESS":
-        data = result.result  # already a dict (model_dump)
+    # Job succeeded — serve from DB (authoritative, survives Redis TTL expiry)
+    if celery_result.state == "SUCCESS":
+        db_row = db_get_meeting(meeting_id)
+        if db_row:
+            db_row.setdefault("status", db_row.get("job_status", "completed"))
+            return db_row
+        # DB persist may still be in-flight — fall back to Redis payload
+        data = celery_result.result
         data.setdefault("status", data.get("job_status", "completed"))
         return data
 
-    return {"meeting_id": meeting_id, "status": result.state.lower()}
+    # Unknown state — try DB, then return raw state
+    db_row = db_get_meeting(meeting_id)
+    if db_row:
+        return db_row
+    return {"meeting_id": meeting_id, "status": celery_result.state.lower()}
 
 
 @app.post("/meetings/{meeting_id}/feedback", tags=["meetings"])
@@ -235,8 +266,6 @@ async def trigger_retrain(force: bool = False):
 @app.get("/admin/retrain/state", tags=["ops"])
 async def get_retrain_state():
     """Return the current retraining state (last run, correction counts, history)."""
-    import json
-    from pathlib import Path
     state_file = Path("data/training/.retrain_state.json")
     if not state_file.exists():
         return {"last_correction_count": 0, "last_retrain_at": None, "runs": []}
@@ -251,12 +280,12 @@ async def get_router_stats():
 
 # ── A/B test admin endpoints ──────────────────────────────────────────────────
 
+_TRAIN_DIR = str(Path(__file__).parent.parent.parent.parent.parent / "train")
+
+
 def _ab_module():
-    import sys
-    from pathlib import Path as _Path
-    train_dir = str(_Path(__file__).parent.parent.parent.parent.parent / "train")
-    if train_dir not in sys.path:
-        sys.path.insert(0, train_dir)
+    if _TRAIN_DIR not in sys.path:
+        sys.path.insert(0, _TRAIN_DIR)
     import ab_test
     return ab_test
 
@@ -279,18 +308,15 @@ async def ab_test_start(req: ABTestStartRequest):
     if req.traffic <= 0 or req.traffic >= 1:
         raise HTTPException(status_code=422, detail="traffic must be between 0 and 1 exclusive")
     ab = _ab_module()
-    import uuid as _uuid
-    import os as _os
-    from datetime import datetime as _dt
-    model_a = _os.environ.get("OLLAMA_LLM_MODEL", "qwen2.5:3b")
-    experiment_id = f"ab_{_dt.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    model_a = os.environ.get("OLLAMA_LLM_MODEL", "qwen2.5:3b")
+    experiment_id = f"ab_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
     state = {
         "active": True,
         "experiment_id": experiment_id,
         "model_a": model_a,
         "model_b": req.model_b,
         "traffic_b": req.traffic,
-        "started_at": _dt.utcnow().isoformat(),
+        "started_at": datetime.utcnow().isoformat(),
     }
     ab.save_state(state)
     return state
@@ -300,12 +326,11 @@ async def ab_test_start(req: ABTestStartRequest):
 async def ab_test_stop():
     """Stop the active A/B test and return aggregated results."""
     ab = _ab_module()
-    from datetime import datetime as _dt
     state = ab.load_state()
     if not state.get("active"):
         raise HTTPException(status_code=404, detail="No active A/B test")
     state["active"] = False
-    state["stopped_at"] = _dt.utcnow().isoformat()
+    state["stopped_at"] = datetime.utcnow().isoformat()
     ab.save_state(state)
     results = ab.get_results(state["experiment_id"])
     return {"state": state, "results": results}
@@ -327,6 +352,88 @@ async def get_feedback_stats():
     return feedback_stats()
 
 
+@app.get("/feedback/export", tags=["meetings"])
+async def export_feedback_for_finetuning(limit: int = 500, format: str = "raw"):
+    """
+    Export human-reviewed meeting data as fine-tuning examples.
+
+    format=raw   → full objects (default, for inspection)
+    format=jsonl → instruction/input/output format ready for finetune.py
+    """
+    from meeting_agent.db.engine import get_session
+    from meeting_agent.db.models import FeedbackCorrection, Meeting, Task
+
+    SYSTEM_INSTRUCTION = (
+        "You are an AI assistant that extracts action items from meeting transcripts. "
+        "Given the meeting transcript below, extract all action items as a JSON array. "
+        "Each item must have: description, assignee (null if unknown), due_date (YYYY-MM-DD or null), priority (high/medium/low)."
+    )
+
+    with get_session() as session:
+        meeting_ids = [
+            row[0]
+            for row in session.query(FeedbackCorrection.meeting_id)
+            .distinct()
+            .limit(limit)
+            .all()
+        ]
+
+        examples = []
+        for mid in meeting_ids:
+            meeting = session.get(Meeting, mid)
+            if meeting is None or meeting.status not in ("completed", "done"):
+                continue
+
+            tasks = (
+                session.query(Task)
+                .filter_by(meeting_id=mid)
+                .filter(Task.bucket == "action")
+                .filter(Task.status != "dismissed")
+                .all()
+            )
+            corrections = session.query(FeedbackCorrection).filter_by(meeting_id=mid).all()
+
+            ground_truth = [
+                {
+                    "description": t.description,
+                    "assignee": t.assignee,
+                    "due_date": t.due_date.isoformat() if t.due_date else None,
+                    "priority": t.priority,
+                }
+                for t in tasks
+            ]
+
+            # Build transcript text from stored turns, fall back to summary
+            turns = meeting.transcript_turns or []
+            if turns:
+                transcript_text = "\n".join(
+                    f"[{t.get('speaker_name', t.get('speaker_id', 'Speaker'))}]: {t.get('text', '')}"
+                    for t in turns
+                )
+            else:
+                transcript_text = meeting.summary_text or ""
+
+            if format == "jsonl":
+                examples.append({
+                    "instruction": SYSTEM_INSTRUCTION,
+                    "input": transcript_text,
+                    "output": json.dumps(ground_truth, ensure_ascii=False),
+                })
+            else:
+                examples.append({
+                    "meeting_id": mid,
+                    "summary_text": meeting.summary_text,
+                    "transcript_turns": len(turns),
+                    "participants": meeting.participants,
+                    "ground_truth_tasks": ground_truth,
+                    "corrections_applied": len(corrections),
+                    "has_false_positives": any(c.is_false_positive for c in corrections),
+                    "has_missing_tasks": any(c.is_missing for c in corrections),
+                })
+
+    return {"count": len(examples), "examples": examples}
+
+
 # ── Worker registry endpoints ─────────────────────────────────────────────────
 
 @app.get("/workers", tags=["workers"])
@@ -335,22 +442,44 @@ async def get_workers():
     return {"workers": [w.model_dump() for w in list_workers()]}
 
 
+class WorkerCreate(BaseModel):
+    name: str
+    aliases: list[str] = []
+    role: str | None = None
+    email: str | None = None
+    skills: list[str] = []
+
+
 @app.post("/workers", status_code=status.HTTP_201_CREATED, tags=["workers"])
-async def create_worker(worker: Worker):
+async def create_worker(body: WorkerCreate):
     """
     Add a new worker to the participant database.
 
     If a worker with the same name already exists, returns 409 Conflict.
-    The worker_id is auto-generated if empty or not provided.
+    The worker_id is auto-generated.
     """
-    import uuid as _uuid
-    if not worker.worker_id:
-        worker = worker.model_copy(update={"worker_id": str(_uuid.uuid4())[:8]})
+    worker = Worker(
+        worker_id=str(uuid.uuid4())[:8],
+        name=body.name,
+        aliases=body.aliases,
+        role=body.role,
+        email=body.email,
+        skills=body.skills,
+    )
     try:
         created = add_worker(worker)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     return created.model_dump()
+
+
+@app.put("/workers/{worker_id}", tags=["workers"])
+async def edit_worker(worker_id: str, worker: Worker):
+    """Update an existing worker's fields by worker_id."""
+    result = update_worker(worker_id, worker)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Worker '{worker_id}' not found.")
+    return result.model_dump()
 
 
 @app.delete("/workers/{worker_id}", tags=["workers"])
@@ -364,7 +493,7 @@ async def remove_worker(worker_id: str):
 
 @app.delete("/meetings/{meeting_id}", tags=["meetings"])
 async def delete_meeting_data(meeting_id: str):
-    """Delete stored audio and transcript data for a meeting (GDPR compliance)."""
+    """Delete stored audio, transcript data, and DB rows for a meeting (GDPR compliance)."""
     audio_dir = Path(settings.audio_storage_path) / meeting_id
     transcript_dir = Path(settings.transcript_storage_path) / meeting_id
 
@@ -374,4 +503,6 @@ async def delete_meeting_data(meeting_id: str):
             shutil.rmtree(d)
             deleted.append(str(d))
 
-    return {"meeting_id": meeting_id, "deleted_paths": deleted}
+    db_deleted = db_delete_meeting(meeting_id)
+
+    return {"meeting_id": meeting_id, "deleted_paths": deleted, "db_deleted": db_deleted}

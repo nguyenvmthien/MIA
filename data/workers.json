@@ -6,17 +6,18 @@
       "Alice"
     ],
     "role": "PM",
-    "email": "alice@example.com",
+    "email": "thien792003@gmail.com",
     "skills": []
   },
   {
     "worker_id": "w2",
     "name": "Bob Kim",
     "aliases": [
-      "Bob"
+      "Bob",
+      "Bobby"
     ],
     "role": "Engineer",
-    "email": "bob@example.com",
+    "email": "jamesnguyen070903@gmail.com",
     "skills": []
   },
   {
@@ -26,7 +27,15 @@
       "Carol"
     ],
     "role": "Designer",
-    "email": "carol@example.com",
+    "email": "minhthien792003@gmail.com",
+    "skills": []
+  },
+  {
+    "worker_id": "f9d41439",
+    "name": "Test User",
+    "aliases": [],
+    "role": "Dev",
+    "email": "nvmthien22@clc.fitus.edu.vn",
     "skills": []
   }
 ]

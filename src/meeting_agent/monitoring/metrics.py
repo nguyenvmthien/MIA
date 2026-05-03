@@ -26,6 +26,11 @@ LLM_TOKENS = Counter(
     "Total tokens consumed (prompt + completion)",
 )
 
+LLM_CHUNKS = Counter(
+    "meeting_llm_chunks_total",
+    "Total number of transcript chunks processed through the LLM",
+)
+
 # ── Quality metrics ───────────────────────────────────────────────────────────
 HALLUCINATION_FLAGS = Counter(
     "meeting_hallucination_flags_total",
@@ -46,6 +51,72 @@ TASKS_EXTRACTED = Counter(
 TASKS_UNRESOLVED = Counter(
     "meeting_tasks_unresolved_total",
     "Total action items that could not be fully resolved",
+)
+
+# ── Pipeline quality ──────────────────────────────────────────────────────────
+GUARDRAILS_DURATION = Histogram(
+    "meeting_guardrails_duration_seconds",
+    "Duration of the guardrails validation step in seconds",
+    buckets=[0.1, 0.5, 1, 5, 10, 30, 60, 120, 300, 600],
+)
+
+CACHE_HITS = Counter(
+    "meeting_cache_hits_total",
+    "Number of LLM Redis prompt cache hits",
+)
+
+CACHE_MISSES = Counter(
+    "meeting_cache_misses_total",
+    "Number of LLM Redis prompt cache misses",
+)
+
+ASSIGNEE_RESOLVED = Counter(
+    "meeting_assignee_resolved_total",
+    "Assignee resolution outcomes",
+    labelnames=["result"],  # matched | unresolved | fuzzy
+)
+
+PIPELINE_ERRORS = Counter(
+    "meeting_error_total",
+    "Pipeline errors by stage and error type",
+    labelnames=["stage", "error_type"],
+)
+
+# ── Business metrics ──────────────────────────────────────────────────────────
+AUDIO_DURATION = Histogram(
+    "meeting_audio_duration_seconds",
+    "Actual meeting audio duration in seconds",
+    buckets=[60, 300, 600, 1200, 1800, 3600],
+)
+
+PARTICIPANTS_COUNT = Histogram(
+    "meeting_participants_count",
+    "Number of participants per meeting",
+    buckets=[1, 2, 3, 4, 5, 8, 10, 15, 20],
+)
+
+TASKS_PER_MEETING = Histogram(
+    "meeting_tasks_per_meeting",
+    "Number of tasks extracted per meeting",
+    buckets=[0, 1, 2, 3, 5, 8, 10, 15, 20],
+)
+
+FEEDBACK_SUBMITTED = Counter(
+    "meeting_feedback_submitted_total",
+    "User feedback submissions",
+    labelnames=["type"],  # correction | false_positive | missing
+)
+
+CALENDAR_EVENTS_CREATED = Counter(
+    "meeting_calendar_events_created_total",
+    "Total Google Calendar events created from action items",
+)
+
+# ── RAG metrics ───────────────────────────────────────────────────────────────
+RAG_QUERIES = Counter(
+    "meeting_rag_queries_total",
+    "RAG speaker index queries",
+    labelnames=["result"],  # hit | miss
 )
 
 # ── Job status ────────────────────────────────────────────────────────────────
@@ -70,6 +141,15 @@ def _preinit() -> None:
         STAGE_LATENCY.labels(stage=stage)
     for reason in ("no_evidence", "invalid_assignee", "date_hallucination"):
         HALLUCINATION_FLAGS.labels(reason=reason)
+    for result in ("matched", "unresolved", "fuzzy"):
+        ASSIGNEE_RESOLVED.labels(result=result)
+    for stage in ("ingest", "preprocess", "stt", "llm", "guardrails", "assignment"):
+        for error_type in ("exception", "timeout", "validation"):
+            PIPELINE_ERRORS.labels(stage=stage, error_type=error_type)
+    for result in ("hit", "miss"):
+        RAG_QUERIES.labels(result=result)
+    for feedback_type in ("correction", "false_positive", "missing"):
+        FEEDBACK_SUBMITTED.labels(type=feedback_type)
 
 
 _preinit()

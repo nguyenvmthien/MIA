@@ -292,7 +292,7 @@ meeting-agent process path/to/meeting.mp3 \
       "name": "Bob Kim",
       "aliases": ["Bob", "Bobby"],
       "role": "Developer",
-      "email": "bob@example.com"
+      "email": "thien792003@gmail.com"
     }
   ]
 }

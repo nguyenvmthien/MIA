@@ -4,18 +4,19 @@ Data collection helpers — ingest audio/transcript files into the training data
 Supports:
   - Directory scan for audio files → transcribe via pipeline and save as JSONL
   - Manual transcript import (pre-existing .txt/.json files)
-  - AMI corpus format import
 
 Usage:
     python data_pipeline/collect.py --audio-dir data/raw/audio --out data/training/collected.jsonl
-    python data_pipeline/collect.py --ami-dir data/raw/ami --out data/training/ami.jsonl
 """
 
 import argparse
 import json
 import logging
+import sys
 import uuid
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -32,9 +33,6 @@ def collect_from_audio_dir(
     Transcribe all audio files in a directory using the pipeline
     and save resulting MeetingSummary objects as JSONL training data.
     """
-    import sys
-    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
     from meeting_agent.pipeline.run import run_pipeline
     from meeting_agent.schemas.worker import WorkerRoster
 
@@ -67,39 +65,10 @@ def collect_from_audio_dir(
     return saved
 
 
-def collect_from_ami(ami_dir: str, out_path: str) -> int:
-    """
-    Import meetings from the AMI Meeting Corpus (http://groups.inf.ed.ac.uk/ami/).
-    Expects the standard AMI XML annotation + word-level transcript structure.
-    This is a simplified importer — adapt paths to your local AMI download.
-    """
-    # AMI corpus has a complex XML structure; this is a placeholder that
-    # reads the pre-processed words/*.words.xml and segments/*.segments.xml
-    # For a full implementation, see: https://github.com/mcfloundinho/ami-tools
-    log.warning(
-        "AMI importer is a skeleton — integrate with ami-tools for full support. "
-        "See: https://github.com/mcfloundinho/ami-tools"
-    )
-    return 0
-
-
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    sub = p.add_subparsers(dest="cmd")
-
-    audio_cmd = sub.add_parser("audio", help="Collect from audio directory")
-    audio_cmd.add_argument("--audio-dir", required=True)
-    audio_cmd.add_argument("--roster", default=None)
-    audio_cmd.add_argument("--out", default="data/training/collected.jsonl")
-
-    ami_cmd = sub.add_parser("ami", help="Import from AMI corpus")
-    ami_cmd.add_argument("--ami-dir", required=True)
-    ami_cmd.add_argument("--out", default="data/training/ami.jsonl")
-
+    p.add_argument("--audio-dir", required=True)
+    p.add_argument("--roster", default=None)
+    p.add_argument("--out", default="data/training/collected.jsonl")
     args = p.parse_args()
-    if args.cmd == "audio":
-        collect_from_audio_dir(args.audio_dir, args.roster, args.out)
-    elif args.cmd == "ami":
-        collect_from_ami(args.ami_dir, args.out)
-    else:
-        p.print_help()
+    collect_from_audio_dir(args.audio_dir, args.roster, args.out)

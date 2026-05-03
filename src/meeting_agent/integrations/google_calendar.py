@@ -23,6 +23,7 @@ Usage (internal):
 import json
 import logging
 import os
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
@@ -164,11 +165,16 @@ def create_event_from_task(
 
     body = json.dumps(event).encode()
     req = urllib.request.Request(
-        EVENTS_URL + "?sendUpdates=none",
+        EVENTS_URL + "?sendUpdates=all",
         data=body,
         method="POST",
     )
     req.add_header("Authorization", f"Bearer {access_token}")
     req.add_header("Content-Type", "application/json")
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        return json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        log.error("Google Calendar API error %s: %s", e.code, body)
+        raise

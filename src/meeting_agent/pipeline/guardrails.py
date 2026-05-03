@@ -10,11 +10,12 @@ Responsibilities:
 import json
 import logging
 import re
+import time
 from datetime import date, timedelta
 
 from pydantic import ValidationError
 
-from meeting_agent.monitoring.metrics import HALLUCINATION_FLAGS, SCHEMA_FAILURES
+from meeting_agent.monitoring.metrics import GUARDRAILS_DURATION, HALLUCINATION_FLAGS, SCHEMA_FAILURES
 from meeting_agent.pipeline.pii import mask_pii
 from meeting_agent.schemas.task import ExtractedTask, TaskPriority, TaskStatus
 from meeting_agent.schemas.transcript import TranscriptTurn
@@ -125,6 +126,7 @@ def parse_and_validate(
     - Hallucination detection
     - Returns list of ExtractedTask (may be empty)
     """
+    t0 = time.monotonic()
     cleaned = _strip_json_fences(raw_output)
     try:
         array_str = _find_json_array(cleaned)
@@ -166,16 +168,21 @@ def parse_and_validate(
                 assignee_name = matched_worker.name
                 assignee_id = matched_worker.worker_id
             else:
-                # Name not in roster — mark unresolved
+                # Name not in roster — mark unresolved + flag as invalid assignee
                 assignee_name = str(raw_assignee)
                 status = TaskStatus.unresolved
+                HALLUCINATION_FLAGS.labels(reason="invalid_assignee").inc()
 
         # Hallucination check — only for roster-resolved workers
         if _check_hallucination(description, assignee_name, turns, worker=matched_worker):
             HALLUCINATION_FLAGS.labels(reason="no_evidence").inc()
             status = TaskStatus.human_review
 
-        due_date = _validate_due_date(item.get("due_date"))
+        raw_due_date = item.get("due_date")
+        due_date = _validate_due_date(raw_due_date)
+        # Flag date hallucination when a due_date was provided but failed validation
+        if raw_due_date and due_date is None:
+            HALLUCINATION_FLAGS.labels(reason="date_hallucination").inc()
 
         raw_priority = item.get("priority", "medium")
         try:
@@ -201,4 +208,5 @@ def parse_and_validate(
 
         tasks.append(task)
 
+    GUARDRAILS_DURATION.observe(time.monotonic() - t0)
     return tasks

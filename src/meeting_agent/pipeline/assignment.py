@@ -4,7 +4,7 @@ import time
 from difflib import SequenceMatcher
 
 from meeting_agent.config import settings
-from meeting_agent.monitoring.metrics import STAGE_LATENCY
+from meeting_agent.monitoring.metrics import ASSIGNEE_RESOLVED, STAGE_LATENCY
 from meeting_agent.schemas.task import ExtractedTask, TaskStatus
 from meeting_agent.schemas.worker import Worker, WorkerRoster
 
@@ -46,6 +46,26 @@ def _confidence_score(task: ExtractedTask) -> float:
     return max(0.0, round(score, 2))
 
 
+def resolve_participants(
+    turns: list,
+    roster: WorkerRoster,
+) -> list[dict]:
+    """Build a deduplicated participant list, matching each speaker to a roster worker if possible."""
+    seen: dict[str, dict] = {}  # speaker_id → participant dict
+    for turn in turns:
+        sid = turn.speaker_id
+        if sid in seen:
+            continue
+        worker = _resolve_by_fuzzy(turn.display_name, roster) if turn.display_name != sid else None
+        seen[sid] = {
+            "speaker_id": sid,
+            "display_name": turn.display_name,
+            "worker_id": worker.worker_id if worker else None,
+            "email": worker.email if worker else None,
+        }
+    return list(seen.values())
+
+
 def resolve_assignments(
     tasks: list[ExtractedTask],
     roster: WorkerRoster,
@@ -73,9 +93,13 @@ def resolve_assignments(
                         "notes": f"Fuzzy-matched '{task.assignee}' → '{worker.name}'",
                     }
                 )
+                ASSIGNEE_RESOLVED.labels(result="fuzzy").inc()
             else:
                 # Could not resolve even with fuzzy → escalate to human review
                 task = task.model_copy(update={"status": TaskStatus.human_review})
+                ASSIGNEE_RESOLVED.labels(result="unresolved").inc()
+        elif task.status == TaskStatus.open and task.assignee_id:
+            ASSIGNEE_RESOLVED.labels(result="matched").inc()
 
         # Score confidence
         confidence = _confidence_score(task)

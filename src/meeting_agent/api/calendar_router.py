@@ -28,6 +28,7 @@ from meeting_agent.integrations.google_calendar import (
     refresh_if_expired,
 )
 from meeting_agent.integrations.token_store import delete_token, has_token, load_token, save_token
+from meeting_agent.monitoring.metrics import CALENDAR_EVENTS_CREATED
 
 log = logging.getLogger(__name__)
 
@@ -132,16 +133,17 @@ async def sync_to_calendar(
 
     Returns a list of created event IDs and HTML links.
     """
-    from meeting_agent.pipeline.worker_task import celery_app
+    from meeting_agent.db.repository import get_meeting
+    from meeting_agent.db.models import FeedbackCorrection
+    from meeting_agent.db.engine import get_session
 
-    # Fetch meeting result
-    result = celery_app.AsyncResult(meeting_id)
-    if result.state not in ("SUCCESS",):
+    # Fetch meeting from DB (includes any feedback-corrected state)
+    meeting_data = get_meeting(meeting_id)
+    if meeting_data is None or meeting_data.get("status") not in ("completed", "done"):
         raise HTTPException(
             status_code=404,
-            detail=f"Meeting {meeting_id} not found or not yet completed (state={result.state})",
+            detail=f"Meeting {meeting_id} not found or not yet completed",
         )
-    meeting_data: dict = result.result
 
     # Get and possibly refresh token
     token = refresh_if_expired(user_id)
@@ -152,7 +154,38 @@ async def sync_to_calendar(
         )
 
     access_token: str = token["access_token"]
-    action_items: list[dict] = meeting_data.get("action_items", [])
+    action_items: list[dict] = list(meeting_data.get("action_items", []))
+
+    # Apply latest feedback corrections — override assignee/description if corrected
+    with get_session() as _sess:
+        rows = (
+            _sess.query(FeedbackCorrection)
+            .filter(
+                FeedbackCorrection.meeting_id == meeting_id,
+                FeedbackCorrection.is_false_positive.is_(False),
+                FeedbackCorrection.is_missing.is_(False),
+            )
+            .all()
+        )
+        # Eagerly read all attributes inside session to avoid DetachedInstanceError
+        correction_map: dict[str, dict] = {
+            c.task_id: {
+                "corrected_assignee": c.corrected_assignee,
+                "corrected_description": c.corrected_description,
+                "corrected_due_date": c.corrected_due_date.isoformat() if c.corrected_due_date else None,
+            }
+            for c in rows if c.task_id
+        }
+
+    for item in action_items:
+        c = correction_map.get(item.get("task_id", ""))
+        if c:
+            if c["corrected_assignee"]:
+                item["assignee"] = c["corrected_assignee"]
+            if c["corrected_description"]:
+                item["description"] = c["corrected_description"]
+            if c["corrected_due_date"]:
+                item["due_date"] = c["corrected_due_date"]
 
     if not action_items:
         return {"meeting_id": meeting_id, "events_created": 0, "events": []}
@@ -195,6 +228,7 @@ async def sync_to_calendar(
                 "html_link": event.get("htmlLink"),
                 "due_date": due,
             })
+            CALENDAR_EVENTS_CREATED.inc()
         except Exception as e:
             log.warning("Failed to create Calendar event for task '%s': %s", title, e)
             errors.append({"task": title, "error": str(e)})

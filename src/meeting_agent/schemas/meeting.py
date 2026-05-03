@@ -60,6 +60,8 @@ class MeetingSummary(BaseModel):
     processed_at: datetime | None = None
     duration_ms: int | None = None
     participants: list[str] = Field(default_factory=list)
+    meeting_participants: list[dict] = Field(default_factory=list)
+    transcript_turns: list[dict] = Field(default_factory=list)
     summary_text: str | None = None
     action_items: list[ExtractedTask] = Field(default_factory=list)
     unresolved_items: list[ExtractedTask] = Field(default_factory=list)

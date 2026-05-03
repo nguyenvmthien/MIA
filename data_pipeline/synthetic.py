@@ -13,8 +13,11 @@ import json
 import logging
 import random
 import re
+import sys
 from datetime import date, timedelta
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import ollama as ollama_client
 
@@ -133,12 +136,9 @@ def _generate_one(topic: str, participants: list[tuple], meeting_date: str) -> d
             options={"temperature": 0.8, "seed": random.randint(0, 9999)},
         )
         raw = response["message"]["content"].strip()
-        # Strip markdown fences
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        data = json.loads(raw)
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
+        data = json.loads(raw.strip())
         grounded_items = _filter_grounded_action_items(data)
         # Reject samples where model output has ungrounded or missing action items.
         if (data.get("action_items") or []) and not grounded_items:
