@@ -18,6 +18,7 @@ import os
 import secrets
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 from fastapi.responses import RedirectResponse
 
 from meeting_agent.integrations.google_calendar import (
@@ -99,6 +100,21 @@ async def revoke_google_token(user_id: str):
     if not deleted:
         raise HTTPException(status_code=404, detail=f"No token found for user '{user_id}'")
     return {"user_id": user_id, "disconnected": True}
+
+
+class _DirectTokenBody(BaseModel):
+    user_id: str
+    access_token: str
+
+
+@router.post("/auth/google/token-direct", tags=["calendar"])
+async def store_token_direct(body: _DirectTokenBody):
+    """
+    Accept an access token obtained by the Next.js frontend (NextAuth)
+    and persist it so the backend can call the Calendar API on behalf of the user.
+    """
+    save_token(body.user_id, {"access_token": body.access_token})
+    return {"user_id": body.user_id, "stored": True}
 
 
 # ── Calendar sync ─────────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 """FastAPI application — entry point for the Meeting AI Agent REST API."""
 
 import json
+import os
 import shutil
 import time
 import uuid
@@ -8,6 +9,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, status
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -70,6 +72,14 @@ app = FastAPI(
     description="Upload meeting audio → get structured action items",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:3001", os.environ.get("FRONTEND_URL", "")],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 if STATIC_DIR.exists():
