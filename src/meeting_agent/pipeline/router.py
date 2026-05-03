@@ -206,25 +206,70 @@ def _build_router() -> InferenceRouter | None:
 _router: InferenceRouter | None = _build_router()
 
 
-def routed_chat(model: str, messages: list[dict], options: dict | None = None) -> dict:
+def routed_chat(
+    model: str,
+    messages: list[dict],
+    options: dict | None = None,
+    meeting_id: str | None = None,
+) -> dict:
     """
     Drop-in replacement for `ollama.chat(...)`.
 
     - When OLLAMA_ENDPOINTS is set: routes through the InferenceRouter.
     - Otherwise: falls back to the standard ollama library.
+    - When an A/B test is active and meeting_id is provided, overrides model selection.
     """
-    if _router is not None:
-        return _router.chat(model, messages, options)
+    # A/B model override
+    effective_model = model
+    ab_experiment_id: str | None = None
+    if meeting_id:
+        try:
+            import sys
+            from pathlib import Path as _Path
+            sys.path.insert(0, str(_Path(__file__).parent.parent.parent.parent / "train"))
+            from ab_test import get_model_for_meeting, load_state as _ab_load_state
+            effective_model = get_model_for_meeting(meeting_id)
+            if effective_model != model:
+                log.info("A/B override: meeting=%s model=%s→%s", meeting_id, model, effective_model)
+            _ab_state = _ab_load_state()
+            ab_experiment_id = _ab_state.get("experiment_id") if _ab_state.get("active") else None
+        except Exception as e:
+            log.debug("A/B test lookup failed (non-fatal): %s", e)
 
-    # Single-endpoint fallback — use Client so OLLAMA_BASE_URL is respected
-    import ollama as ollama_client  # type: ignore
-    client = ollama_client.Client(host=settings.ollama_base_url)
-    response = client.chat(
-        model=model,
-        messages=messages,
-        options=options or {},
-    )
-    return response.model_dump()  # type: ignore[union-attr]
+    start_ms = time.monotonic() * 1000
+
+    if _router is not None:
+        result = _router.chat(effective_model, messages, options)
+    else:
+        import ollama as ollama_client  # type: ignore
+        client = ollama_client.Client(host=settings.ollama_base_url)
+        response = client.chat(
+            model=effective_model,
+            messages=messages,
+            options=options or {},
+        )
+        result = response.model_dump()  # type: ignore[union-attr]
+
+    # Log A/B result metrics
+    if meeting_id and ab_experiment_id:
+        try:
+            from ab_test import log_result as _ab_log
+            latency_ms = time.monotonic() * 1000 - start_ms
+            eval_count = result.get("eval_count") or 0
+            prompt_count = result.get("prompt_eval_count") or 0
+            _ab_log(
+                experiment_id=ab_experiment_id,
+                model=effective_model,
+                meeting_id=meeting_id,
+                metrics={
+                    "llm_latency_ms": round(latency_ms, 1),
+                    "total_tokens": eval_count + prompt_count,
+                },
+            )
+        except Exception as e:
+            log.debug("A/B result logging failed (non-fatal): %s", e)
+
+    return result
 
 
 def router_stats() -> list[dict]:

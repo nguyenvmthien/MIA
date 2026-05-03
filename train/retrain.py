@@ -97,6 +97,49 @@ def _export_feedback_as_training_data(out_path: str) -> int:
     return count
 
 
+def _get_champion_f1() -> float:
+    """Return F1 of current Production model from MLflow, or 0 if unavailable."""
+    try:
+        import mlflow
+        client = mlflow.MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
+        versions = client.get_latest_versions("meeting-agent-qwen", stages=["Production"])
+        if versions:
+            run = client.get_run(versions[0].run_id)
+            return float(run.data.metrics.get("eval_f1", 0))
+    except Exception as e:
+        log.debug("MLflow champion lookup failed: %s", e)
+    # Fallback: read from local state
+    state = _load_state()
+    for run in reversed(state.get("runs", [])):
+        f1 = run.get("eval_result", {}).get("avg_f1")
+        if f1 is not None and run.get("promoted"):
+            return f1
+    return 0.0
+
+
+def _promote_mlflow_model(eval_result: dict) -> None:
+    """Transition the latest Staging model to Production in MLflow."""
+    try:
+        import mlflow
+        client = mlflow.MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
+        versions = client.get_latest_versions("meeting-agent-qwen", stages=["Staging"])
+        if not versions:
+            log.warning("No Staging model found in MLflow to promote")
+            return
+        v = versions[0]
+        client.transition_model_version_stage(
+            name="meeting-agent-qwen",
+            version=v.version,
+            stage="Production",
+            archive_existing_versions=True,
+        )
+        client.set_model_version_tag(v.name, v.version, "eval_f1", str(eval_result.get("avg_f1", "")))
+        client.set_model_version_tag(v.name, v.version, "promoted_at", datetime.utcnow().isoformat())
+        log.info("MLflow: model version %s promoted to Production", v.version)
+    except Exception as e:
+        log.warning("MLflow promotion failed (non-fatal): %s", e)
+
+
 def should_retrain(force: bool = False) -> tuple[bool, str]:
     """
     Return (should_retrain, reason).
@@ -166,6 +209,43 @@ def run_retrain(force: bool = False) -> dict:
     else:
         log.error("Fine-tuning failed:\n%s", result.stderr[-2000:])
 
+    # ── CI gate: evaluate new model vs champion ───────────────────────────────
+    eval_result = {}
+    promoted = False
+    if success:
+        gold_path = os.environ.get("EVAL_GOLD_PATH", "data/eval/gold_smoke.jsonl")
+        if Path(gold_path).exists():
+            log.info("Running CI eval gate on %s ...", gold_path)
+            eval_cmd = [
+                sys.executable, "train/evaluate.py",
+                "--gold", gold_path,
+                "--mode", "finetuned",
+                "--out", "data/training/.ci_eval_result.json",
+            ]
+            eval_env = {**os.environ, "EVAL_FINETUNED_MODEL": RETRAIN_OUTPUT_DIR}
+            eval_proc = subprocess.run(eval_cmd, capture_output=True, text=True, env=eval_env)
+            ci_passed = eval_proc.returncode == 0
+
+            if Path("data/training/.ci_eval_result.json").exists():
+                eval_result = json.loads(Path("data/training/.ci_eval_result.json").read_text())
+
+            # Compare against champion in MLflow
+            champion_f1 = _get_champion_f1()
+            new_f1 = eval_result.get("avg_f1", 0)
+            f1_drop = champion_f1 - new_f1
+
+            if not ci_passed:
+                log.warning("CI gate: precision < 0.70, NOT promoting model")
+            elif f1_drop > 0.05:
+                log.warning("CI gate: F1 dropped %.3f vs champion (%.3f→%.3f), NOT promoting",
+                            f1_drop, champion_f1, new_f1)
+            else:
+                promoted = True
+                log.info("CI gate PASSED (F1=%.3f, champion=%.3f), promoting model", new_f1, champion_f1)
+                _promote_mlflow_model(eval_result)
+        else:
+            log.warning("Gold eval set not found at %s — skipping CI gate", gold_path)
+
     # Update state
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
     from meeting_agent.pipeline.feedback import load_feedback
@@ -179,6 +259,8 @@ def run_retrain(force: bool = False) -> dict:
         "feedback_corrections_included": exported,
         "success": success,
         "output_dir": RETRAIN_OUTPUT_DIR,
+        "eval_result": eval_result,
+        "promoted": promoted,
     }
     state["last_correction_count"] = current_count
     state["last_retrain_at"] = run_record["triggered_at"]
@@ -191,6 +273,8 @@ def run_retrain(force: bool = False) -> dict:
         "data_files": data_files,
         "output_dir": RETRAIN_OUTPUT_DIR,
         "corrections_included": exported,
+        "eval_f1": eval_result.get("avg_f1"),
+        "promoted": promoted,
     }
 
 

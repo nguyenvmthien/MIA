@@ -8,12 +8,15 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, status
+from pydantic import BaseModel
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
 # Import metrics so they are registered in the API process (required for /metrics to expose them)
 import meeting_agent.monitoring.metrics  # noqa: F401
+from meeting_agent.api.calendar_router import router as calendar_router
+from meeting_agent.api.ws_router import router as ws_router
 from meeting_agent.config import settings
 from meeting_agent.pipeline.feedback import FeedbackSubmission, feedback_stats, save_feedback
 from meeting_agent.pipeline.router import router_stats
@@ -71,6 +74,9 @@ app = FastAPI(
 
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+app.include_router(calendar_router)
+app.include_router(ws_router)
 
 
 @app.middleware("http")
@@ -231,6 +237,78 @@ async def get_retrain_state():
 async def get_router_stats():
     """Per-endpoint health, in-flight count, and error rate for the inference router."""
     return router_stats()
+
+
+# ── A/B test admin endpoints ──────────────────────────────────────────────────
+
+def _ab_module():
+    import sys
+    from pathlib import Path as _Path
+    train_dir = str(_Path(__file__).parent.parent.parent.parent.parent / "train")
+    if train_dir not in sys.path:
+        sys.path.insert(0, train_dir)
+    import ab_test
+    return ab_test
+
+
+@app.get("/admin/ab-test/status", tags=["ops"])
+async def ab_test_status():
+    """Return current A/B test state."""
+    ab = _ab_module()
+    return ab.load_state()
+
+
+class ABTestStartRequest(BaseModel):
+    model_b: str
+    traffic: float = 0.1
+
+
+@app.post("/admin/ab-test/start", tags=["ops"])
+async def ab_test_start(req: ABTestStartRequest):
+    """Start an A/B test between the current champion and a challenger model."""
+    if req.traffic <= 0 or req.traffic >= 1:
+        raise HTTPException(status_code=422, detail="traffic must be between 0 and 1 exclusive")
+    ab = _ab_module()
+    import uuid as _uuid
+    import os as _os
+    from datetime import datetime as _dt
+    model_a = _os.environ.get("OLLAMA_LLM_MODEL", "qwen2.5:3b")
+    experiment_id = f"ab_{_dt.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    state = {
+        "active": True,
+        "experiment_id": experiment_id,
+        "model_a": model_a,
+        "model_b": req.model_b,
+        "traffic_b": req.traffic,
+        "started_at": _dt.utcnow().isoformat(),
+    }
+    ab.save_state(state)
+    return state
+
+
+@app.delete("/admin/ab-test/stop", tags=["ops"])
+async def ab_test_stop():
+    """Stop the active A/B test and return aggregated results."""
+    ab = _ab_module()
+    from datetime import datetime as _dt
+    state = ab.load_state()
+    if not state.get("active"):
+        raise HTTPException(status_code=404, detail="No active A/B test")
+    state["active"] = False
+    state["stopped_at"] = _dt.utcnow().isoformat()
+    ab.save_state(state)
+    results = ab.get_results(state["experiment_id"])
+    return {"state": state, "results": results}
+
+
+@app.get("/admin/ab-test/results", tags=["ops"])
+async def ab_test_results():
+    """Return aggregated A/B test results for the current (or last) experiment."""
+    ab = _ab_module()
+    results = ab.get_results()
+    if not results:
+        raise HTTPException(status_code=404, detail="No experiment results found")
+    return results
 
 
 @app.get("/feedback/stats", tags=["meetings"])

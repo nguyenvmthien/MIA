@@ -1,0 +1,290 @@
+\chapter{Phương pháp}
+\label{chap:method}
+
+\section{Tổng quan Pipeline}
+
+Hệ thống được thiết kế theo mô hình pipeline tuần tự gồm 6 stage. Hình~\ref{fig:pipeline_overview} mô tả luồng dữ liệu tổng thể từ file audio đến kết quả cuối cùng.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  stage/.style={rectangle, rounded corners=6pt, minimum width=2.6cm,
+                minimum height=1.2cm, align=center, font=\small\bfseries,
+                drop shadow},
+  s1/.style={stage, draw=primary, fill=stagecolor1},
+  s2/.style={stage, draw=primary, fill=stagecolor2},
+  s3/.style={stage, draw=primary, fill=stagecolor3},
+  s4/.style={stage, draw=primary, fill=stagecolor4},
+  s5/.style={stage, draw=primary, fill=stagecolor5},
+  s6/.style={stage, draw=primary, fill=stagecolor6},
+  arr/.style={-{Stealth[scale=1.3]}, ultra thick, primary!70},
+  sub/.style={font=\scriptsize, text=darkgray, align=center, text width=2.6cm},
+  io/.style={ellipse, draw=gray, fill=gray!15, font=\small, align=center, text width=1.8cm},
+]
+  \node[io] (inp) {Audio\\MP3/WAV};
+
+  \node[s1, right=1cm of inp] (ingest)    {1. Ingest};
+  \node[s2, right=1.2cm of ingest] (prep) {2. Pre-\\process};
+  \node[s3, right=1.2cm of prep] (stt)    {3. STT +\\Diarize};
+  \node[s4, right=1.2cm of stt] (orch)    {4. LLM\\Orchestrate};
+  \node[s5, right=1.2cm of orch] (assign) {5. Assign};
+  \node[s6, right=1.2cm of assign] (emit) {6. Emit};
+  \node[io, right=1cm of emit] (out)      {Meeting\\Summary};
+
+  \draw[arr] (inp) -- (ingest);
+  \draw[arr] (ingest) -- (prep);
+  \draw[arr] (prep) -- (stt);
+  \draw[arr] (stt) -- (orch);
+  \draw[arr] (orch) -- (assign);
+  \draw[arr] (assign) -- (emit);
+  \draw[arr] (emit) -- (out);
+
+  \node[sub, below=0.5cm of ingest]  {Validate\\& store};
+  \node[sub, below=0.5cm of prep]    {ffmpeg\\16kHz WAV};
+  \node[sub, below=0.5cm of stt]     {WhisperX\\Pyannote};
+  \node[sub, below=0.5cm of orch]    {Qwen2.5-3B\\+ Guardrails};
+  \node[sub, below=0.5cm of assign]  {Roster match\\+ Confidence};
+  \node[sub, below=0.5cm of emit]    {JSON output\\+ Metrics};
+\end{tikzpicture}
+\caption{Tổng quan pipeline 6 stage của Meeting AI Agent.}
+\label{fig:pipeline_overview}
+\end{figure}
+
+\section{Kỹ thuật NLP và LLM}
+
+\subsection{Stage 3: Nhận dạng Giọng nói và Người nói}
+
+Quá trình xử lý âm thanh trong \texttt{pipeline/stt.py} gồm bốn bước nối tiếp, mỗi bước bổ sung thêm thông tin vào cấu trúc dữ liệu trung gian (Hình~\ref{fig:stt_detail}).
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  proc/.style={rectangle, rounded corners=5pt, draw=primary!70, fill=stagecolor3,
+               text width=3.8cm, align=center, minimum height=1.4cm, font=\small},
+  data/.style={rectangle, rounded corners=2pt, draw=gray, fill=lightgray,
+               text width=3.8cm, align=center, minimum height=0.9cm,
+               font=\scriptsize\ttfamily},
+  arr/.style={-{Stealth}, thick, primary!60},
+]
+  \matrix[column sep=1.4cm, row sep=0.5cm] {
+    \node[proc] (p1) {\textbf{WhisperX ASR}\\\texttt{model.transcribe()}}; &
+    \node[proc] (p2) {\textbf{Word Alignment}\\\texttt{whisperx.align()}}; &
+    \node[proc] (p3) {\textbf{Diarization}\\\texttt{pyannote pipeline}}; &
+    \node[proc] (p4) {\textbf{Speaker Assign}\\\texttt{assign\_word\_speakers()}}; \\
+    \node[data] (d1) {segments: [\\\ \ \{start, end, text\}\\]}; &
+    \node[data] (d2) {words: [\\\ \ \{word, start, end,\\\  score\}\\]}; &
+    \node[data] (d3) {diarize\_segments:\\\ SPEAKER\_00: 0–12s\\\ SPEAKER\_01: 12–25s}; &
+    \node[data] (d4) {TranscriptTurn\\speaker\_id, text,\\start\_ms, asr\_conf}; \\
+  };
+  \draw[arr] (p1) -- (p2);
+  \draw[arr] (p2) -- (p3);
+  \draw[arr] (p3) -- (p4);
+  \draw[arr] (p1) -- (d1);
+  \draw[arr] (p2) -- (d2);
+  \draw[arr] (p3) -- (d3);
+  \draw[arr] (p4) -- (d4);
+\end{tikzpicture}
+\caption{Luồng xử lý chi tiết trong Stage 3 (STT + Diarization).}
+\label{fig:stt_detail}
+\end{figure}
+
+\subsection{Stage 4: LLM Orchestration với Few-Shot Prompting}
+
+Đây là core của hệ thống. Transcript được chia thành các chunk $\leq 2000$ tokens. Với mỗi chunk, hệ thống xây dựng prompt theo cấu trúc (Hình~\ref{fig:prompt_structure}):
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  block/.style={rectangle, draw=primary!60, fill=light, rounded corners=4pt,
+                text width=11cm, align=left, font=\small, inner sep=8pt},
+  label/.style={font=\small\bfseries, text=primary},
+  arr/.style={-{Stealth}, thick, secondary},
+]
+  \node[block] (sys) {
+    \textbf{[SYSTEM PROMPT]}\\
+    \texttt{You are a meeting analyst...}\\
+    \texttt{RULES: Only extract tasks explicitly stated...}\\
+    \texttt{WORKER ROSTER: \{roster\}}\\
+    \texttt{FEW-SHOT EXAMPLES: ...}
+  };
+
+  \node[block, below=0.3cm of sys] (usr) {
+    \textbf{[USER PROMPT]}\\
+    \texttt{MEETING DATE: 2026-04-29}\\
+    \texttt{PARTICIPANTS: Alice Chen, Bob Kim}\\
+    \texttt{TRANSCRIPT SEGMENT:}\\
+    \texttt{[Alice Chen]: Can you finalize the report by Friday Bob?}\\
+    \texttt{[Bob Kim]: Sure, I'll have it done.}\\
+    \texttt{RELEVANT CONTEXT: (từ FAISS RAG)}
+  };
+
+  \node[block, below=0.3cm of usr, fill=stagecolor2] (out) {
+    \textbf{[LLM OUTPUT → Guardrails]}\\
+    \texttt{[\{"description": "Finalize report",}\\
+    \texttt{\ \ "assignee": "Bob Kim",}\\
+    \texttt{\ \ "due\_date": "2026-05-01", "priority": "high"\}]}
+  };
+
+  \draw[arr] (sys) -- (usr) node[midway, right=2pt, font=\scriptsize] {};
+  \draw[arr] (usr) -- (out) node[midway, right=2pt, font=\scriptsize, text=secondary] {Qwen2.5-3B};
+\end{tikzpicture}
+\caption{Cấu trúc prompt few-shot cho trích xuất action items.}
+\label{fig:prompt_structure}
+\end{figure}
+
+\subsection{FAISS Speaker RAG}
+
+Để tăng ngữ cảnh mà không làm tăng kích thước prompt tuyến tính, hệ thống xây dựng FAISS index từ toàn bộ transcript (Hình~\ref{fig:rag_flow}). Vector embedding được tạo bởi model \texttt{nomic-embed-text} qua Ollama.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  box/.style={rectangle, rounded corners=4pt, draw=primary!60, fill=light,
+              align=center, font=\small, inner sep=8pt},
+  arr/.style={-{Stealth[scale=1.1]}, thick},
+  faiss/.style={cylinder, draw=secondary, fill=stagecolor3,
+                shape border rotate=90, minimum height=1.5cm,
+                minimum width=2.5cm, align=center, font=\small},
+]
+  \node[box] (turns)  {TranscriptTurns\\(toàn bộ)};
+  \node[box, right=1.5cm of turns] (embed) {nomic-embed-text\\(Ollama)};
+  \node[faiss, right=1.5cm of embed] (faiss) {FAISS\\IndexFlatIP};
+
+  \node[box, below=1.5cm of faiss] (query) {Chunk hiện tại\\(query text)};
+  \node[box, left=1.5cm of query] (topk) {Top-3 relevant\\turns (context)};
+  \node[box, left=1.5cm of topk] (prompt) {Prompt assembly\\+ RAG context};
+
+  \draw[-{Stealth}, thick, primary] (turns) -- (embed) node[midway,above,font=\scriptsize] {embed};
+  \draw[-{Stealth}, thick, primary] (embed) -- (faiss) node[midway,above,font=\scriptsize] {add vectors};
+  \draw[-{Stealth}, thick, secondary] (query) -- (faiss) node[midway,right,font=\scriptsize] {query};
+  \draw[-{Stealth}, thick, secondary] (faiss) -- (topk) node[midway,below,font=\scriptsize] {search};
+  \draw[-{Stealth}, thick, secondary] (topk) -- (prompt);
+
+  \node[above=0.2cm of faiss, font=\scriptsize\bfseries, text=secondary] {Build (1×/meeting)};
+  \node[above=0.2cm of query, font=\scriptsize\bfseries, text=secondary] {Query (1×/chunk)};
+\end{tikzpicture}
+\caption{Luồng FAISS Speaker RAG trong Meeting AI Agent.}
+\label{fig:rag_flow}
+\end{figure}
+
+\section{Thu thập và Tiền xử lý Dữ liệu}
+
+\subsection{Nguồn dữ liệu}
+
+Dữ liệu training được tổng hợp từ hai nguồn chính (Hình~\ref{fig:data_pipeline}):
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  src/.style={rectangle, rounded corners=6pt, draw=accent, fill=stagecolor2,
+              text width=3cm, align=center, minimum height=1.2cm, font=\small},
+  proc/.style={rectangle, rounded corners=4pt, draw=primary, fill=light,
+               text width=3cm, align=center, minimum height=1cm, font=\small},
+  store/.style={cylinder, draw=secondary, fill=stagecolor3, shape border rotate=90,
+                minimum height=1.2cm, minimum width=3cm, align=center, font=\small},
+  arr/.style={-{Stealth}, thick, gray},
+]
+  % Sources
+  \node[src] (syn) {Synthetic\\meetings\\(LLM-generated)};
+  \node[src, below=1cm of syn] (real) {Real audio\\(collected.py)};
+  \node[src, below=1cm of real] (fb)  {User feedback\\corrections};
+
+  % Processing
+  \node[proc, right=2cm of syn]  (synp) {synthetic\_to\_audio\\TTS → MP3};
+  \node[proc, right=2cm of real] (colp) {collect.py\\Audio → JSONL};
+  \node[proc, right=2cm of fb]   (fbp)  {retrain.py\\export corrections};
+
+  % Validation
+  \node[proc, right=2cm of synp, yshift=-1cm] (val) {validate.py\\Schema/Bias check};
+
+  % Storage
+  \node[store, right=2cm of val] (jsonl) {Training JSONL\\(combined)};
+
+  % Fine-tune
+  \node[proc, right=2cm of jsonl] (ft) {finetune.py\\QLoRA};
+
+  \draw[arr] (syn) -- (synp);
+  \draw[arr] (real) -- (colp);
+  \draw[arr] (fb) -- (fbp);
+  \draw[arr] (synp) -- (val);
+  \draw[arr] (colp) -- (val);
+  \draw[arr] (fbp) -- (val);
+  \draw[arr] (val) -- (jsonl);
+  \draw[arr] (jsonl) -- (ft);
+\end{tikzpicture}
+\caption{Data pipeline: từ nguồn dữ liệu đến fine-tuning.}
+\label{fig:data_pipeline}
+\end{figure}
+
+\subsection{Định dạng JSONL Training}
+
+Mỗi mẫu training có dạng:
+\begin{lstlisting}[language=Python3, caption={Định dạng JSONL cho training data.}]
+{
+  "transcript": "[Alice]: Can you finalize the Q2 report Bob?",
+  "meeting_date": "2026-04-29",
+  "participants": "Alice, Bob",
+  "action_items": [{
+    "description": "Finalize Q2 report",
+    "assignee": "Bob",
+    "due_date": "2026-05-02",
+    "priority": "high",
+    "notes": null
+  }]
+}
+\end{lstlisting}
+
+\section{Chiến lược Fine-tuning}
+
+\subsection{QLoRA}
+
+QLoRA~\cite{dettmers2023qlora} kết hợp hai kỹ thuật: (1)~quantization 4-bit NormalFloat cho base model (giảm bộ nhớ $\approx$4×) và (2)~LoRA~\cite{hu2021lora} cho low-rank adapter layers. Chỉ adapter được cập nhật trong quá trình training, giữ nguyên base model weights. Điều này cho phép fine-tune Qwen2.5-3B trên GPU consumer 8GB VRAM.
+
+\begin{equation}
+W' = W_0 + \Delta W = W_0 + BA
+\end{equation}
+trong đó $W_0 \in \mathbb{R}^{d \times k}$ là weight gốc đã quantize, $B \in \mathbb{R}^{d \times r}$, $A \in \mathbb{R}^{r \times k}$ là các adapter matrix với rank $r \ll \min(d, k)$.
+
+\subsection{Vòng lặp Tự động Fine-tuning}
+
+Hình~\ref{fig:retrain_loop} mô tả vòng lặp feedback-to-retrain hoàn chỉnh:
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  node distance=1.4cm,
+  box/.style={rectangle, rounded corners=5pt, draw=primary, fill=light,
+              text width=3cm, align=center, minimum height=1.1cm, font=\small},
+  decision/.style={diamond, draw=secondary, fill=stagecolor3,
+                   text width=2cm, align=center, font=\small},
+  arr/.style={-{Stealth[scale=1.2]}, thick, primary!70},
+  redarr/.style={-{Stealth[scale=1.2]}, thick, red!60},
+  greenarr/.style={-{Stealth[scale=1.2]}, thick, accent},
+]
+  \node[box] (api)     {POST /meetings\\(kết quả)};
+  \node[box, right=1.8cm of api] (fb)  {POST /feedback\\(corrections)};
+  \node[box, right=1.8cm of fb] (store) {\_feedback.jsonl\\storage};
+  \node[decision, below=1.4cm of store] (check) {corrections\\$\geq$ 50?};
+  \node[box, left=1.8cm of check] (export) {Export feedback\\→ JSONL};
+  \node[box, left=1.8cm of export] (train) {finetune.py\\QLoRA training};
+  \node[box, below=1.2cm of train] (deploy) {Deploy model\\→ Ollama};
+  \node[box, below=1.2cm of api] (better) {Improved model\\in production};
+
+  \draw[arr] (api) -- (fb);
+  \draw[arr] (fb) -- (store);
+  \draw[arr] (store) -- (check);
+  \draw[redarr] (check) -- node[right,font=\scriptsize]{Không} ++(2.5,0)
+    node[box,draw=red!60,fill=red!8,right] {Chờ thêm\\corrections};
+  \draw[greenarr] (check) -- node[above,font=\scriptsize]{Có} (export);
+  \draw[arr] (export) -- (train);
+  \draw[arr] (train) -- (deploy);
+  \draw[arr] (deploy) -- (better);
+  \draw[arr] (better) -- (api);
+
+  % Celery Beat
+  \node[above=0.3cm of check, font=\scriptsize\itshape, text=gray]
+    {Celery Beat: check mỗi 24h};
+\end{tikzpicture}
+\caption{Vòng lặp tự động fine-tuning dựa trên user feedback.}
+\label{fig:retrain_loop}
+\end{figure}

@@ -1,3 +1,7 @@
+seminar/
+data/
+final_report/
+
 # Python
 __pycache__/
 *.py[cod]

@@ -1,0 +1,130 @@
+\chapter{Giới thiệu}
+
+\section{Bối cảnh và Động lực}
+
+Cuộc họp là một phần không thể thiếu trong môi trường làm việc hiện đại. Theo nghiên cứu Work Trend Index của Microsoft~\cite{microsoft2022}, một nhân viên tri thức trung bình dành hơn 57\% thời gian làm việc cho các cuộc họp và giao tiếp. Vấn đề cốt lõi không nằm ở tần suất họp mà ở \emph{chất lượng đầu ra}: thông tin từ cuộc họp thường không được ghi lại đầy đủ và có cấu trúc, dẫn đến action items bị bỏ sót, người phụ trách không rõ ràng và không có deadline cụ thể.
+
+Hình~\ref{fig:meeting_problem} minh hoạ vòng lặp thiếu hiệu quả phổ biến trong môi trường doanh nghiệp hiện nay.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  node distance=1.6cm,
+  box/.style={rectangle, rounded corners=6pt, draw=primary, fill=light,
+              text width=3.2cm, align=center, font=\small, minimum height=1cm},
+  problem/.style={rectangle, rounded corners=6pt, draw=red!70, fill=red!10,
+                  text width=3.2cm, align=center, font=\small, minimum height=1cm},
+  arr/.style={-{Stealth[scale=1.2]}, thick, primary},
+  redarr/.style={-{Stealth[scale=1.2]}, thick, red!70},
+]
+  \node[box] (meet)   {Cuộc họp diễn ra};
+  \node[box, right=of meet] (notes) {Ghi chú thủ công};
+  \node[problem, right=of notes] (lost) {Thông tin bị mất / sai sót};
+  \node[problem, below=of lost] (noowner) {Không rõ người phụ trách};
+  \node[problem, below=of noowner] (nodeadline) {Không có deadline};
+  \node[problem, below=of meet, xshift=1.6cm] (followup) {Follow-up thất bại};
+
+  \draw[arr] (meet) -- (notes);
+  \draw[arr] (notes) -- (lost);
+  \draw[redarr] (lost) -- (noowner);
+  \draw[redarr] (noowner) -- (nodeadline);
+  \draw[redarr] (nodeadline) -| (followup);
+  \draw[redarr] (followup) -- (meet);
+
+  \node[above=0.2cm of lost, font=\footnotesize\itshape, text=red!70] {Điểm thất bại};
+\end{tikzpicture}
+\caption{Vòng lặp thiếu hiệu quả trong quản lý thông tin cuộc họp truyền thống.}
+\label{fig:meeting_problem}
+\end{figure}
+
+Sự xuất hiện của các mô hình ngôn ngữ lớn (LLM) đã mở ra khả năng tự động hóa toàn bộ quy trình này: từ ghi âm → phiên âm → xác định người nói → trích xuất action items → phân công người phụ trách.
+
+\section{Bài toán NLP được Giải quyết}
+
+Dự án giải quyết ba bài toán NLP chính được xếp chồng theo thứ tự pipeline (Hình~\ref{fig:nlp_tasks}):
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  task/.style={rectangle, rounded corners=8pt, draw=primary, fill=light,
+               text width=4.5cm, align=center, minimum height=1.4cm, font=\small},
+  arrow/.style={-{Stealth[scale=1.3]}, ultra thick, primary!70},
+  label/.style={font=\footnotesize, text=darkgray, align=center, text width=3cm},
+]
+  \node[task] (asr) {\textbf{(1) ASR}\\ Automatic Speech\\ Recognition};
+  \node[task, right=2.5cm of asr] (dia) {\textbf{(2) Diarization}\\ Speaker\\ Identification};
+  \node[task, right=2.5cm of dia] (ie) {\textbf{(3) IE}\\ Action Item\\ Extraction};
+
+  \draw[arrow] (asr) -- (dia);
+  \draw[arrow] (dia) -- (ie);
+
+  \node[label, below=0.5cm of asr] {Audio → Text\\WhisperX};
+  \node[label, below=0.5cm of dia] {Who said what\\Pyannote};
+  \node[label, below=0.5cm of ie]  {Tasks, owners,\\deadlines\\Qwen2.5-3B};
+
+  % Input/Output
+  \node[left=1.2cm of asr, font=\small, text=gray] (inp) {Audio\\MP3/WAV};
+  \node[right=1.2cm of ie, font=\small, text=gray] (out) {MeetingSummary\\JSON};
+  \draw[arrow, gray] (inp) -- (asr);
+  \draw[arrow, gray] (ie) -- (out);
+\end{tikzpicture}
+\caption{Ba bài toán NLP xếp chồng trong hệ thống Meeting AI Agent.}
+\label{fig:nlp_tasks}
+\end{figure}
+
+\begin{enumerate}[leftmargin=*, label=\textbf{(\arabic*)}]
+  \item \textbf{Nhận dạng giọng nói (ASR):} Chuyển đổi âm thanh cuộc họp thành văn bản có độ chính xác cao, kể cả khi có nhiễu nền hoặc nhiều người nói đồng thời.
+
+  \item \textbf{Nhận dạng người nói (Speaker Diarization):} Xác định \emph{ai đang nói} trong từng đoạn thời gian. Đây là bài toán phân đoạn và gom nhóm giọng nói theo identity.
+
+  \item \textbf{Trích xuất thông tin có cấu trúc (Information Extraction):} Từ transcript ngôn ngữ tự nhiên, xác định các action items kèm người phụ trách, hạn chót và mức độ ưu tiên. Đây thực chất là bài toán Named Entity Recognition và Relation Extraction, được giải quyết bằng LLM với few-shot prompting.
+\end{enumerate}
+
+\section{Nguyên tắc LLMOps được Áp dụng}
+
+Dự án áp dụng toàn bộ vòng đời LLMOps~\cite{shankar2022mlops}, được minh hoạ trong Hình~\ref{fig:llmops_cycle}:
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  stage/.style={circle, draw=primary, fill=light, text width=2cm,
+                align=center, font=\scriptsize\bfseries, minimum size=2.2cm},
+  arr/.style={-{Stealth[scale=1.2]}, thick, primary!70},
+  lbl/.style={font=\scriptsize, text=darkgray, align=center, text width=2.5cm},
+]
+  \def\R{3.8}
+  \foreach \name/\angle/\col in {
+    Prompt\\Engineering/90/stagecolor1,
+    Guardrails/30/stagecolor2,
+    Caching/330/stagecolor3,
+    Monitoring/270/stagecolor4,
+    Feedback\\Loop/210/stagecolor5,
+    Fine-tuning/150/stagecolor6}
+  {
+    \node[circle, draw=primary!60, fill=\col, text width=1.8cm,
+          align=center, font=\scriptsize\bfseries, minimum size=1.9cm]
+      at (\angle:\R) {\name};
+  }
+
+  % Arrows around the circle
+  \foreach \a/\b in {90/30, 30/330, 330/270, 270/210, 210/150, 150/90}
+    \draw[arr] (\a:\R-1.0) arc[start angle=\a, end angle=\b, radius=\R-1.0];
+
+  \node[font=\small\bfseries, text=primary] at (0,0) {LLMOps\\Lifecycle};
+\end{tikzpicture}
+\caption{Vòng đời LLMOps được áp dụng trong Meeting AI Agent.}
+\label{fig:llmops_cycle}
+\end{figure}
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Prompt Engineering có phiên bản:} Templates được quản lý trong \texttt{prompts/templates.py} với biến \texttt{PROMPT\_VERSION = "v1"}.
+  \item \textbf{Guardrails:} Kiểm tra jailbreak/injection đầu vào; schema validation, hallucination detection và PII masking đầu ra.
+  \item \textbf{Observability:} Prometheus metrics cho mọi stage + anomaly detection Z-score.
+  \item \textbf{Caching:} Redis cache cho LLM calls, giảm latency và chi phí inference.
+  \item \textbf{Feedback Loop:} Người dùng submit corrections; hệ thống tự fine-tune khi tích lũy đủ dữ liệu.
+  \item \textbf{Container hoá:} Docker Compose với hỗ trợ GPU, GDPR delete endpoint.
+\end{itemize}
+
+\section{Cấu trúc Báo cáo}
+
+Báo cáo được tổ chức như sau: Chương~\ref{chap:litreview} tổng quan tài liệu liên quan. Chương~\ref{chap:method} trình bày phương pháp. Chương~\ref{chap:impl} mô tả chi tiết triển khai. Chương~\ref{chap:eval} đánh giá hệ thống. Chương~\ref{chap:challenge} thảo luận thách thức và hạn chế. Chương~\ref{chap:future} đề xuất hướng phát triển. Chương~\ref{chap:conclusion} kết luận.

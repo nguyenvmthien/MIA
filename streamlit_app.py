@@ -57,7 +57,9 @@ if "polling" not in st.session_state:
 
 # ── Main area ─────────────────────────────────────────────────────────────────
 
-tab_upload, tab_results, tab_feedback = st.tabs(["📤 Upload", "📋 Results", "✏️ Feedback"])
+tab_upload, tab_results, tab_feedback, tab_calendar, tab_live = st.tabs(
+    ["📤 Upload", "📋 Results", "✏️ Feedback", "📅 Google Calendar", "🎙️ Live Recording"]
+)
 
 # ── Tab 1: Upload ─────────────────────────────────────────────────────────────
 
@@ -386,3 +388,219 @@ with tab_feedback:
                     )
                 except Exception as e:
                     st.error(f"Failed to submit: {e}")
+
+# ── Tab 4: Google Calendar ────────────────────────────────────────────────────
+
+with tab_calendar:
+    st.header("📅 Google Calendar Integration")
+    st.markdown(
+        "Connect your Google account to automatically create Calendar events "
+        "for each action item extracted from a meeting."
+    )
+
+    # ── User ID input ─────────────────────────────────────────────────────────
+    cal_user_id = st.text_input(
+        "Your user ID",
+        value=st.session_state.get("cal_user_id", ""),
+        placeholder="e.g. alice@example.com",
+        help="Used to identify your stored Google token.",
+    )
+    if cal_user_id:
+        st.session_state["cal_user_id"] = cal_user_id
+
+    # ── Check connection status ───────────────────────────────────────────────
+    if cal_user_id:
+        try:
+            status_resp = httpx.get(
+                f"{API_URL}/auth/google/status/{cal_user_id}", timeout=5
+            )
+            connected = status_resp.json().get("connected", False)
+        except Exception:
+            connected = False
+
+        if connected:
+            st.success("Google Calendar: **connected** ✅")
+            if st.button("Disconnect Google Account", key="cal_disconnect"):
+                try:
+                    httpx.delete(f"{API_URL}/auth/google/token/{cal_user_id}", timeout=5)
+                    st.success("Disconnected.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Disconnect failed: {e}")
+        else:
+            st.warning("Google Calendar: **not connected**")
+            login_url = f"{API_URL}/auth/google/login?user_id={cal_user_id}"
+            st.markdown(
+                f'<a href="{login_url}" target="_blank">'
+                '<button style="background:#4285F4;color:white;border:none;'
+                'padding:8px 18px;border-radius:4px;cursor:pointer;font-size:14px;">'
+                "🔗 Connect Google Account</button></a>",
+                unsafe_allow_html=True,
+            )
+            st.caption(
+                "You will be redirected to Google's consent screen. "
+                "After granting access, return here to sync your meetings."
+            )
+
+    st.divider()
+
+    # ── Sync a meeting ────────────────────────────────────────────────────────
+    st.subheader("Sync Meeting Action Items")
+    sync_meeting_id = st.text_input(
+        "Meeting ID to sync",
+        value=st.session_state.get("meeting_id", ""),
+        placeholder="Paste a completed meeting ID",
+        key="cal_meeting_id",
+    )
+
+    if st.button("Create Calendar Events", disabled=not (cal_user_id and sync_meeting_id)):
+        if not cal_user_id:
+            st.error("Enter your user ID above first.")
+        elif not sync_meeting_id:
+            st.error("Enter a meeting ID.")
+        else:
+            with st.spinner("Creating Google Calendar events…"):
+                try:
+                    r = httpx.post(
+                        f"{API_URL}/meetings/{sync_meeting_id}/calendar-sync",
+                        params={"user_id": cal_user_id},
+                        timeout=30,
+                    )
+                    if r.status_code == 401:
+                        st.error(
+                            "Not authenticated. Connect your Google account above."
+                        )
+                    elif r.status_code == 404:
+                        st.error(r.json().get("detail", "Meeting not found or not yet completed."))
+                    else:
+                        r.raise_for_status()
+                        data = r.json()
+                        n = data.get("events_created", 0)
+                        st.success(f"Created **{n}** Calendar event(s).")
+                        for ev in data.get("events", []):
+                            link = ev.get("html_link", "")
+                            title = ev.get("task_description", "")
+                            due = ev.get("due_date", "")
+                            st.markdown(f"- [{title}]({link}) — due {due}")
+                        if data.get("errors"):
+                            st.warning(
+                                f"{len(data['errors'])} event(s) failed: "
+                                + "; ".join(e['task'] for e in data['errors'])
+                            )
+                except Exception as e:
+                    st.error(f"Sync failed: {e}")
+
+# ── Tab 5: Live Recording ─────────────────────────────────────────────────────
+
+with tab_live:
+    st.header("🎙️ Live Meeting Recording")
+    st.markdown(
+        "Record your meeting directly in the browser. Audio is streamed to the "
+        "server in real time and transcribed with WhisperX via Silero VAD segmentation."
+    )
+
+    live_language = st.selectbox(
+        "Transcription language",
+        options=["vi", "en", "zh", "ja", "ko"],
+        index=0,
+        format_func=lambda x: {"vi": "Vietnamese", "en": "English", "zh": "Chinese",
+                                "ja": "Japanese", "ko": "Korean"}.get(x, x),
+    )
+
+    WS_URL = API_URL.replace("http://", "ws://").replace("https://", "wss://")
+    ws_endpoint = f"{WS_URL}/ws/transcribe?language={live_language}"
+
+    # streamlit-webrtc approach
+    try:
+        from streamlit_webrtc import webrtc_streamer, WebRtcMode, AudioProcessorBase  # type: ignore
+        import av  # type: ignore
+        import asyncio
+        import websockets as _ws  # type: ignore
+
+        class _AudioStreamer(AudioProcessorBase):
+            """Forwards AudioFrame PCM bytes to the WebSocket transcription endpoint."""
+
+            def __init__(self):
+                self._ws_conn = None
+                self._loop = asyncio.new_event_loop()
+                self._transcripts: list[str] = []
+
+            def recv(self, frame: av.AudioFrame) -> av.AudioFrame:
+                pcm = frame.to_ndarray().tobytes()
+                try:
+                    self._loop.run_until_complete(self._send(pcm))
+                except Exception:
+                    pass
+                return frame
+
+            async def _send(self, pcm: bytes):
+                if self._ws_conn is None or self._ws_conn.closed:
+                    self._ws_conn = await _ws.connect(ws_endpoint)
+                await self._ws_conn.send(pcm)
+                try:
+                    msg = await asyncio.wait_for(self._ws_conn.recv(), timeout=0.05)
+                    data = json.loads(msg)
+                    if data.get("type") == "transcript":
+                        self._transcripts.append(data["text"])
+                except asyncio.TimeoutError:
+                    pass
+
+        st.info(
+            "Click **START** to begin recording. The browser will ask for microphone permission. "
+            "Transcription appears below in real time."
+        )
+
+        ctx = webrtc_streamer(
+            key="live-transcription",
+            mode=WebRtcMode.SENDONLY,
+            audio_processor_factory=_AudioStreamer,
+            media_stream_constraints={"audio": True, "video": False},
+            async_processing=False,
+        )
+
+        if ctx.audio_processor:
+            transcripts = ctx.audio_processor._transcripts
+            if transcripts:
+                st.subheader("Live Transcript")
+                for line in transcripts:
+                    st.write(f"▶ {line}")
+                full_text = " ".join(transcripts)
+                st.download_button(
+                    "Download Transcript",
+                    data=full_text,
+                    file_name="live_transcript.txt",
+                    mime="text/plain",
+                )
+        else:
+            st.caption("Waiting for microphone stream to start…")
+
+    except ImportError:
+        st.warning(
+            "**streamlit-webrtc** and **websockets** are required for live recording. "
+            "Install with:\n```\npip install streamlit-webrtc websockets av\n```\n\n"
+            "Once installed, restart the Streamlit app."
+        )
+        st.subheader("Alternative: Browser-based WebSocket test")
+        st.code(
+            f"""
+# Test the WebSocket endpoint directly from Python:
+import asyncio, websockets, json
+
+async def test():
+    async with websockets.connect("{ws_endpoint}") as ws:
+        # send PCM bytes from a file
+        import wave
+        with wave.open("your_meeting.wav") as wf:
+            while True:
+                chunk = wf.readframes(1600)  # 100 ms at 16 kHz
+                if not chunk:
+                    break
+                await ws.send(chunk)
+        await ws.send("END")
+        result = json.loads(await ws.recv())
+        print(result["full_transcript"])
+
+asyncio.run(test())
+""",
+            language="python",
+        )

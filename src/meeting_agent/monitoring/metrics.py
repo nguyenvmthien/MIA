@@ -30,6 +30,7 @@ LLM_TOKENS = Counter(
 HALLUCINATION_FLAGS = Counter(
     "meeting_hallucination_flags_total",
     "Number of suspected hallucinations detected by guardrail engine",
+    labelnames=["reason"],  # no_evidence | invalid_assignee | date_hallucination
 )
 
 SCHEMA_FAILURES = Counter(
@@ -65,8 +66,10 @@ JOBS_IN_FLIGHT = Gauge(
 def _preinit() -> None:
     JOBS_TOTAL.labels(status="completed")
     JOBS_TOTAL.labels(status="failed")
-    for stage in ("ingest", "preprocess", "stt", "llm", "assignment"):
+    for stage in ("ingest", "preprocess", "stt", "diarize", "llm", "guardrails", "assignment"):
         STAGE_LATENCY.labels(stage=stage)
+    for reason in ("no_evidence", "invalid_assignee", "date_hallucination"):
+        HALLUCINATION_FLAGS.labels(reason=reason)
 
 
 _preinit()

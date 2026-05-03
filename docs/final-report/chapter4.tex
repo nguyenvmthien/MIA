@@ -1,0 +1,401 @@
+\chapter{Triển khai Hệ thống}
+\label{chap:impl}
+
+\section{Kiến trúc Tổng thể}
+
+Hình~\ref{fig:architecture} trình bày kiến trúc hệ thống đầy đủ theo mô hình C4 Level 2 (Container diagram).
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  container/.style={rectangle, rounded corners=6pt, draw=primary, fill=light,
+                    text width=3.2cm, align=center, minimum height=1.4cm,
+                    font=\small, drop shadow},
+  external/.style={rectangle, rounded corners=6pt, draw=gray!60, fill=gray!10,
+                   text width=2.8cm, align=center, minimum height=1.2cm,
+                   font=\small},
+  store/.style={cylinder, draw=secondary!70, fill=stagecolor3,
+                shape border rotate=90, minimum height=1.2cm,
+                minimum width=2.5cm, align=center, font=\small},
+  arr/.style={-{Stealth[scale=1.1]}, thick},
+  primary_arr/.style={arr, primary},
+  gray_arr/.style={arr, gray},
+  dashed_arr/.style={arr, dashed, gray},
+  lbl/.style={font=\scriptsize, midway, fill=white, inner sep=2pt},
+]
+  % Row 1: Client
+  \node[external] (ui) {Streamlit UI\\:8501};
+
+  % Row 2: API + Workers
+  \node[container, below=1.4cm of ui, xshift=-3cm] (api) {FastAPI\\REST API\\:8000};
+  \node[container, below=1.4cm of ui, xshift=3cm] (worker) {Celery\\Worker};
+
+  % Row 3: Message Broker + Cache
+  \node[store, below=1.4cm of api, xshift=-1cm] (redis) {Redis\\Broker + Cache};
+  \node[store, below=1.4cm of worker, xshift=1cm] (fs) {File System\\audio / transcripts};
+
+  % Row 4: AI Services
+  \node[external, below=1.4cm of redis, xshift=-1.5cm] (ollama) {Ollama\\Qwen2.5-3B\\nomic-embed};
+  \node[external, below=1.4cm of redis, xshift=2.5cm] (prom) {Prometheus\\:9090};
+
+  % Row 5: Monitoring
+  \node[external, below=1.2cm of ollama, xshift=2.5cm] (grafana) {Grafana\\:3000};
+
+  % Connections
+  \draw[primary_arr] (ui) -- node[lbl]{REST/HTTP} (api);
+  \draw[primary_arr] (api) -- node[lbl]{Celery task} (worker);
+  \draw[primary_arr] (api) -- node[lbl,above]{enqueue} (redis);
+  \draw[primary_arr] (worker) -- node[lbl]{dequeue} (redis);
+  \draw[primary_arr] (worker) -- node[lbl]{read/write} (fs);
+  \draw[primary_arr] (worker) -- node[lbl]{LLM calls} (ollama);
+  \draw[gray_arr] (api) -- node[lbl]{/metrics} (prom);
+  \draw[gray_arr] (worker) -- node[lbl]{metrics} (prom);
+  \draw[gray_arr] (prom) -- node[lbl]{scrape} (grafana);
+  \draw[dashed_arr] (worker) -- node[lbl,right]{prompt cache} (redis);
+
+  % Labels
+  \node[above=0.2cm of ui, font=\small\bfseries, text=primary] {[User]};
+  \node[below left=0.1cm of ollama, font=\scriptsize\itshape, text=gray] {Local inference};
+\end{tikzpicture}
+\caption{Kiến trúc container (C4 Level 2) của hệ thống Meeting AI Agent.}
+\label{fig:architecture}
+\end{figure}
+
+\section{Mô tả Chi tiết Các Stage}
+
+\subsection{Stage 1 \& 2: Ingest và Preprocess}
+
+Stage Ingest (\texttt{pipeline/ingest.py}) validate file audio (định dạng, kích thước, thời lượng tối đa 4 giờ) và lưu vào \texttt{data/audio/\{meeting\_id\}/}. Mỗi cuộc họp được gán UUID duy nhất.
+
+Stage Preprocess (\texttt{pipeline/preprocess.py}) dùng ffmpeg chuẩn hóa về 16kHz mono WAV --- đầu vào bắt buộc của WhisperX:
+\begin{lstlisting}[language=bash, caption={ffmpeg command trong preprocess stage.}]
+ffmpeg -i input.mp3 -ar 16000 -ac 1 -f wav output_clean.wav
+\end{lstlisting}
+
+\subsection{Stage 4: Guardrails Engine}
+
+Guardrail Engine (\texttt{pipeline/guardrails.py}) là lớp kiểm soát chất lượng 5 tầng (Hình~\ref{fig:guardrails}).
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  layer/.style={rectangle, rounded corners=4pt, minimum width=9cm,
+                minimum height=1cm, align=center, font=\small},
+  l1/.style={layer, draw=red!70, fill=red!10},
+  l2/.style={layer, draw=orange!70, fill=orange!10},
+  l3/.style={layer, draw=secondary!70, fill=stagecolor3},
+  l4/.style={layer, draw=accent!70, fill=stagecolor2},
+  l5/.style={layer, draw=primary, fill=stagecolor1},
+  arr/.style={-{Stealth}, thick, gray},
+  lbl/.style={font=\scriptsize, text=gray, right=0.3cm},
+]
+  \node[l1] (jb) {Jailbreak / Prompt Injection Detection};
+  \node[l2, below=0.3cm of jb] (pii) {PII Masking (names, emails, phone numbers)};
+  \node[l3, below=0.3cm of pii] (schema) {JSON Schema Validation (Pydantic)};
+  \node[l4, below=0.3cm of schema] (hall) {Hallucination Detection (name-in-transcript check)};
+  \node[l5, below=0.3cm of hall] (date) {Due Date Sanity Check ($\pm$ 5 years)};
+
+  \draw[arr] (jb) -- node[lbl]{Input blocked if matched} (pii);
+  \draw[arr] (pii) -- node[lbl]{Safe text for prompt} (schema);
+  \draw[arr] (schema) -- node[lbl]{Parse LLM JSON output} (hall);
+  \draw[arr] (hall) -- node[lbl]{Flag → human\_review} (date);
+
+  \node[left=0.3cm of jb, font=\scriptsize\bfseries, text=red!70] {INPUT};
+  \node[left=0.3cm of schema, font=\scriptsize\bfseries, text=secondary] {OUTPUT};
+\end{tikzpicture}
+\caption{5 tầng guardrail trong Guardrail Engine.}
+\label{fig:guardrails}
+\end{figure}
+
+\textbf{Jailbreak Detection} sử dụng regex patterns để phát hiện prompt injection:
+\begin{lstlisting}[language=Python3, caption={Các jailbreak patterns được kiểm tra.}]
+_JAILBREAK_PATTERNS = [
+    r"ignore\s+(all\s+)?(previous|prior|above)\s+instructions",
+    r"you\s+are\s+now\s+(a\s+)?(?:DAN|evil|unrestricted)",
+    r"pretend\s+(you\s+are|to\s+be)\s+(?:a\s+)?(?:different|evil)",
+    r"disregard\s+(your\s+)?(?:guidelines|rules|instructions)",
+    r"<\s*script\b",      # XSS attempt
+    r"\bSYSTEM\s*:.*override\b",
+]
+\end{lstlisting}
+
+\textbf{Hallucination Detection} kiểm tra xem tên người được assign có xuất hiện trong transcript không:
+\begin{lstlisting}[language=Python3, caption={Logic hallucination detection.}]
+def _check_hallucination(task_desc, assignee, turns, worker):
+    full_text = " ".join(t.text.lower() for t in turns)
+    # Accept if any known alias appears in transcript
+    return not any(name in full_text for name in worker.all_names())
+\end{lstlisting}
+
+\subsection{Stage 5: Task Assignment và Confidence Scoring}
+
+Sau guardrails, task có thể ở trạng thái \texttt{unresolved} (tên không khớp chính xác roster). Assignment stage (\texttt{pipeline/assignment.py}) thực hiện:
+
+\begin{enumerate}
+  \item \textbf{Fuzzy matching} bằng \texttt{SequenceMatcher} (threshold 0.8):
+  \begin{equation}
+    \text{score}(a, b) = \frac{2 \times |M|}{|a| + |b|}
+  \end{equation}
+  trong đó $|M|$ là số ký tự trùng khớp.
+
+  \item \textbf{Confidence scoring} heuristic:
+  \begin{align}
+    c &= 1.0 - 0.2 \cdot \mathbf{1}[\text{no assignee}] \notag\\
+      &\quad - 0.1 \cdot \mathbf{1}[\text{no due\_date}] \notag\\
+      &\quad - 0.3 \cdot \mathbf{1}[\text{status = unresolved}] \notag\\
+      &\quad - 0.5 \cdot \mathbf{1}[\text{status = human\_review}]
+  \end{align}
+  Task có $c < 0.6$ bị chuyển sang \texttt{human\_review}.
+\end{enumerate}
+
+Hình~\ref{fig:task_routing} minh hoạ cách task được route sau assignment:
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  box/.style={rectangle, rounded corners=4pt, draw=primary, fill=light,
+              text width=3cm, align=center, minimum height=1cm, font=\small},
+  outcome/.style={rectangle, rounded corners=4pt, text width=2.8cm,
+                  align=center, minimum height=1cm, font=\small},
+  open/.style={outcome, draw=accent, fill=stagecolor2},
+  unres/.style={outcome, draw=orange!70, fill=stagecolor3},
+  human/.style={outcome, draw=red!60, fill=red!10},
+  diamond/.style={diamond, draw=secondary, fill=stagecolor4,
+                  text width=2cm, align=center, font=\scriptsize},
+  arr/.style={-{Stealth}, thick},
+]
+  \node[box] (task) {ExtractedTask};
+  \node[diamond, right=1.5cm of task] (d1) {assignee\\resolved?};
+  \node[diamond, right=1.5cm of d1] (d2) {fuzzy\\match?};
+  \node[diamond, below=1.5cm of d2] (d3) {confidence\\$\geq$ 0.6?};
+
+  \node[open, right=1.5cm of d2] (open_) {action\_items\\(open)};
+  \node[human, right=1.5cm of d3] (human_) {human\_review\\items};
+  \node[unres, below=1.5cm of d3] (unres_) {human\_review\\(no fuzzy match)};
+
+  \draw[arr, primary] (task) -- (d1);
+  \draw[arr, accent] (d1) -- node[above,font=\scriptsize]{Có} (d2);
+  \draw[arr, accent] (d2) -- node[above,font=\scriptsize]{Có} (open_);
+  \draw[arr, red!60] (d2) -- node[right,font=\scriptsize]{Không} (d3);
+  \draw[arr, accent] (d3) -- node[above,font=\scriptsize]{Có} (human_);
+  \draw[arr, red!60] (d3) -- node[right,font=\scriptsize]{Không} (unres_);
+  \draw[arr, orange!70] (d1) |- node[font=\scriptsize,pos=0.3,below]{Không} (d3);
+\end{tikzpicture}
+\caption{Decision flow cho task routing trong Stage 5.}
+\label{fig:task_routing}
+\end{figure}
+
+\section{Redis Prompt Cache}
+
+Cache key được tạo bằng SHA-256 hash của tuple (model, system\_prompt, user\_prompt):
+\begin{lstlisting}[language=Python3, caption={Redis prompt caching logic trong \texttt{pipeline/cache.py}.}]
+def _cache_key(model, system, user):
+    payload = json.dumps(
+        {"model": model, "system": system, "user": user},
+        sort_keys=True
+    )
+    return "prompt_cache:" + hashlib.sha256(payload.encode()).hexdigest()
+
+# TTL = 24 giờ
+client.setex(key, 86400, content)
+\end{lstlisting}
+
+\section{REST API}
+
+Bảng~\ref{tab:api_endpoints} liệt kê toàn bộ API endpoints.
+
+\begin{table}[H]
+\centering
+\caption{REST API endpoints của Meeting AI Agent.}
+\label{tab:api_endpoints}
+\begin{tabularx}{\textwidth}{llXl}
+\toprule
+\textbf{Method} & \textbf{Endpoint} & \textbf{Mô tả} & \textbf{HTTP Code} \\
+\midrule
+POST & \texttt{/meetings} & Upload audio, trả về \texttt{meeting\_id} & 202 \\
+GET  & \texttt{/meetings/\{id\}} & Poll kết quả & 200 \\
+POST & \texttt{/meetings/\{id\}/feedback} & Submit corrections & 200 \\
+DELETE & \texttt{/meetings/\{id\}} & Xóa data (GDPR) & 200 \\
+GET  & \texttt{/workers} & Danh sách participant roster & 200 \\
+POST & \texttt{/workers} & Thêm worker & 201 \\
+DELETE & \texttt{/workers/\{id\}} & Xóa worker & 200 \\
+GET  & \texttt{/metrics} & Prometheus metrics & 200 \\
+GET  & \texttt{/health} & Health check & 200 \\
+POST & \texttt{/admin/retrain} & Trigger fine-tuning & 200 \\
+GET  & \texttt{/admin/router-stats} & Ollama load balancer stats & 200 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Hình~\ref{fig:async_flow} mô tả luồng async request-response:
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  actor/.style={rectangle, rounded corners=3pt, draw=gray, fill=gray!15,
+                text width=2cm, align=center, font=\small},
+  msg/.style={-{Stealth}, thick},
+  note/.style={font=\scriptsize, text=darkgray},
+  timeline/.style={dashed, gray!50},
+]
+  \node[actor] (client) {Client};
+  \node[actor, right=3cm of client] (api) {FastAPI};
+  \node[actor, right=3cm of api] (redis) {Redis};
+  \node[actor, right=3cm of redis] (celery) {Celery Worker};
+
+  % Timelines
+  \foreach \n in {client, api, redis, celery}
+    \draw[timeline] (\n.south) -- ++(0,-7cm);
+
+  % Messages
+  \draw[msg] ([yshift=-0.5cm]client.south) -- node[above,note]{POST /meetings + audio} ([yshift=-0.5cm]api.south);
+  \draw[msg] ([yshift=-1.2cm]api.south) -- node[above,note]{enqueue task} ([yshift=-1.2cm]redis.south);
+  \draw[msg] ([yshift=-1.2cm]redis.south) -- node[above,note]{task} ([yshift=-1.2cm]celery.south);
+  \draw[msg, dashed] ([yshift=-1.9cm]api.south) -- node[above,note]{\{meeting\_id, status: accepted\}} ([yshift=-1.9cm]client.south);
+
+  \draw[msg, gray] ([yshift=-3cm]client.south) -- node[above,note]{GET /meetings/\{id\}} ([yshift=-3cm]api.south);
+  \draw[msg, dashed, gray] ([yshift=-3.7cm]api.south) -- node[above,note]{\{status: processing\}} ([yshift=-3.7cm]client.south);
+
+  % Celery processing
+  \node[note, right=0.2cm of celery, yshift=-2.5cm] {Pipeline\\running...};
+
+  \draw[msg] ([yshift=-5cm]client.south) -- node[above,note]{GET /meetings/\{id\}} ([yshift=-5cm]api.south);
+  \draw[msg, dashed, accent] ([yshift=-5.7cm]api.south) -- node[above,note]{MeetingSummary JSON} ([yshift=-5.7cm]client.south);
+
+  % Y-axis labels
+  \node[note, left=0.1cm of client, yshift=-0.5cm] {t=0};
+  \node[note, left=0.1cm of client, yshift=-1.9cm] {t=0.1s};
+  \node[note, left=0.1cm of client, yshift=-3cm] {t=30s};
+  \node[note, left=0.1cm of client, yshift=-5cm] {t=120s};
+\end{tikzpicture}
+\caption{Sequence diagram luồng async xử lý cuộc họp.}
+\label{fig:async_flow}
+\end{figure}
+
+\section{Monitoring và Anomaly Detection}
+
+\subsection{Prometheus Metrics}
+
+Bảng~\ref{tab:metrics} liệt kê các Prometheus metrics được expose tại \texttt{/metrics}.
+
+\begin{table}[H]
+\centering
+\caption{Prometheus metrics trong Meeting AI Agent.}
+\label{tab:metrics}
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\textbf{Metric} & \textbf{Type} & \textbf{Mô tả} \\
+\midrule
+\texttt{meeting\_stage\_duration\_seconds} & Histogram & Latency từng stage \\
+\texttt{meeting\_llm\_calls\_total} & Counter & Tổng số LLM calls \\
+\texttt{meeting\_llm\_tokens\_total} & Counter & Tổng tokens tiêu thụ \\
+\texttt{meeting\_hallucination\_flags\_total} & Counter & Số hallucination flags \\
+\texttt{meeting\_schema\_failures\_total} & Counter & Số schema validation lỗi \\
+\texttt{meeting\_tasks\_extracted\_total} & Counter & Tổng action items \\
+\texttt{meeting\_anomaly\_events\_total} & Counter & Số anomaly events \\
+\texttt{meeting\_jobs\_in\_flight} & Gauge & Jobs đang xử lý \\
+\texttt{http\_request\_duration\_seconds} & Histogram & HTTP request latency \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Anomaly Detector}
+
+Anomaly detector (\texttt{monitoring/anomaly.py}) kết hợp hai cơ chế (Hình~\ref{fig:anomaly}):
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  box/.style={rectangle, rounded corners=4pt, draw=primary, fill=light,
+              text width=4cm, align=center, minimum height=1.2cm, font=\small},
+  alert/.style={rectangle, rounded corners=4pt, draw=red!70, fill=red!10,
+                text width=3cm, align=center, minimum height=1cm, font=\small},
+  arr/.style={-{Stealth}, thick},
+]
+  \node[box] (run) {Meeting run\\hoàn thành};
+
+  \node[box, right=2cm of run, yshift=1cm] (hard)
+    {Hard Threshold\\Check\\hallucination $>$ 10\%\\schema\_failures $>$ 3};
+  \node[box, right=2cm of run, yshift=-1cm] (zscore)
+    {Z-score Statistical\\Check\\$|z| > 3\sigma$\\window = 20 runs};
+
+  \node[alert, right=2cm of hard] (alert1) {HARD\\ALERT};
+  \node[alert, right=2cm of zscore] (alert2) {STATISTICAL\\OUTLIER};
+
+  \node[box, right=2cm of alert1, yshift=-1cm] (prom) {Prometheus\\Counter +\\Log Warning};
+
+  \draw[arr, primary] (run) -- ++(1,0) |- (hard);
+  \draw[arr, primary] (run) -- ++(1,0) |- (zscore);
+  \draw[arr, red!60] (hard) -- node[above,font=\scriptsize]{triggered} (alert1);
+  \draw[arr, red!60] (zscore) -- node[above,font=\scriptsize]{outlier} (alert2);
+  \draw[arr, gray] (alert1) -- ++(0.8,0) |- (prom);
+  \draw[arr, gray] (alert2) -- ++(0.8,0) |- (prom);
+\end{tikzpicture}
+\caption{Kiến trúc anomaly detection với hard threshold và Z-score.}
+\label{fig:anomaly}
+\end{figure}
+
+\section{Kỹ thuật Tối ưu hóa}
+
+Bảng~\ref{tab:optimizations} tóm tắt các kỹ thuật tối ưu hóa được áp dụng.
+
+\begin{table}[H]
+\centering
+\caption{Kỹ thuật tối ưu hóa và lợi ích đạt được.}
+\label{tab:optimizations}
+\begin{tabularx}{\textwidth}{lXX}
+\toprule
+\textbf{Kỹ thuật} & \textbf{Mô tả} & \textbf{Lợi ích} \\
+\midrule
+INT8 Quantization & WhisperX \texttt{compute\_type=int8} & Giảm 4× bộ nhớ, tăng tốc $\approx$2× CPU \\
+Redis Prompt Cache & Cache LLM responses theo SHA-256, TTL 24h & Cache hit: $<$10ms vs $>$10s \\
+Chunked Processing & Chia transcript thành chunks 2000 tokens & Tránh vượt context window \\
+QLoRA Fine-tuning & Low-rank adapters, 4-bit base model & Fine-tune với $<$8GB VRAM \\
+Multi-Ollama Router & Round-robin load balancing & Scale-out inference \\
+Async Celery & Pipeline chạy background & High throughput concurrent requests \\
+FAISS Inner Product & Cosine similarity với L2 normalization & RAG retrieval $O(\log n)$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Docker Compose Deployment}
+
+Hình~\ref{fig:docker} mô tả các service trong Docker Compose stack:
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  svc/.style={rectangle, rounded corners=6pt, draw=primary, fill=light,
+              text width=2.5cm, align=center, minimum height=1.3cm, font=\small,
+              drop shadow},
+  ext/.style={rectangle, rounded corners=4pt, draw=gray, fill=gray!10,
+              text width=2.2cm, align=center, minimum height=1.1cm, font=\small},
+  net/.style={rectangle, draw=secondary!50, dashed, rounded corners=8pt,
+              inner sep=10pt, fill=stagecolor3!30},
+  arr/.style={-{Stealth}, thick, gray},
+]
+  \begin{scope}[local bounding box=stack]
+    \node[svc] (api_svc)    at (0,0)     {\textbf{api}\\FastAPI\\:8000};
+    \node[svc, right=1.5cm of api_svc] (worker_svc) {\textbf{worker}\\Celery};
+    \node[svc, right=1.5cm of worker_svc] (beat_svc)   {\textbf{beat}\\Celery Beat};
+    \node[svc, below=1.4cm of api_svc] (redis_svc)  {\textbf{redis}\\Redis\\:6379};
+    \node[svc, below=1.4cm of worker_svc] (ollama_svc) {\textbf{ollama}\\Ollama\\:11434};
+    \node[svc, below=1.4cm of beat_svc] (prom_svc)  {\textbf{prometheus}\\:9090};
+    \node[svc, below=1.4cm of redis_svc] (grafana_svc) {\textbf{grafana}\\:3000};
+    \node[svc, below=1.4cm of ollama_svc] (stream_svc)  {\textbf{streamlit}\\UI\\:8501};
+  \end{scope}
+
+  \draw[arr] (api_svc) -- (redis_svc);
+  \draw[arr] (worker_svc) -- (redis_svc);
+  \draw[arr] (beat_svc) -- (redis_svc);
+  \draw[arr] (worker_svc) -- (ollama_svc);
+  \draw[arr] (prom_svc) -- (api_svc);
+  \draw[arr] (grafana_svc) -- (prom_svc);
+  \draw[arr] (stream_svc) -- (api_svc);
+
+  \node[above=0.3cm of api_svc, font=\small\bfseries, text=primary]
+    {Docker Compose Stack};
+\end{tikzpicture}
+\caption{Docker Compose service topology.}
+\label{fig:docker}
+\end{figure}

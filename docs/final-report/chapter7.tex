@@ -1,0 +1,110 @@
+\chapter{Hướng Phát triển Tương lai}
+\label{chap:future}
+
+\section{Roadmap Phát triển}
+
+Hình~\ref{fig:roadmap} tóm tắt roadmap theo ba giai đoạn:
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  phase/.style={rectangle, rounded corners=6pt, draw=primary, fill=light,
+                text width=4cm, align=center, minimum height=1.5cm,
+                font=\small\bfseries},
+  item/.style={rectangle, rounded corners=3pt, draw=primary!40, fill=white,
+               text width=3.6cm, align=left, font=\scriptsize, inner sep=5pt},
+  arr/.style={-{Stealth[scale=1.2]}, ultra thick, primary!60},
+]
+  \node[phase, fill=stagecolor1] (p1) {Phase 1\\Short-term\\(1--3 tháng)};
+  \node[phase, fill=stagecolor2, right=1.5cm of p1] (p2) {Phase 2\\Mid-term\\(3--6 tháng)};
+  \node[phase, fill=stagecolor3, right=1.5cm of p2] (p3) {Phase 3\\Long-term\\(6--12 tháng)};
+
+  \draw[arr] (p1) -- (p2);
+  \draw[arr] (p2) -- (p3);
+
+  \node[item, below=0.5cm of p1] (i1) {%
+    \textbullet\ Hỗ trợ tiếng Việt\\
+    \textbullet\ Mở rộng test set\\
+    \textbullet\ Authentication\\
+    \textbullet\ PostgreSQL worker DB};
+
+  \node[item, below=0.5cm of p2] (i2) {%
+    \textbullet\ Real-time streaming\\
+    \textbullet\ Calendar integration\\
+    \textbullet\ Email notifications\\
+    \textbullet\ Qwen2.5-7B upgrade};
+
+  \node[item, below=0.5cm of p3] (i3) {%
+    \textbullet\ Kubernetes deploy\\
+    \textbullet\ Multi-language\\
+    \textbullet\ Meeting analytics\\
+    \textbullet\ Distributed training};
+\end{tikzpicture}
+\caption{Roadmap phát triển theo ba giai đoạn.}
+\label{fig:roadmap}
+\end{figure}
+
+\section{Real-time Streaming}
+
+Thay vì batch upload, tích hợp WebSocket để xử lý audio stream real-time (Hình~\ref{fig:realtime}). Transcript sẽ được cập nhật liên tục trong khi cuộc họp đang diễn ra.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  box/.style={rectangle, rounded corners=4pt, draw=primary, fill=light,
+              text width=3cm, align=center, minimum height=1cm, font=\small},
+  arr/.style={-{Stealth}, thick},
+]
+  \node[box] (mic) {Microphone\\stream};
+  \node[box, right=1.5cm of mic] (ws) {WebSocket\\server};
+  \node[box, right=1.5cm of ws] (chunk) {Audio\\chunk buffer};
+  \node[box, right=1.5cm of chunk] (stt) {WhisperX\\streaming};
+  \node[box, right=1.5cm of stt] (live) {Live\\transcript};
+
+  \draw[arr, primary] (mic) -- (ws);
+  \draw[arr, primary] (ws) -- (chunk);
+  \draw[arr, primary] (chunk) -- (stt);
+  \draw[arr, primary] (stt) -- (live);
+
+  \node[below=0.5cm of chunk, font=\scriptsize, text=gray] {30s sliding window};
+\end{tikzpicture}
+\caption{Kiến trúc xử lý audio real-time đề xuất.}
+\label{fig:realtime}
+\end{figure}
+
+\section{Calendar và Notification Integration}
+
+Tích hợp Google Calendar API và email notifications để tự động tạo event và gửi reminder từ action items có due\_date:
+
+\begin{lstlisting}[language=Python3, caption={Pseudo-code tích hợp Google Calendar.}]
+for task in meeting.action_items:
+    if task.due_date and task.assignee_email:
+        calendar_api.create_event(
+            title=task.description,
+            date=task.due_date,
+            attendees=[task.assignee_email],
+            description=f"Meeting: {meeting.meeting_id}"
+        )
+        email_client.send_reminder(
+            to=task.assignee_email,
+            subject=f"Action item: {task.description}",
+            body=render_template("task_reminder.html", task=task)
+        )
+\end{lstlisting}
+
+\section{Cải thiện Mô hình}
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Nâng cấp LLM:} Qwen2.5-7B hoặc 14B sẽ cho precision và recall cao hơn, đặc biệt trong các cuộc họp kỹ thuật phức tạp. Với bộ nhớ GPU đủ ($\geq$16GB), 7B là lựa chọn tối ưu về chất lượng/chi phí.
+  \item \textbf{Multi-turn RAG:} Thay vì per-chunk RAG, xây dựng conversation memory để LLM tham chiếu action items từ chunk trước, giải quyết vấn đề context bị cắt.
+  \item \textbf{Tiếng Việt fine-tuning:} Thu thập dữ liệu cuộc họp tiếng Việt, fine-tune với QLoRA trên domain-specific vocabulary (kỹ thuật, kinh doanh).
+\end{itemize}
+
+\section{Infrastructure}
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Kubernetes:} Horizontal Pod Autoscaling cho Celery workers khi load tăng.
+  \item \textbf{PostgreSQL:} Thay file JSON bằng database cho worker registry và meeting metadata.
+  \item \textbf{Distributed training:} Ray hoặc DeepSpeed cho fine-tuning cluster GPU.
+  \item \textbf{Model serving:} vLLM hoặc TensorRT-LLM thay Ollama cho throughput cao hơn 5--10×.
+\end{itemize}

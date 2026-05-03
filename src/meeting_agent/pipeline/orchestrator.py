@@ -97,7 +97,11 @@ def _next_friday() -> str:
 
 @_maybe_trace
 @retry(stop=stop_after_attempt(settings.llm_max_retries), wait=wait_fixed(1))
-def _raw_llm_call(system_prompt: str, user_prompt: str) -> tuple[str, int]:
+def _raw_llm_call(
+    system_prompt: str,
+    user_prompt: str,
+    meeting_id: str | None = None,
+) -> tuple[str, int]:
     """
     LLM call routed through InferenceRouter (multi-Ollama) or single Ollama.
     Traced by LangSmith when configured.
@@ -110,6 +114,7 @@ def _raw_llm_call(system_prompt: str, user_prompt: str) -> tuple[str, int]:
             {"role": "user", "content": user_prompt},
         ],
         options={"temperature": 0.0, "seed": 42},
+        meeting_id=meeting_id,
     )
     content: str = response["message"]["content"]
     tokens: int = response.get("eval_count", 0) + response.get("prompt_eval_count", 0)
@@ -117,14 +122,22 @@ def _raw_llm_call(system_prompt: str, user_prompt: str) -> tuple[str, int]:
     return content, tokens
 
 
-def _call_llm(system_prompt: str, user_prompt: str) -> tuple[str, int]:
+def _call_llm(
+    system_prompt: str,
+    user_prompt: str,
+    meeting_id: str | None = None,
+) -> tuple[str, int]:
     """LLM call with Redis prompt cache + PII-masked logging."""
     log.debug("LLM call | system=%s…", mask_pii(system_prompt[:80]))
+
+    def _call_fn(sys_p: str, usr_p: str) -> tuple[str, int]:
+        return _raw_llm_call(sys_p, usr_p, meeting_id=meeting_id)
+
     return cached_llm_call(
         model=settings.ollama_llm_model,
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        call_fn=_raw_llm_call,
+        call_fn=_call_fn,
     )
 
 
@@ -181,7 +194,7 @@ def extract_action_items(
         task_id_prefix = f"{meeting_id}_c{chunk_idx}"
 
         try:
-            raw_output, tokens = _call_llm(system_prompt, user_prompt)
+            raw_output, tokens = _call_llm(system_prompt, user_prompt, meeting_id=meeting_id)
             total_tokens += tokens
             tasks = parse_and_validate(
                 raw_output,

@@ -172,7 +172,7 @@ def parse_and_validate(
 
         # Hallucination check — only for roster-resolved workers
         if _check_hallucination(description, assignee_name, turns, worker=matched_worker):
-            HALLUCINATION_FLAGS.inc()
+            HALLUCINATION_FLAGS.labels(reason="no_evidence").inc()
             status = TaskStatus.human_review
 
         due_date = _validate_due_date(item.get("due_date"))

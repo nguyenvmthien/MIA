@@ -1,0 +1,229 @@
+\appendix
+
+\chapter{Cấu trúc Thư mục Dự án}
+
+\begin{lstlisting}[language=bash, caption={Cấu trúc thư mục dự án.}]
+MEETING-AGENT/
+├── src/meeting_agent/          # Source code chinh
+│   ├── api/
+│   │   └── main.py             # FastAPI REST API
+│   ├── pipeline/
+│   │   ├── run.py              # Pipeline orchestrator (6 stages)
+│   │   ├── ingest.py           # Stage 1: Audio validation & storage
+│   │   ├── preprocess.py       # Stage 2: ffmpeg normalization
+│   │   ├── stt.py              # Stage 3: WhisperX + Pyannote
+│   │   ├── orchestrator.py     # Stage 4: LLM + RAG + cache
+│   │   ├── guardrails.py       # Validation engine (5 layers)
+│   │   ├── assignment.py       # Stage 5: Fuzzy match + confidence
+│   │   ├── rag.py              # FAISS speaker index
+│   │   ├── cache.py            # Redis prompt cache
+│   │   ├── router.py           # Multi-Ollama load balancer
+│   │   ├── feedback.py         # Feedback storage
+│   │   └── worker_registry.py  # Participant database
+│   ├── prompts/
+│   │   └── templates.py        # Versioned prompt templates (v1)
+│   ├── schemas/                # Pydantic data models
+│   │   ├── meeting.py          # MeetingSummary, JobStatus, RunMetrics
+│   │   ├── task.py             # ExtractedTask, TaskStatus, TaskPriority
+│   │   ├── transcript.py       # TranscriptTurn
+│   │   └── worker.py           # Worker, WorkerRoster
+│   ├── monitoring/
+│   │   ├── metrics.py          # Prometheus metrics definitions
+│   │   └── anomaly.py          # Z-score anomaly detection
+│   └── config.py               # pydantic-settings configuration
+├── train/
+│   ├── finetune.py             # QLoRA fine-tuning (Unsloth + MLflow)
+│   ├── distill.py              # Knowledge distillation 3B->1.5B
+│   ├── evaluate.py             # Precision/recall/F1 evaluation
+│   ├── retrain.py              # Automated retrain pipeline
+│   └── dataset.py              # Dataset loading utilities
+├── data_pipeline/
+│   ├── collect.py              # Build JSONL from audio directories
+│   ├── synthetic.py            # Generate synthetic meetings via LLM
+│   ├── synthetic_to_audio.py   # Convert synthetic text to MP3 (TTS)
+│   └── validate.py             # Schema/bias/leakage validation
+├── data/
+│   ├── audio/                  # Audio storage (per meeting_id)
+│   ├── transcripts/            # Transcript storage + feedback JSONL
+│   ├── training/               # Training data JSONL
+│   └── eval/                   # Gold evaluation set
+├── docker/                     # Prometheus + Grafana config
+├── docker-compose.yml          # Full stack (CPU)
+├── docker-compose.gpu.yml      # GPU override
+├── streamlit_app.py            # Web UI
+├── pyproject.toml              # Project metadata & dependencies
+└── .env.example                # Environment variables template
+\end{lstlisting}
+
+\chapter{Hướng dẫn Cài đặt và Chạy}
+
+\section*{Yêu cầu Hệ thống}
+
+\begin{itemize}
+  \item Python 3.11+
+  \item Docker và Docker Compose
+  \item Ollama (cài tại \url{https://ollama.ai})
+  \item HuggingFace token (chấp nhận điều khoản Pyannote)
+  \item RAM: $\geq$8GB (16GB recommended)
+  \item GPU (optional): NVIDIA với CUDA $\geq$11.8 cho WhisperX large-v3
+\end{itemize}
+
+\section*{Cài đặt và Chạy}
+
+\begin{lstlisting}[language=bash, caption={Các bước cài đặt và khởi động hệ thống.}]
+# 1. Clone repo
+git clone <repo-url> && cd MEETING-AGENT
+
+# 2. Cai dependencies
+pip install -e ".[dev]"
+
+# 3. Cau hinh environment
+cp .env.example .env
+# Sua .env: dien HF_TOKEN, OLLAMA_BASE_URL
+
+# 4. Pull Ollama models
+ollama pull qwen2.5:3b
+ollama pull nomic-embed-text
+
+# 5. Khoi dong full stack
+docker compose up -d
+
+# 6. Kiem tra health
+curl http://localhost:8000/health
+# {"status": "ok"}
+
+# 7. Mo Streamlit UI
+streamlit run streamlit_app.py
+# -> http://localhost:8501
+
+# 8. API docs
+# -> http://localhost:8000/docs
+
+# 9. Grafana dashboard
+# -> http://localhost:3000 (admin/admin)
+\end{lstlisting}
+
+\chapter{Ví dụ API Request và Response}
+
+\section*{Submit Meeting}
+
+\begin{lstlisting}[language=bash, caption={POST /meetings --- Submit file audio.}]
+curl -X POST http://localhost:8000/meetings \
+  -F "audio=@meeting.mp3" \
+  -F 'roster_json={
+    "workers": [
+      {"worker_id":"w1","name":"Alice Chen","role":"PM",
+       "email":"alice@example.com","aliases":["Alice"]},
+      {"worker_id":"w2","name":"Bob Kim","role":"Engineer",
+       "email":"bob@example.com","aliases":["Bob"]}
+    ]
+  }'
+\end{lstlisting}
+
+Response (HTTP 202):
+\begin{lstlisting}[language=Python3, caption={Response từ POST /meetings.}]
+{
+  "meeting_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "accepted"
+}
+\end{lstlisting}
+
+\section*{Poll Result}
+
+\begin{lstlisting}[language=bash, caption={GET /meetings/\{id\} --- Poll kết quả.}]
+curl http://localhost:8000/meetings/550e8400-e29b-41d4-a716-446655440000
+\end{lstlisting}
+
+Response (HTTP 200 khi completed):
+\begin{lstlisting}[language=Python3, caption={MeetingSummary JSON response.}]
+{
+  "meeting_id": "550e8400-e29b-41d4-a716-446655440000",
+  "audio_filename": "meeting.mp3",
+  "summary_text": "The team reviewed Q2 roadmap. Alice confirmed...",
+  "participants": ["Alice Chen", "Bob Kim"],
+  "duration_ms": 1800000,
+  "action_items": [
+    {
+      "task_id": "550e8400_c0_0",
+      "description": "Finalize Q2 report",
+      "assignee": "Bob Kim",
+      "assignee_id": "w2",
+      "due_date": "2026-05-02",
+      "priority": "high",
+      "status": "open",
+      "extraction_confidence": 0.9,
+      "source_turn_ids": ["turn-123", "turn-124"],
+      "notes": null
+    }
+  ],
+  "unresolved_items": [],
+  "human_review_items": [],
+  "run_metrics": {
+    "total_tokens_used": 1240,
+    "tasks_extracted": 1,
+    "tasks_unresolved": 0,
+    "hallucination_flags": 0,
+    "schema_validation_failures": 0,
+    "stage_timings": {
+      "ingest_ms": 45,
+      "preprocess_ms": 2100,
+      "stt_ms": 28500,
+      "llm_ms": 15200,
+      "assignment_ms": 12
+    }
+  },
+  "job_status": "completed",
+  "processed_at": "2026-04-29T10:35:00.000Z"
+}
+\end{lstlisting}
+
+\chapter{Cấu hình Môi trường}
+
+\begin{lstlisting}[language=bash, caption={File .env.example với các biến cấu hình.}]
+# Database
+DATABASE_URL=postgresql://meeting:meeting@localhost:5432/meeting_agent
+
+# Redis / Celery
+REDIS_URL=redis://localhost:6379/0
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/1
+
+# Ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_LLM_MODEL=qwen2.5:3b
+OLLAMA_EMBED_MODEL=nomic-embed-text
+
+# Multi-Ollama (optional)
+# OLLAMA_ENDPOINTS=http://host1:11434,http://host2:11434
+
+# WhisperX
+WHISPER_MODEL=base         # large-v3 for production
+WHISPER_DEVICE=cpu         # cuda for GPU
+WHISPER_COMPUTE_TYPE=int8
+WHISPER_LANGUAGE=en
+
+# Pyannote (required for diarization)
+HF_TOKEN=hf_your_token_here
+ENABLE_DIARIZATION=true
+
+# LangSmith (optional tracing)
+LANGCHAIN_TRACING_V2=false
+LANGCHAIN_API_KEY=
+LANGCHAIN_PROJECT=meeting-agent
+
+# Storage
+AUDIO_STORAGE_PATH=./data/audio
+TRANSCRIPT_STORAGE_PATH=./data/transcripts
+WORKERS_STORAGE_PATH=./data/workers.json
+
+# Retraining
+RETRAIN_MIN_CORRECTIONS=50
+RETRAIN_OUTPUT_DIR=models/qwen-meeting-latest
+MLFLOW_TRACKING_URI=http://localhost:5000
+
+# App
+LOG_LEVEL=INFO
+MAX_AUDIO_DURATION_HOURS=4
+LLM_MAX_RETRIES=3
+TASK_CONFIDENCE_THRESHOLD=0.6
+\end{lstlisting}

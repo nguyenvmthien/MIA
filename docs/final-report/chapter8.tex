@@ -1,0 +1,40 @@
+\chapter{Kết luận}
+\label{chap:conclusion}
+
+Dự án Meeting AI Agent đã chứng minh tính khả thi của việc xây dựng một hệ thống xử lý cuộc họp thông minh hoàn toàn on-premise, không phụ thuộc vào cloud AI services có trả phí. Hệ thống tích hợp thành công chuỗi công nghệ từ nhận dạng giọng nói, diarization đến LLM extraction trong một pipeline production-ready với đầy đủ các yếu tố LLMOps.
+
+\section*{Đóng góp Chính}
+
+\begin{enumerate}[leftmargin=*, label=\textbf{\arabic*.}]
+  \item \textbf{Pipeline end-to-end hoạt động:} 6 stage rõ ràng, có đo lường latency và metrics cho từng stage qua Prometheus.
+
+  \item \textbf{Chất lượng trích xuất đạt ngưỡng:} Precision 0.767, F1 0.727 trên smoke test, vượt ngưỡng CI 0.70. Schema failure rate = 0.
+
+  \item \textbf{LLMOps đầy đủ:} Guardrails 5 tầng, Redis prompt cache, FAISS RAG, anomaly detection Z-score, vòng lặp tự động fine-tuning QLoRA.
+
+  \item \textbf{Privacy-first:} Toàn bộ inference chạy local --- dữ liệu cuộc họp nhạy cảm không rời khỏi hệ thống.
+
+  \item \textbf{Production-ready foundation:} Docker Compose deployment, GDPR delete endpoint, async Celery processing, Prometheus + Grafana monitoring.
+\end{enumerate}
+
+\section*{Bài học Rút ra}
+
+\begin{itemize}[leftmargin=*]
+  \item Few-shot prompting với roster injection và guardrails cải thiện đáng kể so với zero-shot (F1: 0.57 → 0.727).
+  \item Guardrail engine (đặc biệt hallucination detection và schema validation) là thành phần thiết yếu cho production LLM systems --- không thể bỏ qua.
+  \item Chunking transcript là cần thiết nhưng tạo ra edge cases tại chunk boundary cần xử lý cẩn thận.
+  \item Vòng lặp feedback → fine-tuning là điểm khác biệt cốt lõi so với các giải pháp off-the-shelf.
+\end{itemize}
+
+\vspace{1cm}
+\begin{infobox}
+\textbf{Tóm tắt kết quả:}\\[6pt]
+\begin{tabular}{ll}
+Precision: & 0.767 (ngưỡng CI: 0.70 ✓) \\
+Recall: & 0.700 \\
+F1: & 0.727 \\
+Schema failure rate: & 0.000 \\
+Deployment: & Docker Compose (CPU + GPU) \\
+LLM: & Qwen2.5-3B (on-premise, Ollama) \\
+\end{tabular}
+\end{infobox}

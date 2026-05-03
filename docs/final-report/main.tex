@@ -1,0 +1,194 @@
+\documentclass[12pt,a4paper]{report}
+
+% ── Encoding & Language ───────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage[vietnamese,english]{babel}
+
+% ── Page Layout ───────────────────────────────────────────────────────────────
+\usepackage[top=2.5cm,bottom=2.5cm,left=3cm,right=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% ── Typography ────────────────────────────────────────────────────────────────
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{parskip}
+
+% ── Graphics & Color ──────────────────────────────────────────────────────────
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{
+  shapes.geometric, shapes.multipart,
+  arrows.meta, arrows,
+  positioning, fit, calc,
+  decorations.pathreplacing,
+  backgrounds, shadows.blur,
+  matrix, chains
+}
+
+% ── Tables ────────────────────────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{longtable}
+
+% ── Code Listings ─────────────────────────────────────────────────────────────
+\usepackage{listings}
+\usepackage{lstautogobble}
+\definecolor{codebg}{RGB}{248,248,248}
+\definecolor{codeframe}{RGB}{200,200,200}
+\definecolor{codecomment}{RGB}{100,100,100}
+\definecolor{codekeyword}{RGB}{0,0,180}
+\definecolor{codestring}{RGB}{163,21,21}
+\lstset{
+  backgroundcolor=\color{codebg},
+  frame=single, rulecolor=\color{codeframe},
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{codekeyword}\bfseries,
+  commentstyle=\color{codecomment}\itshape,
+  stringstyle=\color{codestring},
+  breaklines=true, breakatwhitespace=true,
+  tabsize=4, showstringspaces=false,
+  numbers=left, numberstyle=\tiny\color{gray},
+  numbersep=6pt,
+  autogobble=true,
+  captionpos=b,
+}
+\lstdefinelanguage{Python3}{
+  language=Python,
+  morekeywords={async,await,None,True,False,self,cls},
+}
+
+% ── Math ──────────────────────────────────────────────────────────────────────
+\usepackage{amsmath,amssymb,mathtools}
+
+% ── Hyperlinks & PDF ──────────────────────────────────────────────────────────
+\usepackage[hidelinks,
+  pdftitle={Meeting AI Agent — Final Report},
+  pdfauthor={Group},
+  pdfsubject={Applied LLM}]{hyperref}
+\usepackage{url}
+
+% ── Captions ──────────────────────────────────────────────────────────────────
+\usepackage{caption}
+\usepackage{subcaption}
+\captionsetup{font=small,labelfont=bf}
+
+% ── Miscellaneous ─────────────────────────────────────────────────────────────
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{placeins}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{tocloft}
+\usepackage{csquotes}
+\usepackage{mdframed}
+
+% ── Custom Colors ─────────────────────────────────────────────────────────────
+\definecolor{primary}{RGB}{25,118,210}
+\definecolor{secondary}{RGB}{245,124,0}
+\definecolor{accent}{RGB}{46,125,50}
+\definecolor{light}{RGB}{227,242,253}
+\definecolor{darkgray}{RGB}{55,55,55}
+\definecolor{lightgray}{RGB}{240,240,240}
+\definecolor{stagecolor1}{RGB}{187,222,251}
+\definecolor{stagecolor2}{RGB}{200,230,201}
+\definecolor{stagecolor3}{RGB}{255,224,178}
+\definecolor{stagecolor4}{RGB}{225,190,231}
+\definecolor{stagecolor5}{RGB}{255,205,210}
+\definecolor{stagecolor6}{RGB}{178,235,242}
+
+% ── Header / Footer ───────────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textit{Meeting AI Agent}}
+\fancyhead[R]{\small\textit{\leftmark}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ── Chapter Title Style ───────────────────────────────────────────────────────
+\titleformat{\chapter}[display]
+  {\normalfont\huge\bfseries\color{primary}}
+  {\chaptertitlename\ \thechapter}{16pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{-20pt}{20pt}
+
+% ── Highlight Box ─────────────────────────────────────────────────────────────
+\newmdenv[
+  backgroundcolor=light,
+  linecolor=primary,
+  linewidth=1.5pt,
+  roundcorner=4pt,
+  innertopmargin=8pt,
+  innerbottommargin=8pt,
+]{infobox}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{document}
+
+% ── Title Page ────────────────────────────────────────────────────────────────
+\begin{titlepage}
+\centering
+\vspace*{1cm}
+
+{\Large\bfseries TRƯỜNG ĐẠI HỌC \par}
+{\Large\bfseries KHOA CÔNG NGHỆ THÔNG TIN \par}
+\vspace{0.5cm}
+\noindent\rule{\linewidth}{1pt}
+
+\vspace{2cm}
+{\huge\bfseries\color{primary} Meeting AI Agent \par}
+\vspace{0.5cm}
+{\Large Hệ thống Xử lý Cuộc họp Thông minh với LLM \par}
+
+\vspace{1.5cm}
+\begin{tikzpicture}
+  \node[draw=primary,fill=light,rounded corners=8pt,
+        inner sep=16pt,text width=10cm,align=center] {
+    \textbf{Môn học:} Applied Large Language Models \\[4pt]
+    \textbf{Học kỳ:} HK11 --- Năm học 2025--2026 \\[4pt]
+    \textbf{Ngày nộp:} 29 tháng 04 năm 2026
+  };
+\end{tikzpicture}
+
+\vspace{2cm}
+{\large\bfseries Nhóm thực hiện \par}
+\vspace{0.5cm}
+\begin{tabular}{ll}
+  \toprule
+  \textbf{Họ và tên} & \textbf{Vai trò} \\
+  \midrule
+  Nguyễn Văn Minh Thiện & Trưởng nhóm, Pipeline \& LLMOps \\
+  \bottomrule
+\end{tabular}
+
+\vfill
+{\small\color{gray} Báo cáo được soạn thảo bằng \LaTeX{} \par}
+\end{titlepage}
+
+% ── Front Matter ──────────────────────────────────────────────────────────────
+\pagenumbering{roman}
+\tableofcontents
+\listoffigures
+\listoftables
+\newpage
+
+% ── Main Matter ───────────────────────────────────────────────────────────────
+\pagenumbering{arabic}
+\include{abstract}
+\include{chapter1}
+\include{chapter2}
+\include{chapter3}
+\include{chapter4}
+\include{chapter5}
+\include{chapter6}
+\include{chapter7}
+\include{chapter8}
+\include{references}
+\include{appendix}
+
+\end{document}
