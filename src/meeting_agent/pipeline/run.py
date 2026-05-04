@@ -10,6 +10,7 @@ import uuid
 from datetime import date, datetime
 from pathlib import Path
 
+from meeting_agent.config import settings
 from meeting_agent.monitoring.anomaly import check_run as anomaly_check
 from meeting_agent.monitoring.metrics import (
     AUDIO_DURATION,
@@ -55,6 +56,7 @@ def run_pipeline(
         meeting_id=meeting_id,
         audio_filename=Path(audio_path).name,
         job_status=JobStatus.processing,
+        model_version=settings.ollama_llm_model,
     )
     timings = StageTiming()
 

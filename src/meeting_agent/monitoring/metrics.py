@@ -112,6 +112,38 @@ CALENDAR_EVENTS_CREATED = Counter(
     "Total Google Calendar events created from action items",
 )
 
+# ── User interaction / training data metrics ──────────────────────────────────
+TASKS_CONFIRMED = Counter(
+    "meeting_tasks_confirmed_total",
+    "Tasks confirmed (selected) by user during review",
+)
+
+TASKS_DISMISSED = Counter(
+    "meeting_tasks_dismissed_total",
+    "Tasks dismissed (false positive) by user during review",
+)
+
+TASKS_EDITED = Counter(
+    "meeting_tasks_edited_total",
+    "Tasks edited by user (description / assignee / date)",
+    labelnames=["field"],  # description | assignee | due_date
+)
+
+CORRECTION_RATE = Gauge(
+    "meeting_correction_rate",
+    "Rolling average corrections per completed meeting (updated on each feedback submit)",
+)
+
+FALSE_POSITIVE_RATE = Gauge(
+    "meeting_false_positive_rate",
+    "Rolling ratio of dismissed tasks to total extracted action tasks",
+)
+
+TRAINING_SAMPLES_READY = Gauge(
+    "meeting_training_samples_ready_total",
+    "Number of meetings with ≥1 human correction — usable as fine-tuning samples",
+)
+
 # ── RAG metrics ───────────────────────────────────────────────────────────────
 RAG_QUERIES = Counter(
     "meeting_rag_queries_total",
@@ -150,6 +182,8 @@ def _preinit() -> None:
         RAG_QUERIES.labels(result=result)
     for feedback_type in ("correction", "false_positive", "missing"):
         FEEDBACK_SUBMITTED.labels(type=feedback_type)
+    for field in ("description", "assignee", "due_date"):
+        TASKS_EDITED.labels(field=field)
 
 
 _preinit()

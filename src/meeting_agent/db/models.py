@@ -42,6 +42,7 @@ class Meeting(Base):
     run_metrics: Mapped[dict | None] = mapped_column(JSONB)
     transcript_turns: Mapped[list | None] = mapped_column(JSONB)
     error: Mapped[str | None] = mapped_column(Text)
+    model_version: Mapped[str | None] = mapped_column(String(100))  # e.g. "qwen2.5:3b" or "meeting-agent-v1"
 
     tasks: Mapped[list["Task"]] = relationship(
         "Task", back_populates="meeting", cascade="all, delete-orphan"

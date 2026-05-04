@@ -13,10 +13,10 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+from pydantic import BaseModel
 
 # Import metrics so they are registered in the API process (required for /metrics to expose them)
 import meeting_agent.monitoring.metrics  # noqa: F401
@@ -25,12 +25,30 @@ from meeting_agent.api.ws_router import router as ws_router
 from meeting_agent.config import settings
 from meeting_agent.db.repository import (
     delete_meeting as db_delete_meeting,
+)
+from meeting_agent.db.repository import (
+    get_business_metrics as db_get_business_metrics,
+)
+from meeting_agent.db.repository import (
     get_meeting as db_get_meeting,
+)
+from meeting_agent.db.repository import (
     insert_meeting_stub,
+)
+from meeting_agent.db.repository import (
+    list_meetings as db_list_meetings,
+)
+from meeting_agent.db.repository import (
+    resolve_participant as db_resolve_participant,
 )
 from meeting_agent.pipeline.feedback import FeedbackSubmission, feedback_stats, save_feedback
 from meeting_agent.pipeline.router import router_stats
-from meeting_agent.pipeline.worker_registry import add_worker, delete_worker, list_workers, update_worker
+from meeting_agent.pipeline.worker_registry import (
+    add_worker,
+    delete_worker,
+    list_workers,
+    update_worker,
+)
 from meeting_agent.pipeline.worker_task import celery_app, check_retrain_task, process_meeting_task
 from meeting_agent.schemas.worker import Worker, WorkerRoster
 
@@ -243,9 +261,40 @@ async def submit_feedback(meeting_id: str, submission: FeedbackSubmission):
     Corrections are stored and consumed by the retraining pipeline to
     continuously improve extraction quality (feedback loop).
     """
+    from meeting_agent.monitoring.metrics import (
+        CORRECTION_RATE,
+        FALSE_POSITIVE_RATE,
+        TASKS_CONFIRMED,
+        TASKS_DISMISSED,
+        TASKS_EDITED,
+        TRAINING_SAMPLES_READY,
+    )
     for correction in submission.corrections:
         correction.meeting_id = meeting_id
     count = save_feedback(submission)
+
+    # Fire interaction metrics per correction
+    for c in submission.corrections:
+        if getattr(c, "is_false_positive", False):
+            TASKS_DISMISSED.inc()
+        else:
+            TASKS_CONFIRMED.inc()
+            if getattr(c, "corrected_description", None):
+                TASKS_EDITED.labels(field="description").inc()
+            if getattr(c, "corrected_assignee", None):
+                TASKS_EDITED.labels(field="assignee").inc()
+            if getattr(c, "corrected_due_date", None):
+                TASKS_EDITED.labels(field="due_date").inc()
+
+    # Update rolling business KPI gauges from DB (async-safe: lightweight query)
+    try:
+        biz = db_get_business_metrics()
+        CORRECTION_RATE.set(biz["correction_rate"])
+        FALSE_POSITIVE_RATE.set(biz["false_positive_rate"])
+        TRAINING_SAMPLES_READY.set(biz["training_ready_samples"])
+    except Exception:
+        pass
+
     return {"meeting_id": meeting_id, "corrections_saved": count}
 
 
@@ -346,6 +395,17 @@ async def ab_test_results():
     return results
 
 
+@app.get("/metrics/business", tags=["ops"])
+async def business_metrics():
+    """
+    Business KPIs computed from DB — suitable for Grafana JSON datasource panels.
+
+    Returns correction rate, false positive rate, training data accumulation,
+    and per-model-version breakdown for drift detection.
+    """
+    return db_get_business_metrics()
+
+
 @app.get("/feedback/stats", tags=["meetings"])
 async def get_feedback_stats():
     """Return aggregate statistics about accumulated user feedback."""
@@ -359,6 +419,7 @@ async def export_feedback_for_finetuning(limit: int = 500, format: str = "raw"):
 
     format=raw   → full objects (default, for inspection)
     format=jsonl → instruction/input/output format ready for finetune.py
+    format=rlhf  → chosen/rejected pairs for preference training
     """
     from meeting_agent.db.engine import get_session
     from meeting_agent.db.models import FeedbackCorrection, Meeting, Task
@@ -418,7 +479,29 @@ async def export_feedback_for_finetuning(limit: int = 500, format: str = "raw"):
                     "instruction": SYSTEM_INSTRUCTION,
                     "input": transcript_text,
                     "output": json.dumps(ground_truth, ensure_ascii=False),
+                    "model_version": meeting.model_version,
                 })
+            elif format == "rlhf":
+                # Chosen = human-corrected ground truth
+                # Rejected = original model output (before corrections)
+                original_tasks = [
+                    {
+                        "description": c.original_description,
+                        "assignee": c.original_assignee,
+                        "due_date": c.original_due_date.isoformat() if c.original_due_date else None,
+                    }
+                    for c in corrections if not c.is_false_positive and c.original_description
+                ]
+                if ground_truth and original_tasks:
+                    examples.append({
+                        "prompt": f"{SYSTEM_INSTRUCTION}\n\nTranscript:\n{transcript_text}",
+                        "chosen": json.dumps(ground_truth, ensure_ascii=False),
+                        "rejected": json.dumps(original_tasks, ensure_ascii=False),
+                        "meeting_id": mid,
+                        "model_version": meeting.model_version,
+                        "num_corrections": len(corrections),
+                        "has_false_positives": any(c.is_false_positive for c in corrections),
+                    })
             else:
                 examples.append({
                     "meeting_id": mid,
@@ -429,6 +512,7 @@ async def export_feedback_for_finetuning(limit: int = 500, format: str = "raw"):
                     "corrections_applied": len(corrections),
                     "has_false_positives": any(c.is_false_positive for c in corrections),
                     "has_missing_tasks": any(c.is_missing for c in corrections),
+                    "model_version": meeting.model_version,
                 })
 
     return {"count": len(examples), "examples": examples}
@@ -489,6 +573,26 @@ async def remove_worker(worker_id: str):
     if not found:
         raise HTTPException(status_code=404, detail=f"Worker '{worker_id}' not found.")
     return {"worker_id": worker_id, "deleted": True}
+
+
+@app.get("/meetings", tags=["meetings"])
+async def list_meetings(limit: int = 50, offset: int = 0):
+    """List all meetings, newest first. Returns summary cards (no tasks/transcripts)."""
+    return {"meetings": db_list_meetings(limit=limit, offset=offset)}
+
+
+class ResolveParticipantRequest(BaseModel):
+    worker_id: str
+    display_name: str
+
+
+@app.post("/meetings/{meeting_id}/participants/{speaker_id}/resolve", tags=["meetings"])
+async def resolve_participant(meeting_id: str, speaker_id: str, body: ResolveParticipantRequest):
+    """Map an unresolved speaker label to a roster worker."""
+    ok = db_resolve_participant(meeting_id, speaker_id, body.worker_id, body.display_name)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Participant '{speaker_id}' not found in meeting '{meeting_id}'.")
+    return {"meeting_id": meeting_id, "speaker_id": speaker_id, "resolved_to": body.display_name}
 
 
 @app.delete("/meetings/{meeting_id}", tags=["meetings"])

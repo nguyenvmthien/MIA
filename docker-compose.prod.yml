@@ -1,0 +1,70 @@
+# Production overrides for docker-compose.yml
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Required env file: .env (copy from .env.example, fill all values)
+# Secrets must NOT be hardcoded here — they come from .env only.
+
+services:
+
+  postgres:
+    ports: []  # don't expose DB port externally in prod
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    restart: unless-stopped
+
+  redis:
+    ports: []  # don't expose Redis externally in prod
+    restart: unless-stopped
+
+  api:
+    restart: unless-stopped
+    command: >
+      uvicorn meeting_agent.api.main:app
+      --host 0.0.0.0
+      --port 8000
+      --workers 2
+      --proxy-headers
+      --forwarded-allow-ips='*'
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    environment:
+      LOG_LEVEL: WARNING
+
+  worker:
+    restart: unless-stopped
+    environment:
+      CELERY_WORKER_CONCURRENCY: ${CELERY_WORKER_CONCURRENCY:-2}
+      LOG_LEVEL: WARNING
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A meeting_agent.pipeline.worker_task.celery_app inspect ping -t 5 || exit 1"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+
+  ollama:
+    restart: unless-stopped
+    ports: []  # don't expose Ollama externally
+
+  # Disable dev-only services in prod
+  pgadmin:
+    profiles: [dev]  # only starts with --profile dev
+
+  grafana:
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-changeme}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
+
+  prometheus:
+    restart: unless-stopped
+    ports: []  # only accessible via Grafana, not publicly

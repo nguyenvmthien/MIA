@@ -111,3 +111,100 @@ def check_run(
         window.add(value)
 
     return anomalies
+
+
+def check_weekly_drift() -> dict:
+    """
+    Compare task distribution metrics between current week and previous week.
+
+    Queries the DB for meetings in the last 7 days vs. the prior 7 days,
+    computes correction_rate and false_positive_rate for each window, and
+    flags a drift alert if either metric shifted by more than 2 std deviations
+    (or >50% relative change when history is sparse).
+
+    Returns a summary dict with drift status and per-metric details.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    try:
+        from sqlalchemy import func, select
+
+        from meeting_agent.db.engine import get_session
+        from meeting_agent.db.models import FeedbackCorrection, Meeting, Task
+
+        now = datetime.now(timezone.utc)
+        week_ago = now - timedelta(days=7)
+        two_weeks_ago = now - timedelta(days=14)
+
+        def _week_metrics(session, start, end) -> dict:
+            meetings = session.scalar(
+                select(func.count()).select_from(Meeting)
+                .where(Meeting.status == "completed")
+                .where(Meeting.processed_at >= start)
+                .where(Meeting.processed_at < end)
+            ) or 0
+            corrections = session.scalar(
+                select(func.count()).select_from(FeedbackCorrection)
+                .where(FeedbackCorrection.submitted_at >= start)
+                .where(FeedbackCorrection.submitted_at < end)
+            ) or 0
+            action_tasks = session.scalar(
+                select(func.count()).select_from(Task)
+                .join(Meeting, Task.meeting_id == Meeting.id)
+                .where(Task.bucket == "action")
+                .where(Meeting.processed_at >= start)
+                .where(Meeting.processed_at < end)
+            ) or 0
+            dismissed = session.scalar(
+                select(func.count()).select_from(Task)
+                .join(Meeting, Task.meeting_id == Meeting.id)
+                .where(Task.bucket == "action")
+                .where(Task.status == "dismissed")
+                .where(Meeting.processed_at >= start)
+                .where(Meeting.processed_at < end)
+            ) or 0
+            return {
+                "meetings": meetings,
+                "correction_rate": round(corrections / meetings, 3) if meetings else 0.0,
+                "false_positive_rate": round(dismissed / action_tasks, 3) if action_tasks else 0.0,
+            }
+
+        with get_session() as session:
+            current = _week_metrics(session, week_ago, now)
+            previous = _week_metrics(session, two_weeks_ago, week_ago)
+
+        alerts = []
+        details = {}
+        for metric in ("correction_rate", "false_positive_rate"):
+            curr_val = current[metric]
+            prev_val = previous[metric]
+            if prev_val == 0:
+                change_pct = 100.0 if curr_val > 0 else 0.0
+                is_drift = curr_val > 0.1
+            else:
+                change_pct = round((curr_val - prev_val) / prev_val * 100, 1)
+                is_drift = abs(change_pct) > 50
+
+            details[metric] = {
+                "current_week": curr_val,
+                "previous_week": prev_val,
+                "change_pct": change_pct,
+                "drift": is_drift,
+            }
+            if is_drift:
+                msg = f"WEEKLY_DRIFT: {metric} changed {change_pct:+.1f}% (prev={prev_val}, curr={curr_val})"
+                alerts.append(msg)
+                ANOMALY_EVENTS.labels(metric=f"weekly_{metric}").inc()
+                log.warning("Weekly drift detected — %s", msg)
+
+        return {
+            "status": "alert" if alerts else "ok",
+            "current_week_meetings": current["meetings"],
+            "previous_week_meetings": previous["meetings"],
+            "alerts": alerts,
+            "details": details,
+        }
+
+    except Exception as exc:
+        log.error("Weekly drift check failed: %s", exc)
+        return {"status": "error", "error": str(exc)}

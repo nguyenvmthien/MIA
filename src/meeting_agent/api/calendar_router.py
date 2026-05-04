@@ -18,8 +18,8 @@ import os
 import secrets
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
 
 from meeting_agent.integrations.google_calendar import (
     create_event_from_task,
@@ -27,7 +27,7 @@ from meeting_agent.integrations.google_calendar import (
     get_auth_url,
     refresh_if_expired,
 )
-from meeting_agent.integrations.token_store import delete_token, has_token, load_token, save_token
+from meeting_agent.integrations.token_store import delete_token, has_token, save_token
 from meeting_agent.monitoring.metrics import CALENDAR_EVENTS_CREATED
 
 log = logging.getLogger(__name__)
@@ -133,9 +133,9 @@ async def sync_to_calendar(
 
     Returns a list of created event IDs and HTML links.
     """
-    from meeting_agent.db.repository import get_meeting
-    from meeting_agent.db.models import FeedbackCorrection
     from meeting_agent.db.engine import get_session
+    from meeting_agent.db.models import FeedbackCorrection
+    from meeting_agent.db.repository import get_meeting
 
     # Fetch meeting from DB (includes any feedback-corrected state)
     meeting_data = get_meeting(meeting_id)

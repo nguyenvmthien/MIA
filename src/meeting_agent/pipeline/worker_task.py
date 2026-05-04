@@ -56,15 +56,26 @@ def check_retrain_task() -> dict:
 
 @celery_app.task(name="meeting_agent.drift_check")
 def drift_check_task() -> dict:
-    """Weekly task: compute PSI drift and log alert if threshold exceeded."""
-    _ensure_train_path()
-    from drift_detector import run_drift_check  # type: ignore
-    report = run_drift_check()
-    log.info("Drift check: overall=%s max_psi=%.4f",
-             report.get("overall_level"), report.get("max_psi", 0))
-    if report.get("overall_level") == "alert":
-        log.warning("DRIFT ALERT detected — consider retraining. max_psi=%.4f", report.get("max_psi", 0))
-    return report
+    """Weekly task: compute PSI drift and weekly correction/FP rate comparison."""
+    from meeting_agent.monitoring.anomaly import check_weekly_drift
+
+    weekly = check_weekly_drift()
+    log.info("Weekly drift check: status=%s alerts=%s", weekly.get("status"), weekly.get("alerts"))
+    if weekly.get("status") == "alert":
+        log.warning("WEEKLY DRIFT ALERT: %s", weekly.get("alerts"))
+
+    # Also run PSI-based drift check if train/ is available
+    try:
+        _ensure_train_path()
+        from drift_detector import run_drift_check  # type: ignore
+        psi = run_drift_check()
+        log.info("PSI drift check: overall=%s max_psi=%.4f",
+                 psi.get("overall_level"), psi.get("max_psi", 0))
+        weekly["psi"] = psi
+    except Exception as exc:
+        log.debug("PSI drift check skipped: %s", exc)
+
+    return weekly
 
 
 @celery_app.task(bind=True, name="meeting_agent.process_meeting")

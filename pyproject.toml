@@ -70,6 +70,9 @@ train = [
     "bitsandbytes>=0.43.1",
     "unsloth>=2024.6",
 ]
+data = [
+    "google-genai>=1.0.0",
+]
 dev = [
     "pytest>=8.2.0",
     "pytest-asyncio>=0.23.7",
@@ -95,6 +98,16 @@ select = ["E", "F", "I", "UP"]
 [tool.ruff.lint.per-file-ignores]
 # Prompt template strings are deliberately long for readability
 "src/meeting_agent/prompts/templates.py" = ["E501"]
+# Long strings in API error messages, SQL queries are acceptable
+"src/meeting_agent/api/main.py" = ["E501"]
+"src/meeting_agent/api/calendar_router.py" = ["E501"]
+"src/meeting_agent/api/ws_router.py" = ["E501"]
+"src/meeting_agent/db/models.py" = ["E501"]
+"src/meeting_agent/db/repository.py" = ["E501"]
+"src/meeting_agent/monitoring/anomaly.py" = ["E501"]
+"src/meeting_agent/pipeline/assignment.py" = ["E501"]
+"src/meeting_agent/pipeline/feedback.py" = ["E501"]
+"tests/*.py" = ["E501", "F841"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

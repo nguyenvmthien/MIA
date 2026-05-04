@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from meeting_agent.db.engine import engine, get_session
+from meeting_agent.db.engine import get_session
 from meeting_agent.db.models import FeedbackCorrection, Meeting, MeetingParticipant, Task
 
 log = logging.getLogger(__name__)
@@ -79,6 +79,7 @@ def upsert_meeting_result(summary_dict: dict) -> None:
             run_metrics=raw_metrics or None,
             transcript_turns=summary_dict.get("transcript_turns") or None,
             error=summary_dict.get("error"),
+            model_version=summary_dict.get("model_version"),
         )
         .on_conflict_do_update(
             index_elements=["id"],
@@ -91,6 +92,7 @@ def upsert_meeting_result(summary_dict: dict) -> None:
                 "run_metrics": raw_metrics or None,
                 "transcript_turns": summary_dict.get("transcript_turns") or None,
                 "error": summary_dict.get("error"),
+                "model_version": summary_dict.get("model_version"),
             },
         )
     )
@@ -188,6 +190,7 @@ def get_meeting(meeting_id: str) -> dict | None:
             "human_review_items": tasks_by_bucket["human_review"],
             "run_metrics": meeting.run_metrics,
             "error": meeting.error,
+            "model_version": meeting.model_version,
         }
 
 
@@ -233,6 +236,59 @@ def apply_corrections_to_tasks(meeting_id: str, corrections: list[dict]) -> int:
                 updated += 1
     log.info("Applied %d corrections to tasks for meeting %s", updated, meeting_id)
     return updated
+
+
+def list_meetings(limit: int = 50, offset: int = 0) -> list[dict]:
+    """Return a summary list of all meetings, newest first."""
+    with get_session() as session:
+        meetings = (
+            session.query(Meeting)
+            .order_by(Meeting.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+        result = []
+        for m in meetings:
+            task_count = sum(1 for t in m.tasks if t.bucket == "action")
+            unresolved_speakers = [
+                {"speaker_id": p.speaker_id, "display_name": p.display_name, "worker_id": p.worker_id}
+                for p in m.meeting_participants
+                if p.worker_id is None
+            ]
+            result.append({
+                "meeting_id": m.id,
+                "status": m.status,
+                "audio_filename": m.audio_filename,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+                "processed_at": m.processed_at.isoformat() if m.processed_at else None,
+                "duration_ms": m.duration_ms,
+                "summary_text": m.summary_text,
+                "participants": [p.display_name for p in m.meeting_participants],
+                "task_count": task_count,
+                "unresolved_speaker_count": len(unresolved_speakers),
+                "error": m.error,
+            })
+        return result
+
+
+def resolve_participant(meeting_id: str, speaker_id: str, worker_id: str, display_name: str) -> bool:
+    """Assign a roster worker to an unresolved speaker label in a meeting."""
+    with get_session() as session:
+        p = (
+            session.query(MeetingParticipant)
+            .filter_by(meeting_id=meeting_id, speaker_id=speaker_id)
+            .first()
+        )
+        if p is None:
+            return False
+        p.worker_id = worker_id
+        p.display_name = display_name
+        # Also update tasks that reference this speaker by display_name or speaker_id
+        session.query(Task).filter_by(meeting_id=meeting_id, assignee=speaker_id).update(
+            {"assignee": display_name, "assignee_id": worker_id}
+        )
+    return True
 
 
 def delete_meeting(meeting_id: str) -> bool:
@@ -296,6 +352,86 @@ def save_corrections_to_db(
 
     log.info("Saved %d feedback corrections for meeting %s", len(rows), meeting_id)
     return len(rows)
+
+
+def get_business_metrics() -> dict:
+    """Compute business KPIs from DB for the dashboard and training pipeline tracking."""
+    with get_session() as session:
+        total_meetings = session.scalar(select(func.count()).select_from(Meeting)) or 0
+        completed = session.scalar(
+            select(func.count()).where(Meeting.status == "completed")
+        ) or 0
+
+        # Correction rate = total corrections / completed meetings
+        total_corrections = session.scalar(
+            select(func.count()).select_from(FeedbackCorrection)
+        ) or 0
+        correction_rate = round(total_corrections / completed, 3) if completed else 0.0
+
+        # False positive rate = dismissed tasks / all action tasks
+        total_action_tasks = session.scalar(
+            select(func.count()).select_from(Task).where(Task.bucket == "action")
+        ) or 0
+        dismissed_tasks = session.scalar(
+            select(func.count()).select_from(Task).where(
+                Task.bucket == "action", Task.status == "dismissed"
+            )
+        ) or 0
+        fp_rate = round(dismissed_tasks / total_action_tasks, 3) if total_action_tasks else 0.0
+
+        # Training data: meetings with ≥1 correction (usable for fine-tuning)
+        meetings_with_corrections = session.scalar(
+            select(func.count(FeedbackCorrection.meeting_id.distinct()))
+        ) or 0
+
+        # Calendar adoption: meetings that had corrections submitted (proxy for "reviewed")
+        # A proper adoption rate needs calendar sync events — use corrections as proxy for now
+        false_positives = session.scalar(
+            select(func.count()).where(FeedbackCorrection.is_false_positive.is_(True))
+        ) or 0
+        desc_corrections = session.scalar(
+            select(func.count()).where(
+                FeedbackCorrection.corrected_description.isnot(None)
+            )
+        ) or 0
+        assignee_corrections = session.scalar(
+            select(func.count()).where(
+                FeedbackCorrection.corrected_assignee.isnot(None)
+            )
+        ) or 0
+
+        # Corrections by model version (for drift detection)
+        from meeting_agent.db.models import Meeting as MeetingModel
+        version_stats: list[dict] = []
+        rows = (
+            session.query(
+                MeetingModel.model_version,
+                func.count(MeetingModel.id).label("meetings"),
+            )
+            .filter(MeetingModel.model_version.isnot(None))
+            .group_by(MeetingModel.model_version)
+            .all()
+        )
+        for row in rows:
+            version_stats.append({"model_version": row[0], "meetings": row[1]})
+
+        return {
+            "total_meetings": total_meetings,
+            "completed_meetings": completed,
+            "total_corrections": total_corrections,
+            "correction_rate": correction_rate,
+            "false_positive_rate": fp_rate,
+            "dismissed_tasks": dismissed_tasks,
+            "total_action_tasks": total_action_tasks,
+            "meetings_with_corrections": meetings_with_corrections,
+            "training_ready_samples": meetings_with_corrections,
+            "corrections_breakdown": {
+                "false_positives": false_positives,
+                "description_edits": desc_corrections,
+                "assignee_edits": assignee_corrections,
+            },
+            "model_version_stats": version_stats,
+        }
 
 
 def get_feedback_stats_from_db() -> dict:

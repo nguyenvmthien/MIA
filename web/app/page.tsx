@@ -5,7 +5,7 @@ import { useState, useCallback, useEffect, useRef } from "react"
 import {
   Upload, Users, CheckCircle2, Circle, Calendar,
   LogOut, Loader2, ChevronDown, ChevronUp, AlertCircle, Mic,
-  Sparkles, ArrowRight, UserPlus, X
+  Sparkles, ArrowRight, UserPlus, X, History, UserCheck,
 } from "lucide-react"
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -18,8 +18,10 @@ type Task = {
   due_date?: string; priority?: string; extraction_confidence?: number
   selected?: boolean; edited_description?: string; edited_assignee?: string; edited_due_date?: string
 }
+type ParticipantDetail = { speaker_id: string; display_name: string; worker_id: string | null }
 type MeetingResult = {
   meeting_id: string; summary_text?: string; participants?: string[]
+  participants_detail?: ParticipantDetail[]
   action_items: Task[]; human_review_items: Task[]; unresolved_items: Task[]
   run_metrics?: { total_tokens_used: number; tasks_extracted: number; stage_timings: Record<string, number> }
 }
@@ -101,7 +103,7 @@ function UploadStep({ onSubmit }: { onSubmit: (file: File, roster: Worker[]) => 
   }, [])
 
   const selectedWorkers = workers.filter(w => selected.includes(w.worker_id))
-  const canSubmit = file && selected.length > 0
+  const canSubmit = !!file
 
   return (
     <div className="space-y-6">
@@ -307,6 +309,80 @@ function ProcessingStep({ meetingId, onDone }: { meetingId: string; onDone: (r: 
 
 // ── Review step ────────────────────────────────────────────────────────────────
 
+// ── Speaker resolver (inline in review) ───────────────────────────────────────
+
+function InlineSpeakerResolver({
+  meetingId,
+  participants,
+  workers,
+  onResolved,
+}: {
+  meetingId: string
+  participants: ParticipantDetail[]
+  workers: Worker[]
+  onResolved: () => void
+}) {
+  const unresolved = participants.filter(p => !p.worker_id)
+  const [selections, setSelections] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState<string | null>(null)
+
+  if (unresolved.length === 0) return null
+
+  const resolve = async (speakerId: string) => {
+    const workerId = selections[speakerId]
+    const worker = workers.find(w => w.worker_id === workerId)
+    if (!worker) return
+    setSaving(speakerId)
+    try {
+      await fetch(`${API}/meetings/${meetingId}/participants/${encodeURIComponent(speakerId)}/resolve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ worker_id: workerId, display_name: worker.name }),
+      })
+      onResolved()
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  return (
+    <div className="bg-amber-950/20 border border-amber-700/30 rounded-xl p-4 space-y-3">
+      <div className="flex items-center gap-2 text-amber-400 text-xs font-semibold">
+        <UserCheck size={14} />
+        {unresolved.length} speaker{unresolved.length > 1 ? "s" : ""} not matched — assign to roster
+      </div>
+      {unresolved.map(p => (
+        <div key={p.speaker_id} className="flex items-center gap-2">
+          <span className="text-xs text-slate-400 font-mono bg-slate-800 px-2 py-1 rounded-md w-28 truncate">
+            {p.display_name}
+          </span>
+          <span className="text-slate-600 text-xs">→</span>
+          <select
+            value={selections[p.speaker_id] ?? ""}
+            onChange={e => setSelections(prev => ({ ...prev, [p.speaker_id]: e.target.value }))}
+            className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-violet-500"
+          >
+            <option value="">Select worker...</option>
+            {workers.map(w => (
+              <option key={w.worker_id} value={w.worker_id}>
+                {w.name}{w.role ? ` (${w.role})` : ""}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => resolve(p.speaker_id)}
+            disabled={!selections[p.speaker_id] || saving === p.speaker_id}
+            className="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 rounded-lg text-xs font-medium transition-colors flex items-center gap-1 flex-shrink-0"
+          >
+            {saving === p.speaker_id ? <Loader2 size={11} className="animate-spin" /> : <UserCheck size={11} />}
+            Assign
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function ReviewStep({
   result,
   onConfirm,
@@ -326,6 +402,20 @@ function ReviewStep({
   )
   const [summaryOpen, setSummaryOpen] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [workers, setWorkers] = useState<Worker[]>([])
+  const [participants, setParticipants] = useState<ParticipantDetail[]>(result.participants_detail ?? [])
+
+  useEffect(() => {
+    fetch(`${API}/workers`).then(r => r.json()).then(d => setWorkers(d.workers ?? [])).catch(() => null)
+  }, [])
+
+  const refreshParticipants = async () => {
+    try {
+      const r = await fetch(`${API}/meetings/${result.meeting_id}`)
+      const data = await r.json()
+      setParticipants(data.participants_detail ?? [])
+    } catch { /* non-fatal */ }
+  }
 
   const toggle = (id: string) => setTasks(prev => prev.map(t => t.task_id === id ? { ...t, selected: !t.selected } : t))
   const update = (id: string, field: string, val: string) =>
@@ -349,6 +439,16 @@ function ReviewStep({
 
   return (
     <div className="space-y-5">
+      {/* Speaker resolution */}
+      {participants.some(p => !p.worker_id) && (
+        <InlineSpeakerResolver
+          meetingId={result.meeting_id}
+          participants={participants}
+          workers={workers}
+          onResolved={refreshParticipants}
+        />
+      )}
+
       {/* Summary */}
       {result.summary_text && (
         <div className="bg-slate-900/80 border border-slate-700/60 rounded-xl overflow-hidden">
@@ -698,6 +798,11 @@ export default function Home() {
           <span className="font-semibold text-sm text-slate-200">Meeting AI Agent</span>
         </div>
         <div className="flex items-center gap-3">
+          <a href="/history"
+            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors px-2 py-1 rounded-lg hover:bg-slate-800">
+            <History size={13} />
+            History
+          </a>
           <a href="/roster"
             className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors px-2 py-1 rounded-lg hover:bg-slate-800">
             <Users size={13} />
