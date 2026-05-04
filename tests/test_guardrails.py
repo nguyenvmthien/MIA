@@ -68,7 +68,6 @@ def test_check_hallucination_name_in_transcript():
 
 
 def test_check_hallucination_name_missing_from_transcript():
-    from meeting_agent.schemas.worker import Worker
     # Worker "Charlie" resolved from roster but NOT mentioned in the transcript → hallucination
     charlie = Worker(worker_id="w9", name="Charlie", aliases=["Chuck"])
     turns = [

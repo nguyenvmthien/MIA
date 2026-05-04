@@ -5,7 +5,6 @@ import pytest
 from meeting_agent.pipeline.assignment import _confidence_score, _fuzzy_score, resolve_assignments
 from meeting_agent.schemas.task import ExtractedTask, TaskStatus
 
-
 # ── Fuzzy scoring ─────────────────────────────────────────────────────────────
 
 def test_fuzzy_score_exact():

@@ -227,7 +227,8 @@ def routed_chat(
             import sys
             from pathlib import Path as _Path
             sys.path.insert(0, str(_Path(__file__).parent.parent.parent.parent / "train"))
-            from ab_test import get_model_for_meeting, load_state as _ab_load_state
+            from ab_test import get_model_for_meeting
+            from ab_test import load_state as _ab_load_state
             effective_model = get_model_for_meeting(meeting_id)
             if effective_model != model:
                 log.info("A/B override: meeting=%s model=%s→%s", meeting_id, model, effective_model)

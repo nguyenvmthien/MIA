@@ -15,7 +15,11 @@ from datetime import date, timedelta
 
 from pydantic import ValidationError
 
-from meeting_agent.monitoring.metrics import GUARDRAILS_DURATION, HALLUCINATION_FLAGS, SCHEMA_FAILURES
+from meeting_agent.monitoring.metrics import (
+    GUARDRAILS_DURATION,
+    HALLUCINATION_FLAGS,
+    SCHEMA_FAILURES,
+)
 from meeting_agent.pipeline.pii import mask_pii
 from meeting_agent.schemas.task import ExtractedTask, TaskPriority, TaskStatus
 from meeting_agent.schemas.transcript import TranscriptTurn

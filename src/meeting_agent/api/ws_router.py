@@ -22,7 +22,6 @@ Endpoint:
     WS /ws/transcribe?language=vi&meeting_id=<optional>
 """
 
-import json
 import logging
 import time
 
