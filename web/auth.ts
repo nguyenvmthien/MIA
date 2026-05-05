@@ -60,6 +60,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async session({ session, token }) {
       session.accessToken = token.accessToken as string
       session.error = token.error as string | undefined
+      if (token.picture) session.user.image = token.picture as string
       return session
     },
   },

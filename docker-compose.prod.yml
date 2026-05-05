@@ -9,9 +9,9 @@ services:
   postgres:
     ports: []  # don't expose DB port externally in prod
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-meeting}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-meeting}
+      POSTGRES_DB: ${POSTGRES_DB:-meeting_agent}
     restart: unless-stopped
 
   redis:
@@ -19,6 +19,7 @@ services:
     restart: unless-stopped
 
   api:
+    ports: []  # only accessible via nginx in prod
     restart: unless-stopped
     command: >
       uvicorn meeting_agent.api.main:app
@@ -28,7 +29,7 @@ services:
       --proxy-headers
       --forwarded-allow-ips='*'
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -52,18 +53,56 @@ services:
     restart: unless-stopped
     ports: []  # don't expose Ollama externally
 
+  web:
+    build:
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_URL:-https://localhost}
+    restart: unless-stopped
+    ports: []  # only accessible via nginx in prod
+    environment:
+      NEXT_PUBLIC_API_URL: ${PUBLIC_URL:-https://localhost}
+      BACKEND_API_URL: http://api:8000
+      AUTH_URL: ${PUBLIC_URL:-https://localhost}
+      AUTH_TRUST_HOST: "true"
+      AUTH_SECRET: ${AUTH_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+
+  # ── Nginx reverse proxy + TLS termination ─────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_started
+      ui:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/health 2>/dev/null | grep -q ok || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
   # Disable dev-only services in prod
   pgadmin:
     profiles: [dev]  # only starts with --profile dev
 
   grafana:
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    ports: []  # in prod, access Grafana via nginx /grafana/
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-changeme}
       GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-https://localhost/grafana}
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
 
   prometheus:
     restart: unless-stopped

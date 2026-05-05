@@ -1,7 +1,7 @@
 seminar/
 data/
 final_report/
-
+*.pyc
 # Python
 __pycache__/
 *.py[cod]
@@ -56,4 +56,4 @@ htmlcov/
 # Docker
 docker-compose.override.yml
 
-meeting_agent.egg-info/
+meeting_agent.egg-info/docker/nginx/certs/

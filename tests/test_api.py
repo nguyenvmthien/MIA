@@ -130,7 +130,8 @@ def test_get_meeting_processing(client):
 def test_get_meeting_failed(client):
     mock_result = MagicMock(state="FAILURE")
     mock_result.result = RuntimeError("STT crashed")
-    with patch("meeting_agent.api.main.celery_app") as mock_celery:
+    with patch("meeting_agent.api.main.celery_app") as mock_celery, \
+         patch("meeting_agent.api.main.db_get_meeting", return_value=None):
         mock_celery.AsyncResult.return_value = mock_result
         resp = client.get("/meetings/some-id")
     assert resp.status_code == 500
@@ -139,7 +140,8 @@ def test_get_meeting_failed(client):
 
 def test_get_meeting_completed(client, completed_summary):
     mock_result = MagicMock(state="SUCCESS", result=completed_summary)
-    with patch("meeting_agent.api.main.celery_app") as mock_celery:
+    with patch("meeting_agent.api.main.celery_app") as mock_celery, \
+         patch("meeting_agent.api.main.db_get_meeting", return_value=None):
         mock_celery.AsyncResult.return_value = mock_result
         resp = client.get("/meetings/test-meeting-123")
     assert resp.status_code == 200
@@ -176,7 +178,8 @@ def test_submit_feedback(client):
 
 def test_delete_meeting_no_data(client, tmp_path):
     """Delete on a non-existent meeting returns empty deleted_paths."""
-    with patch("meeting_agent.api.main.settings") as mock_settings:
+    with patch("meeting_agent.api.main.settings") as mock_settings, \
+         patch("meeting_agent.api.main.db_delete_meeting", return_value=False):
         mock_settings.audio_storage_path = str(tmp_path / "audio")
         mock_settings.transcript_storage_path = str(tmp_path / "transcripts")
         resp = client.delete("/meetings/nonexistent-id")

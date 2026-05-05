@@ -72,6 +72,7 @@ train = [
 ]
 data = [
     "google-genai>=1.0.0",
+    "anthropic>=0.40.0",
 ]
 dev = [
     "pytest>=8.2.0",
@@ -108,6 +109,9 @@ select = ["E", "F", "I", "UP"]
 "src/meeting_agent/pipeline/assignment.py" = ["E501"]
 "src/meeting_agent/pipeline/feedback.py" = ["E501"]
 "tests/*.py" = ["E501", "F841"]
+# train/ and data_pipeline/ use sys.path hacks and long CLI strings by design
+"train/*.py" = ["E501", "E402", "F401", "E741"]
+"data_pipeline/*.py" = ["E501", "E402", "F401"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

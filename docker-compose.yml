@@ -1,3 +1,5 @@
+name: meeting-agent
+
 x-db-env: &db-env
   DATABASE_URL: postgresql://${POSTGRES_USER:-meeting}:${POSTGRES_PASSWORD:-meeting}@postgres:5432/${POSTGRES_DB:-meeting_agent}
   REDIS_URL: redis://redis:6379/0
@@ -118,6 +120,25 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+
+  # ── Next.js Web UI ────────────────────────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "3001:3001"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      BACKEND_API_URL: http://api:8000
+      AUTH_URL: http://localhost:3001
+      AUTH_TRUST_HOST: "true"
+      AUTH_SECRET: ${AUTH_SECRET:-m9w0uRaiiSXrGv4X/WRd9b4nyi92fFu1BecpTu1NQWM=}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+    depends_on:
+      api:
+        condition: service_started
 
   # ── pgAdmin (database browser) ────────────────────────────────────────────
   pgadmin:

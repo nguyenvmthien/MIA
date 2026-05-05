@@ -60,13 +60,18 @@ def save_feedback(submission: FeedbackSubmission) -> int:
     if not submission.corrections:
         return 0
 
-    count = _write_to_db(submission)
-    _write_to_jsonl(submission)
+    count, jsonl_written = _write_to_db(submission)
+    if not jsonl_written:
+        _write_to_jsonl(submission)
     return count
 
 
-def _write_to_db(submission: FeedbackSubmission) -> int:
-    """Write corrections to PostgreSQL and apply them to the tasks table."""
+def _write_to_db(submission: FeedbackSubmission) -> tuple[int, bool]:
+    """Write corrections to PostgreSQL and apply them to the tasks table.
+
+    Returns (count, jsonl_written). On DB failure falls back to JSONL and
+    signals that JSONL has already been written so the caller doesn't double-write.
+    """
     try:
         from meeting_agent.db.repository import apply_corrections_to_tasks, save_corrections_to_db
 
@@ -83,14 +88,14 @@ def _write_to_db(submission: FeedbackSubmission) -> int:
                 reviewer=submission.reviewer,
                 notes=submission.notes,
             )
-            # Keep tasks table in sync — this is the ground truth for fine-tuning
             apply_corrections_to_tasks(meeting_id, items)
 
         _increment_feedback_metrics(submission)
-        return total
+        return total, False
     except Exception:
         log.exception("Failed to write feedback to database — falling back to JSONL only")
-        return _write_to_jsonl_count(submission)
+        count = _write_to_jsonl_count(submission)
+        return count, True  # JSONL already written inside _write_to_jsonl_count
 
 
 def _write_to_jsonl(submission: FeedbackSubmission) -> None:

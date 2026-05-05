@@ -6,14 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# --- Dependencies layer (cached unless pyproject.toml changes) ---
 COPY pyproject.toml README.md ./
-COPY src/ ./src/
-COPY alembic/ ./alembic/
-COPY alembic.ini ./
-COPY streamlit_app.py ./
-COPY train/ ./train/
-
-# Install only core deps, skip whisperx/torch (not needed by API or UI)
 RUN pip install --no-cache-dir \
     fastapi uvicorn[standard] python-multipart \
     pydantic pydantic-settings \
@@ -21,12 +15,17 @@ RUN pip install --no-cache-dir \
     sqlalchemy alembic psycopg2-binary \
     prometheus-client langsmith \
     python-dotenv httpx tenacity rich typer \
-    cryptography \
-    ollama \
-    streamlit \
-    && pip install --no-cache-dir -e . --no-deps
+    cryptography ollama streamlit
 
-RUN mkdir -p data/audio data/transcripts data/tokens data/workers.json
+# --- App code layer (invalidated only when src/ changes) ---
+COPY src/ ./src/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./
+COPY streamlit_app.py ./
+COPY train/ ./train/
+RUN pip install --no-cache-dir -e . --no-deps
+
+RUN mkdir -p data/audio data/transcripts data/tokens
 
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8000

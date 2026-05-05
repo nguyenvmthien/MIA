@@ -9,12 +9,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# --- Dependencies layer (cached unless pyproject.toml changes) ---
 COPY pyproject.toml README.md ./
-COPY src/ ./src/
-
-# Worker needs full pipeline: whisperx, torch, faiss, noisereduce, etc.
+# Stub src so pip can resolve all deps without the real code
+RUN mkdir -p src/meeting_agent && touch src/meeting_agent/__init__.py
 RUN pip install --no-cache-dir -e "." \
     && pip install --no-cache-dir cryptography
+
+# --- App code layer (only invalidated when src/ changes) ---
+COPY src/ ./src/
+RUN pip install --no-cache-dir -e . --no-deps
 
 RUN mkdir -p data/audio data/transcripts data/tokens data/models
 
