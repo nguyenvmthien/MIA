@@ -1,2 +1,0 @@
-[console_scripts]
-meeting-agent = meeting_agent.cli:app
