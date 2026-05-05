@@ -164,12 +164,25 @@ def get_meeting(meeting_id: str) -> dict | None:
         for t in meeting.tasks:
             tasks_by_bucket.setdefault(t.bucket, []).append(_task_to_dict(t))
 
+        # Enrich email from current worker registry (may be null if worker added later)
+        try:
+            from meeting_agent.pipeline.worker_registry import get_worker
+            def _enrich_email(p: MeetingParticipant) -> str | None:
+                if p.email:
+                    return p.email
+                if p.worker_id:
+                    w = get_worker(p.worker_id)
+                    return w.email if w else None
+                return None
+        except Exception:
+            def _enrich_email(p): return p.email  # type: ignore
+
         participants_detail = [
             {
                 "speaker_id": p.speaker_id,
                 "display_name": p.display_name,
                 "worker_id": p.worker_id,
-                "email": p.email,
+                "email": _enrich_email(p),
             }
             for p in meeting.meeting_participants
         ]

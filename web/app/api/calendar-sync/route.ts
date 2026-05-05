@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthenticated" }, { status: 401 })
   }
 
-  const { meetingId, tasks } = await req.json()
+  const { meetingId, tasks, taskIds } = await req.json()
   const userId = session.user.email
   const accessToken = session.accessToken
 
@@ -29,7 +29,11 @@ export async function POST(req: NextRequest) {
 
   const res = await fetch(
     `${API}/meetings/${meetingId}/calendar-sync?user_id=${encodeURIComponent(userId)}`,
-    { method: "POST" }
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task_ids: taskIds ?? null }),
+    }
   )
   const data = await res.json()
   return NextResponse.json(data, { status: res.status })

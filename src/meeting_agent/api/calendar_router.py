@@ -120,10 +120,15 @@ async def store_token_direct(body: _DirectTokenBody):
 
 # ── Calendar sync ─────────────────────────────────────────────────────────────
 
+class _CalendarSyncBody(BaseModel):
+    task_ids: list[str] | None = None  # if None → sync all action_items
+
+
 @router.post("/meetings/{meeting_id}/calendar-sync", tags=["calendar"])
 async def sync_to_calendar(
     meeting_id: str,
     user_id: str = Query(..., description="User whose Google Calendar to write to"),
+    body: _CalendarSyncBody = _CalendarSyncBody(),
 ):
     """
     Create Google Calendar events for all action items in a completed meeting.
@@ -155,6 +160,10 @@ async def sync_to_calendar(
 
     access_token: str = token["access_token"]
     action_items: list[dict] = list(meeting_data.get("action_items", []))
+    # Filter to only selected tasks if caller specified task_ids
+    if body.task_ids is not None:
+        task_id_set = set(body.task_ids)
+        action_items = [t for t in action_items if t.get("task_id") in task_id_set]
 
     # Apply latest feedback corrections — override assignee/description if corrected
     with get_session() as _sess:

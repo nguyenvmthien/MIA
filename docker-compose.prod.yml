@@ -91,9 +91,10 @@ services:
       timeout: 5s
       retries: 3
 
-  # Disable dev-only services in prod
   pgadmin:
-    profiles: [dev]  # only starts with --profile dev
+    restart: unless-stopped
+    ports:
+      - "5050:80"
 
   grafana:
     restart: unless-stopped

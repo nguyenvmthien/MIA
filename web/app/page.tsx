@@ -673,7 +673,7 @@ export default function Home() {
         const r = await fetch("/api/calendar-sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ meetingId, tasks: selectedTasks }),
+          body: JSON.stringify({ meetingId, taskIds: selectedTasks.map(t => t.task_id) }),
         })
         const data = await r.json()
         setEvents(data.events ?? [])
