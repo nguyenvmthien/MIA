@@ -152,7 +152,6 @@ def get_results(experiment_id: str | None = None) -> dict:
 # ── CLI commands ──────────────────────────────────────────────────────────────
 
 def cmd_start(model_b: str, traffic: float) -> None:
-    import uuid
     model_a = os.environ.get("OLLAMA_LLM_MODEL", "qwen2.5:3b")
     experiment_id = f"ab_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
     state = {

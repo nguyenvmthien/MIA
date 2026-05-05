@@ -25,11 +25,11 @@ from pathlib import Path
 
 # ── Graceful import of rich ───────────────────────────────────────────────────
 try:
+    from rich import print as rprint
     from rich.console import Console
     from rich.panel import Panel
     from rich.prompt import Confirm, Prompt
     from rich.table import Table
-    from rich import print as rprint
     _rich = True
 except ImportError:
     _rich = False

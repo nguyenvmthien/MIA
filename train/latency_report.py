@@ -11,6 +11,7 @@ Usage:
 import argparse
 import json
 import logging
+import urllib.parse
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -22,9 +23,7 @@ STAGES = ["ingest", "preprocess", "stt", "diarize", "llm", "guardrails", "assign
 
 
 def _query(prometheus_url: str, promql: str) -> list[dict]:
-    url = f"{prometheus_url}/api/v1/query?query={urllib.parse.quote(promql)}"
     try:
-        import urllib.parse
         url = f"{prometheus_url}/api/v1/query?query={urllib.parse.quote(promql)}"
         with urllib.request.urlopen(url, timeout=5) as r:
             data = json.loads(r.read())
@@ -42,7 +41,6 @@ def _percentile_query(stage: str, quantile: float) -> str:
 
 
 def collect_latency(prometheus_url: str) -> dict:
-    import urllib.parse
 
     report = {
         "collected_at": datetime.utcnow().isoformat(),
