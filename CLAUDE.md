@@ -24,9 +24,6 @@ mypy src/meeting_agent --ignore-missing-imports
 # Start API server (local)
 meeting-agent serve --reload
 
-# Start Streamlit UI (local, while API is running)
-streamlit run streamlit_app.py
-
 # Full stack (recommended)
 docker compose up -d
 # With NVIDIA GPU:

@@ -82,8 +82,6 @@ services:
         condition: service_healthy
       web:
         condition: service_started
-      ui:
-        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- --no-check-certificate https://127.0.0.1/health 2>/dev/null | grep -q ok || exit 1"]

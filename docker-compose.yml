@@ -101,26 +101,6 @@ services:
       ollama:
         condition: service_healthy
 
-  # ── Streamlit UI ──────────────────────────────────────────────────────────
-  ui:
-    build:
-      context: .
-      dockerfile: Dockerfile.api
-    command: streamlit run streamlit_app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
-    ports:
-      - "8501:8501"
-    env_file: .env
-    environment:
-      MEETING_AGENT_API_URL: http://api:8000
-    depends_on:
-      api:
-        condition: service_started
-    healthcheck:
-      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')\" || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-
   # ── Next.js Web UI ────────────────────────────────────────────────────────
   web:
     build:
