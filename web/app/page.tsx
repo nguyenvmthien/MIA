@@ -14,7 +14,7 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
 type Worker = { worker_id: string; name: string; role?: string; email?: string; aliases?: string[] }
 type Task = {
-  task_id: string; description: string; assignee?: string
+  task_id: string; description: string; assignee?: string; assignee_id?: string
   due_date?: string; priority?: string; extraction_confidence?: number
   selected?: boolean; edited_description?: string; edited_assignee?: string; edited_due_date?: string
 }
@@ -102,7 +102,10 @@ function UploadStep({ onSubmit }: { onSubmit: (file: File, roster: Worker[]) => 
     if (f) setFile(f)
   }, [])
 
-  const selectedWorkers = workers.filter(w => selected.includes(w.worker_id))
+  const allSelected = workers.length > 0 && selected.length === workers.length
+  const noneSelected = selected.length === 0
+  // If no explicit selection, submit with all workers (default = everyone)
+  const rosterToSubmit = noneSelected ? workers : workers.filter(w => selected.includes(w.worker_id))
   const canSubmit = !!file
 
   return (
@@ -152,12 +155,27 @@ function UploadStep({ onSubmit }: { onSubmit: (file: File, roster: Worker[]) => 
           <div className="flex items-center gap-2">
             <Users size={14} className="text-slate-400" />
             <h3 className="text-sm font-medium text-slate-300">Participants</h3>
+            {noneSelected && workers.length > 0 && (
+              <span className="text-[11px] text-slate-500 bg-slate-800 px-2 py-0.5 rounded-full">
+                all {workers.length} included
+              </span>
+            )}
           </div>
-          {selected.length > 0 && (
-            <span className="text-xs text-violet-400 font-medium bg-violet-500/10 px-2 py-0.5 rounded-full">
-              {selected.length} selected
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {!noneSelected && (
+              <span className="text-xs text-violet-400 font-medium bg-violet-500/10 px-2 py-0.5 rounded-full">
+                {selected.length} selected
+              </span>
+            )}
+            {workers.length > 0 && (
+              <button
+                onClick={() => allSelected ? setSelected([]) : setSelected(workers.map(w => w.worker_id))}
+                className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors underline underline-offset-2"
+              >
+                {allSelected ? "Clear" : "All"}
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -169,6 +187,8 @@ function UploadStep({ onSubmit }: { onSubmit: (file: File, roster: Worker[]) => 
               className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150
                 ${selected.includes(w.worker_id)
                   ? "bg-violet-600 border-violet-500 text-white shadow-sm shadow-violet-900/50"
+                  : noneSelected
+                  ? "bg-slate-800/80 border-slate-700/60 text-slate-400 ring-1 ring-slate-700/30 hover:border-slate-500 hover:text-slate-300"
                   : "bg-slate-800/80 border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-300"}`}>
               {w.name}{w.role ? <span className="opacity-60"> · {w.role}</span> : ""}
             </button>
@@ -211,7 +231,7 @@ function UploadStep({ onSubmit }: { onSubmit: (file: File, roster: Worker[]) => 
       <div className="space-y-2 pt-1">
         <button
           disabled={!canSubmit}
-          onClick={() => file && onSubmit(file, selectedWorkers)}
+          onClick={() => file && onSubmit(file, rosterToSubmit)}
           className="w-full py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-sm font-semibold transition-all duration-150 flex items-center justify-center gap-2 shadow-lg shadow-violet-900/30"
         >
           <Sparkles size={15} />
@@ -219,9 +239,7 @@ function UploadStep({ onSubmit }: { onSubmit: (file: File, roster: Worker[]) => 
           <ArrowRight size={15} />
         </button>
         {!canSubmit && (
-          <p className="text-center text-xs text-slate-600">
-            {!file ? "Select an audio file" : "Select at least one participant"}
-          </p>
+          <p className="text-center text-xs text-slate-600">Select an audio file to continue</p>
         )}
       </div>
     </div>
@@ -392,9 +410,16 @@ function ReviewStep({
   onConfirm: (allTasks: Task[]) => void
   onSkip: (allTasks: Task[]) => void
 }) {
+  // Unresolved speakers: their tasks start deselected until assigned
+  const unresolvedLabels = new Set(
+    (result.participants_detail ?? [])
+      .filter(p => !p.worker_id)
+      .flatMap(p => [p.speaker_id, p.display_name])
+  )
   const [tasks, setTasks] = useState<Task[]>(
     result.action_items.map(t => ({
-      ...t, selected: true,
+      ...t,
+      selected: !t.assignee || !unresolvedLabels.has(t.assignee),
       edited_description: t.description,
       edited_assignee: t.assignee ?? "",
       edited_due_date: t.due_date ?? ""
@@ -414,6 +439,28 @@ function ReviewStep({
       const r = await fetch(`${API}/meetings/${result.meeting_id}`)
       const data = await r.json()
       setParticipants(data.participants_detail ?? [])
+      // Sync updated assignees from backend; auto-select tasks that just got resolved
+      if (data.action_items) {
+        const nowResolvedLabels = new Set(
+          ((data.participants_detail ?? []) as ParticipantDetail[])
+            .filter(p => p.worker_id)
+            .flatMap(p => [p.speaker_id, p.display_name])
+        )
+        setTasks(prev => prev.map(t => {
+          const fresh = (data.action_items as Task[]).find(f => f.task_id === t.task_id)
+          if (!fresh) return t
+          const userEdited = t.edited_assignee !== (t.assignee ?? "")
+          const justResolved = fresh.assignee && nowResolvedLabels.has(fresh.assignee)
+          return {
+            ...t,
+            assignee: fresh.assignee,
+            assignee_id: fresh.assignee_id,
+            edited_assignee: userEdited ? t.edited_assignee : (fresh.assignee ?? ""),
+            // Auto-select if this task's speaker just got resolved (and user hadn't manually deselected)
+            selected: justResolved ? true : t.selected,
+          }
+        }))
+      }
     } catch { /* non-fatal */ }
   }
 

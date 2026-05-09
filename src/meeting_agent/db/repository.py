@@ -295,12 +295,17 @@ def resolve_participant(meeting_id: str, speaker_id: str, worker_id: str, displa
         )
         if p is None:
             return False
+        old_display_name = p.display_name  # e.g. "SPEAKER_00" or whatever pipeline set
         p.worker_id = worker_id
         p.display_name = display_name
-        # Also update tasks that reference this speaker by display_name or speaker_id
-        session.query(Task).filter_by(meeting_id=meeting_id, assignee=speaker_id).update(
-            {"assignee": display_name, "assignee_id": worker_id}
-        )
+        # Update tasks referencing this speaker by speaker_id OR the old display_name
+        identifiers = {speaker_id}
+        if old_display_name:
+            identifiers.add(old_display_name)
+        for identifier in identifiers:
+            session.query(Task).filter_by(meeting_id=meeting_id, assignee=identifier).update(
+                {"assignee": display_name, "assignee_id": worker_id}
+            )
     return True
 
 
