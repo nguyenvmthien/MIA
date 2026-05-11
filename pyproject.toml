@@ -51,8 +51,6 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "httpx>=0.27.0",
     "tenacity>=8.3.0",
-    "rich>=13.7.1",
-    "typer>=0.12.3",
     "cryptography>=42.0.0",
 
 
@@ -82,9 +80,6 @@ dev = [
     "mypy>=1.10.0",
 ]
 
-[project.scripts]
-meeting-agent = "meeting_agent.cli:app"
-
 [tool.setuptools.packages.find]
 where = ["src"]
 
@@ -101,7 +96,6 @@ select = ["E", "F", "I", "UP"]
 # Long strings in API error messages, SQL queries are acceptable
 "src/meeting_agent/api/main.py" = ["E501"]
 "src/meeting_agent/api/calendar_router.py" = ["E501"]
-"src/meeting_agent/api/ws_router.py" = ["E501"]
 "src/meeting_agent/db/models.py" = ["E501"]
 "src/meeting_agent/db/repository.py" = ["E501"]
 "src/meeting_agent/monitoring/anomaly.py" = ["E501"]
@@ -127,7 +121,6 @@ omit = [
     "*/pipeline/rag.py",
     "*/pipeline/router.py",
     "*/pipeline/orchestrator.py",
-    "*/cli.py",
 ]
 
 [tool.coverage.report]

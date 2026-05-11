@@ -3,11 +3,14 @@
     "worker_id": "w1",
     "name": "Alice Chen",
     "aliases": [
-      "Alice"
+      "Alice",
+      "AC"
     ],
-    "role": "PM",
+    "role": "Manager",
     "email": "thien792003@gmail.com",
-    "skills": []
+    "skills": [
+      "planning"
+    ]
   },
   {
     "worker_id": "w2",

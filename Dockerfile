@@ -1,26 +1,22 @@
 FROM python:3.11-slim
 
-# System dependencies (ffmpeg for audio, build tools for native extensions)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     build-essential \
     git \
+    libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python dependencies first (layer cache)
 COPY pyproject.toml README.md ./
 COPY src/ ./src/
 RUN pip install --no-cache-dir -e ".[dev]"
 
-# Copy remaining source files
-COPY .env.example ./.env.example
-COPY streamlit_app.py ./
+COPY alembic/ ./alembic/
+COPY alembic.ini ./
 
-# Create data directories
-RUN mkdir -p data/audio data/transcripts data/models
+RUN mkdir -p data/audio data/transcripts data/tokens data/models data/training
 
 ENV PYTHONUNBUFFERED=1
-
 EXPOSE 8000

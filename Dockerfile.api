@@ -14,14 +14,13 @@ RUN pip install --no-cache-dir \
     celery redis \
     sqlalchemy alembic psycopg2-binary \
     prometheus-client langsmith \
-    python-dotenv httpx tenacity rich typer \
-    cryptography ollama streamlit
+    python-dotenv httpx tenacity \
+    cryptography ollama
 
 # --- App code layer (invalidated only when src/ changes) ---
 COPY src/ ./src/
 COPY alembic/ ./alembic/
 COPY alembic.ini ./
-COPY streamlit_app.py ./
 COPY train/ ./train/
 RUN pip install --no-cache-dir -e . --no-deps
 

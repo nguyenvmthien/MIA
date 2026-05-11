@@ -34,9 +34,9 @@ function TagList({
   return (
     <div className="flex flex-wrap gap-1.5 items-center">
       {values.map(v => (
-        <span key={v} className="flex items-center gap-1 bg-slate-700/60 text-slate-300 text-xs px-2 py-0.5 rounded-full">
+        <span key={v} className="flex items-center gap-1 bg-sky-50 border border-sky-200 text-sky-700 text-xs px-2 py-0.5 rounded-full">
           {v}
-          <button onClick={() => onChange(values.filter(x => x !== v))} className="text-slate-500 hover:text-red-400">
+          <button onClick={() => onChange(values.filter(x => x !== v))} className="text-slate-400 hover:text-red-500">
             <X size={10} />
           </button>
         </span>
@@ -47,7 +47,7 @@ function TagList({
         onKeyDown={e => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add() } }}
         onBlur={add}
         placeholder={placeholder}
-        className="bg-transparent text-xs text-slate-300 placeholder-slate-600 focus:outline-none w-28"
+        className="bg-transparent text-xs text-slate-900 placeholder-slate-400 focus:outline-none w-28"
       />
     </div>
   )
@@ -65,47 +65,47 @@ function WorkerForm({
   const set = (k: keyof typeof form, v: unknown) => setForm(f => ({ ...f, [k]: v }))
 
   return (
-    <div className="space-y-3 p-4 bg-slate-800/60 rounded-xl border border-slate-700/60">
+    <div className="space-y-3 p-4 bg-white rounded-xl border border-slate-200 shadow-sm shadow-sky-900/5">
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="text-xs text-slate-500 mb-1 block">Name *</label>
           <input value={form.name} onChange={e => set("name", e.target.value)}
             placeholder="Full name"
-            className="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-violet-500" />
+            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-sky-500" />
         </div>
         <div>
           <label className="text-xs text-slate-500 mb-1 block">Role</label>
           <input value={form.role ?? ""} onChange={e => set("role", e.target.value || null)}
             placeholder="e.g. Engineer"
-            className="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-violet-500" />
+            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-sky-500" />
         </div>
       </div>
       <div>
         <label className="text-xs text-slate-500 mb-1 block">Email</label>
         <input value={form.email ?? ""} onChange={e => set("email", e.target.value || null)}
           placeholder="email@company.com"
-          className="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-violet-500" />
+          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-sky-500" />
       </div>
       <div>
         <label className="text-xs text-slate-500 mb-1 block">Aliases <span className="text-slate-600">(press Enter to add)</span></label>
-        <div className="bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 min-h-[38px]">
+        <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 min-h-[38px]">
           <TagList values={form.aliases} onChange={v => set("aliases", v)} placeholder="Add alias..." />
         </div>
       </div>
       <div>
         <label className="text-xs text-slate-500 mb-1 block">Skills <span className="text-slate-600">(press Enter to add)</span></label>
-        <div className="bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 min-h-[38px]">
+        <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 min-h-[38px]">
           <TagList values={form.skills} onChange={v => set("skills", v)} placeholder="Add skill..." />
         </div>
       </div>
       <div className="flex gap-2 pt-1">
         <button onClick={() => onSave(form)} disabled={!form.name.trim() || saving}
-          className="flex items-center gap-1.5 px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 rounded-lg text-sm font-medium transition-colors">
+          className="flex items-center gap-1.5 px-4 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-40 rounded-lg text-sm font-medium text-white transition-colors">
           {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
           Save
         </button>
         <button onClick={onCancel}
-          className="flex items-center gap-1.5 px-4 py-2 border border-slate-700 hover:border-slate-500 rounded-lg text-sm text-slate-400 hover:text-slate-300 transition-colors">
+          className="flex items-center gap-1.5 px-4 py-2 border border-slate-200 hover:border-sky-300 rounded-lg text-sm text-slate-700 hover:text-slate-900 transition-colors bg-white">
           <X size={14} /> Cancel
         </button>
       </div>
@@ -122,16 +122,16 @@ function WorkerRow({ worker, onEdit, onDelete }: {
   const hasExtra = (worker.aliases.length > 0) || (worker.skills.length > 0)
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 overflow-hidden">
+    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm shadow-sky-900/5">
       <div className="flex items-center gap-3 px-4 py-3">
-        <div className="w-9 h-9 rounded-full bg-violet-600/20 border border-violet-600/30 flex items-center justify-center flex-shrink-0">
-          <span className="text-sm font-semibold text-violet-300">{worker.name[0]?.toUpperCase()}</span>
+        <div className="w-9 h-9 rounded-full bg-sky-50 border border-sky-200 flex items-center justify-center flex-shrink-0">
+          <span className="text-sm font-semibold text-sky-700">{worker.name[0]?.toUpperCase()}</span>
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-slate-100">{worker.name}</span>
+            <span className="text-sm font-medium text-slate-900">{worker.name}</span>
             {worker.role && (
-              <span className="text-xs text-slate-500 bg-slate-800 px-2 py-0.5 rounded-full">{worker.role}</span>
+              <span className="text-xs text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">{worker.role}</span>
             )}
           </div>
           {worker.email && (
@@ -141,35 +141,35 @@ function WorkerRow({ worker, onEdit, onDelete }: {
         <div className="flex items-center gap-1">
           {hasExtra && (
             <button onClick={() => setExpanded(e => !e)}
-              className="p-1.5 text-slate-600 hover:text-slate-400 transition-colors">
+              className="p-1.5 text-slate-400 hover:text-slate-900 transition-colors">
               {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             </button>
           )}
           <button onClick={onEdit}
-            className="p-1.5 text-slate-600 hover:text-violet-400 transition-colors">
+            className="p-1.5 text-slate-400 hover:text-sky-600 transition-colors">
             <Pencil size={14} />
           </button>
           <button onClick={onDelete}
-            className="p-1.5 text-slate-600 hover:text-red-400 transition-colors">
+            className="p-1.5 text-slate-400 hover:text-red-500 transition-colors">
             <Trash2 size={14} />
           </button>
         </div>
       </div>
       {expanded && hasExtra && (
-        <div className="px-4 pb-3 space-y-2 border-t border-slate-800/60 pt-2">
+        <div className="px-4 pb-3 space-y-2 border-t border-slate-200 pt-2 bg-slate-50/60">
           {worker.aliases.length > 0 && (
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-slate-600">Aliases:</span>
+              <span className="text-xs text-slate-500">Aliases:</span>
               {worker.aliases.map(a => (
-                <span key={a} className="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full">{a}</span>
+                <span key={a} className="text-xs bg-slate-100 text-slate-700 border border-slate-200 px-2 py-0.5 rounded-full">{a}</span>
               ))}
             </div>
           )}
           {worker.skills.length > 0 && (
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-slate-600">Skills:</span>
+              <span className="text-xs text-slate-500">Skills:</span>
               {worker.skills.map(s => (
-                <span key={s} className="text-xs bg-emerald-900/30 text-emerald-400 border border-emerald-800/40 px-2 py-0.5 rounded-full">{s}</span>
+                <span key={s} className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">{s}</span>
               ))}
             </div>
           )}
@@ -257,7 +257,7 @@ export default function RosterPage() {
   if (status === "loading") {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Loader2 size={28} className="animate-spin text-violet-400" />
+        <Loader2 size={28} className="animate-spin text-sky-500" />
       </div>
     )
   }
@@ -265,9 +265,9 @@ export default function RosterPage() {
   if (status === "unauthenticated") {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen gap-4">
-        <p className="text-slate-400">Sign in to manage the roster.</p>
+        <p className="text-slate-600">Sign in to manage the roster.</p>
         <button onClick={() => signIn("google")}
-          className="px-5 py-2.5 bg-violet-600 hover:bg-violet-500 rounded-xl text-sm font-medium transition-colors">
+          className="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-sm font-medium transition-colors">
           Sign in with Google
         </button>
       </div>
@@ -275,18 +275,18 @@ export default function RosterPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-950 text-gray-100">
+    <main className="min-h-screen bg-slate-50 text-slate-900">
       <div className="max-w-2xl mx-auto px-4 py-10 space-y-6">
 
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link href="/" className="p-2 text-slate-500 hover:text-slate-300 transition-colors">
+            <Link href="/" className="p-2 text-slate-500 hover:text-slate-900 transition-colors rounded-lg hover:bg-white border border-transparent hover:border-slate-200">
               <ArrowLeft size={18} />
             </Link>
             <div>
-              <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-                <Users size={20} className="text-violet-400" />
+              <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <Users size={20} className="text-sky-600" />
                 Worker Roster
               </h1>
               <p className="text-xs text-slate-500 mt-0.5">
@@ -296,7 +296,7 @@ export default function RosterPage() {
           </div>
           {!adding && (
             <button onClick={() => { setAdding(true); setEditingId(null) }}
-              className="flex items-center gap-1.5 px-4 py-2 bg-violet-600 hover:bg-violet-500 rounded-xl text-sm font-medium transition-colors">
+              className="flex items-center gap-1.5 px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-sm font-medium transition-colors">
               <Plus size={15} /> Add worker
             </button>
           )}
@@ -304,7 +304,7 @@ export default function RosterPage() {
 
         {/* Error banner */}
         {error && (
-          <div className="flex items-center justify-between bg-red-900/20 border border-red-700/40 text-red-400 text-sm px-4 py-3 rounded-xl">
+          <div className="flex items-center justify-between bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl">
             {error}
             <button onClick={() => setError(null)}><X size={14} /></button>
           </div>
@@ -323,11 +323,11 @@ export default function RosterPage() {
         {/* Worker list */}
         {loading ? (
           <div className="flex items-center justify-center py-16">
-            <Loader2 size={22} className="animate-spin text-violet-400" />
+            <Loader2 size={22} className="animate-spin text-sky-500" />
           </div>
         ) : workers.length === 0 && !adding ? (
-          <div className="text-center py-16 text-slate-600">
-            <Users size={36} className="mx-auto mb-3 opacity-30" />
+          <div className="text-center py-16 text-slate-500 bg-white border border-slate-200 rounded-2xl">
+            <Users size={36} className="mx-auto mb-3 opacity-30 text-sky-500" />
             <p className="text-sm">No workers yet. Add one to get started.</p>
           </div>
         ) : (

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# run.sh — scratch-start script for Meeting Agent
+# run.sh — quick-start script for Meeting Agent
 # Usage:
-#   ./run.sh            → Docker Compose (recommended, starts everything)
-#   ./run.sh local      → Local dev mode (no Docker)
-#   ./run.sh stop       → Stop and remove Docker containers
-#   ./run.sh clean      → Stop + wipe all volumes (data, models, DB)
+#   ./run.sh            → start via Docker Compose (default)
+#   ./run.sh prod       → start with production overrides
+#   ./run.sh stop       → stop and remove containers
+#   ./run.sh clean      → stop + wipe all volumes (data, DB, models)
 
 set -euo pipefail
 
@@ -23,8 +23,8 @@ setup_env() {
         info "No .env found — copying from .env.example"
         cp .env.example .env
         warn "Edit .env and set at minimum:"
-        warn "  HF_TOKEN=hf_your_token_here   (free: https://huggingface.co/pyannote/speaker-diarization-3.1)"
-        warn "  LANGCHAIN_API_KEY=             (optional — comment out to disable tracing)"
+        warn "  HF_TOKEN=hf_your_token_here"
+        warn "  GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET  (for calendar sync)"
         echo ""
         read -rp "Press Enter to continue with default values, or Ctrl-C to edit .env first..."
     else
@@ -32,22 +32,21 @@ setup_env() {
     fi
 }
 
+check_docker() {
+    command -v docker &>/dev/null     || error "Docker not found. Install from https://docs.docker.com/get-docker/"
+    docker info &>/dev/null            || error "Docker daemon is not running. Start Docker Desktop and retry."
+    docker compose version &>/dev/null || error "docker compose not available. Install Docker Desktop >= 4.x"
+}
+
 # ══════════════════════════════════════════════════════════════════════════════
-# DOCKER MODE (default)
+# DOCKER MODE (default — dev)
 # ══════════════════════════════════════════════════════════════════════════════
 run_docker() {
     info "Starting Meeting Agent via Docker Compose..."
-    echo ""
-
-    # Check Docker
-    command -v docker &>/dev/null || error "Docker not found. Install from https://docs.docker.com/get-docker/"
-    docker info &>/dev/null        || error "Docker daemon is not running. Start Docker Desktop and retry."
-    command -v docker &>/dev/null && docker compose version &>/dev/null || \
-        error "docker compose not available. Install Docker Desktop >= 4.x"
-
+    check_docker
     setup_env
 
-    info "Building images and pulling dependencies (first run may take ~5 min)..."
+    info "Building images (first run may take a few minutes)..."
     docker compose build --quiet
 
     info "Starting all services..."
@@ -55,105 +54,47 @@ run_docker() {
 
     echo ""
     success "Services started! Waiting for health checks..."
-    sleep 10
+    sleep 8
 
     echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  Service      URL                   Credentials"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  API          http://localhost:8000  —"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Service      URL"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Web UI       http://localhost:3001"
+    echo "  API          http://localhost:8000"
     echo "  API docs     http://localhost:8000/docs"
-    echo "  Prometheus   http://localhost:9090  —"
-    echo "  Grafana      http://localhost:3000  admin / admin"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Grafana      http://localhost:3000   (admin / admin)"
+    echo "  pgAdmin      http://localhost:5050"
+    echo "  Prometheus   http://localhost:9090"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     warn "Ollama is pulling qwen2.5:3b and nomic-embed-text on first start."
     warn "The API may return 503 for ~60s while models download."
     echo ""
-    info "Tail logs:  docker compose logs -f api worker ollama"
+    info "Tail logs:  docker compose logs -f api worker"
     info "Stop:       ./run.sh stop"
     info "Wipe all:   ./run.sh clean"
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
-# LOCAL DEV MODE
+# PROD MODE
 # ══════════════════════════════════════════════════════════════════════════════
-run_local() {
-    info "Starting Meeting Agent in local dev mode (no Docker)..."
-    echo ""
-
-    # ── System prerequisites ──────────────────────────────────────────────────
-    info "Checking system prerequisites..."
-
-    python3 --version &>/dev/null || error "Python 3 not found. Install Python 3.10+."
-    PY_VER=$(python3 -c "import sys; print(sys.version_info.minor)")
-    [[ "$PY_VER" -ge 10 ]] || error "Python 3.10+ required (found 3.${PY_VER})."
-    success "Python $(python3 --version)"
-
-    command -v ffmpeg &>/dev/null || {
-        warn "ffmpeg not found."
-        if [[ "$(uname)" == "Darwin" ]]; then
-            info "Installing ffmpeg via Homebrew..."
-            brew install ffmpeg
-        else
-            error "Install ffmpeg: sudo apt install ffmpeg"
-        fi
-    }
-    success "ffmpeg $(ffmpeg -version 2>&1 | head -1 | awk '{print $3}')"
-
-    command -v ollama &>/dev/null || {
-        error "Ollama not found. Download from https://ollama.com and re-run."
-    }
-    success "Ollama found"
-
-    # ── Ollama models ─────────────────────────────────────────────────────────
-    info "Pulling Ollama models (skipped if already cached)..."
-    ollama pull qwen2.5:3b
-    ollama pull nomic-embed-text
-    success "Ollama models ready"
-
-    # ── Python environment ────────────────────────────────────────────────────
-    info "Setting up Python virtual environment..."
-    if [[ ! -d .venv ]]; then
-        python3 -m venv .venv
-        success "Created .venv"
-    else
-        success ".venv already exists"
-    fi
-    # shellcheck disable=SC1091
-    source .venv/bin/activate
-
-    info "Installing Python dependencies..."
-    pip install --quiet --upgrade pip
-    pip install --quiet -e ".[dev]"
-    success "Python packages installed"
-
-    # ── .env ──────────────────────────────────────────────────────────────────
+run_prod() {
+    info "Starting Meeting Agent in production mode..."
+    check_docker
     setup_env
 
-    # ── Data directories ──────────────────────────────────────────────────────
-    mkdir -p data/audio data/transcripts data/models data/training data/eval
-    success "Data directories created"
+    info "Building images..."
+    docker compose -f docker-compose.yml -f docker-compose.prod.yml build --quiet
 
-    # ── External services check ───────────────────────────────────────────────
-    echo ""
-    warn "External services required (start these separately if not running):"
-    warn "  PostgreSQL:  docker run -d -p 5432:5432 -e POSTGRES_USER=meeting -e POSTGRES_PASSWORD=meeting -e POSTGRES_DB=meeting_agent postgres:16-alpine"
-    warn "  Redis:       docker run -d -p 6379:6379 redis:7-alpine"
-    warn "  Ollama:      ollama serve  (in a separate terminal)"
-    echo ""
-    read -rp "Are PostgreSQL, Redis, and Ollama running? [y/N] " CONFIRM
-    [[ "$CONFIRM" =~ ^[Yy]$ ]] || { warn "Start the services above, then re-run ./run.sh local"; exit 0; }
+    info "Running DB migrations..."
+    docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm migrator
 
-    # ── Start API ─────────────────────────────────────────────────────────────
-    echo ""
-    success "Starting API server..."
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  API:      http://localhost:8000"
-    echo "  API docs: http://localhost:8000/docs"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    meeting-agent serve --reload
+    info "Starting all services..."
+    docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+    success "Production stack started."
+    info "Tail logs:  docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f api worker"
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -178,14 +119,14 @@ run_clean() {
 # ══════════════════════════════════════════════════════════════════════════════
 case "$MODE" in
     docker|"")  run_docker ;;
-    local)      run_local  ;;
+    prod)       run_prod   ;;
     stop)       run_stop   ;;
     clean)      run_clean  ;;
     *)
-        echo "Usage: $0 [docker|local|stop|clean]"
-        echo "  docker  — start via Docker Compose (default)"
-        echo "  local   — local dev mode without Docker"
-        echo "  stop    — stop Docker Compose services"
+        echo "Usage: $0 [docker|prod|stop|clean]"
+        echo "  docker  — start via Docker Compose, dev mode (default)"
+        echo "  prod    — start with production overrides"
+        echo "  stop    — stop all services"
         echo "  clean   — stop + wipe all volumes"
         exit 1
         ;;

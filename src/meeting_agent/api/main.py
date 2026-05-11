@@ -21,7 +21,6 @@ from pydantic import BaseModel
 # Import metrics so they are registered in the API process (required for /metrics to expose them)
 import meeting_agent.monitoring.metrics  # noqa: F401
 from meeting_agent.api.calendar_router import router as calendar_router
-from meeting_agent.api.ws_router import router as ws_router
 from meeting_agent.config import settings
 from meeting_agent.db.repository import (
     delete_meeting as db_delete_meeting,
@@ -112,7 +111,6 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 app.include_router(calendar_router)
-app.include_router(ws_router)
 
 
 @app.middleware("http")

@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #020617;
-  --foreground: #f1f5f9;
+  --background: #f8fafc;
+  --foreground: #0f172a;
 }
 
 @theme inline {
@@ -21,5 +21,5 @@ body {
 }
 
 input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: invert(0.5);
+  filter: invert(0.1);
 }

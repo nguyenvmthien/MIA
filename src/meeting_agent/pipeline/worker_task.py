@@ -46,11 +46,11 @@ celery_app.conf.update(
 
 
 @celery_app.task(name="meeting_agent.check_retrain")
-def check_retrain_task() -> dict:
+def check_retrain_task(force: bool = False) -> dict:
     """Periodic task: check feedback threshold and trigger retraining if met."""
     _ensure_train_path()
     from retrain import run_retrain  # type: ignore
-    result = run_retrain()
+    result = run_retrain(force=force)
     return result
 
 

@@ -75,10 +75,10 @@ function fmtDuration(ms: number | null) {
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
-    completed: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-    pending: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-    processing: "bg-violet-500/10 text-violet-400 border-violet-500/20",
-    failed: "bg-red-500/10 text-red-400 border-red-500/20",
+    completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    pending: "bg-amber-50 text-amber-700 border-amber-200",
+    processing: "bg-sky-50 text-sky-700 border-sky-200",
+    failed: "bg-red-50 text-red-700 border-red-200",
   }
   const icons: Record<string, React.ReactNode> = {
     completed: <CheckCircle2 size={11} />,
@@ -86,7 +86,7 @@ function StatusBadge({ status }: { status: string }) {
     processing: <Loader2 size={11} className="animate-spin" />,
     failed: <AlertCircle size={11} />,
   }
-  const cls = styles[status] ?? "bg-slate-800 text-slate-400 border-slate-700"
+  const cls = styles[status] ?? "bg-slate-100 text-slate-600 border-slate-200"
   return (
     <span className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border ${cls}`}>
       {icons[status] ?? <Circle size={11} />}
@@ -131,21 +131,21 @@ function SpeakerResolver({
   }
 
   return (
-    <div className="mt-4 bg-amber-950/20 border border-amber-700/30 rounded-xl p-4 space-y-3">
-      <div className="flex items-center gap-2 text-amber-400 text-xs font-semibold">
+    <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+      <div className="flex items-center gap-2 text-amber-700 text-xs font-semibold">
         <UserCheck size={14} />
         {unresolved.length} unresolved speaker{unresolved.length > 1 ? "s" : ""} — assign to roster
       </div>
       {unresolved.map(p => (
         <div key={p.speaker_id} className="flex items-center gap-3">
-          <span className="text-xs text-slate-400 font-mono bg-slate-800 px-2 py-1 rounded-md min-w-[100px]">
+          <span className="text-xs text-slate-700 font-mono bg-white border border-slate-200 px-2 py-1 rounded-md min-w-[100px]">
             {p.display_name}
           </span>
-          <span className="text-slate-600 text-xs">→</span>
+          <span className="text-slate-400 text-xs">→</span>
           <select
             value={resolving[p.speaker_id] ?? ""}
             onChange={e => setResolving(prev => ({ ...prev, [p.speaker_id]: e.target.value }))}
-            className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-violet-500"
+            className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-sky-500"
           >
             <option value="">Select worker...</option>
             {workers.map(w => (
@@ -157,7 +157,7 @@ function SpeakerResolver({
           <button
             onClick={() => resolve(p.speaker_id, resolving[p.speaker_id])}
             disabled={!resolving[p.speaker_id] || saving === p.speaker_id}
-            className="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
+            className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-40 rounded-lg text-xs font-medium text-white transition-colors flex items-center gap-1"
           >
             {saving === p.speaker_id ? <Loader2 size={11} className="animate-spin" /> : <UserCheck size={11} />}
             Assign
@@ -209,23 +209,23 @@ function MeetingCard({ meeting, workers }: { meeting: MeetingSummary; workers: W
   }
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 overflow-hidden">
+    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm shadow-sky-900/5">
       {/* Card header */}
       <button
         onClick={toggleExpand}
-        className="w-full flex items-start gap-4 px-4 py-4 text-left hover:bg-slate-800/30 transition-colors"
+        className="w-full flex items-start gap-4 px-4 py-4 text-left hover:bg-sky-50 transition-colors"
       >
         <div className="flex-1 min-w-0 space-y-1.5">
           <div className="flex items-center gap-2 flex-wrap">
             <StatusBadge status={meeting.status} />
             {meeting.unresolved_speaker_count > 0 && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border bg-amber-500/10 text-amber-400 border-amber-500/20">
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200">
                 <UserCheck size={11} />
                 {meeting.unresolved_speaker_count} unresolved
               </span>
             )}
           </div>
-          <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap">
+          <div className="flex items-center gap-3 text-xs text-slate-600 flex-wrap">
             {meeting.audio_filename && (
               <span className="flex items-center gap-1 truncate max-w-[200px]">
                 <FileAudio size={11} />
@@ -240,7 +240,7 @@ function MeetingCard({ meeting, workers }: { meeting: MeetingSummary; workers: W
               <span>{fmtDuration(meeting.duration_ms)}</span>
             )}
             {meeting.task_count > 0 && (
-              <span className="flex items-center gap-1 text-violet-400">
+              <span className="flex items-center gap-1 text-sky-700">
                 <Calendar size={11} />
                 {meeting.task_count} task{meeting.task_count !== 1 ? "s" : ""}
               </span>
@@ -248,30 +248,30 @@ function MeetingCard({ meeting, workers }: { meeting: MeetingSummary; workers: W
           </div>
           {meeting.participants.length > 0 && (
             <div className="flex items-center gap-1 flex-wrap">
-              <Users size={11} className="text-slate-600 flex-shrink-0" />
+              <Users size={11} className="text-slate-400 flex-shrink-0" />
               {meeting.participants.map(p => (
-                <span key={p} className="text-[11px] text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded">{p}</span>
+                <span key={p} className="text-[11px] text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">{p}</span>
               ))}
             </div>
           )}
         </div>
-        <div className="text-slate-600 flex-shrink-0 mt-1">
+        <div className="text-slate-400 flex-shrink-0 mt-1">
           {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
         </div>
       </button>
 
       {/* Expanded detail */}
       {expanded && (
-        <div className="border-t border-slate-800 px-4 pb-4 pt-3 space-y-4">
+        <div className="border-t border-slate-200 px-4 pb-4 pt-3 space-y-4 bg-slate-50/60">
           {meeting.status === "failed" && meeting.error && (
-            <div className="flex items-start gap-2 text-red-400 text-xs bg-red-950/20 border border-red-700/30 rounded-lg px-3 py-2">
+            <div className="flex items-start gap-2 text-red-700 text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2">
               <AlertCircle size={13} className="flex-shrink-0 mt-0.5" />
               {meeting.error}
             </div>
           )}
 
           {meeting.summary_text && (
-            <div className="text-sm text-slate-400 leading-relaxed border-l-2 border-slate-700 pl-3">
+            <div className="text-sm text-slate-700 leading-relaxed border-l-2 border-sky-200 pl-3">
               {meeting.summary_text}
             </div>
           )}
@@ -297,17 +297,17 @@ function MeetingCard({ meeting, workers }: { meeting: MeetingSummary; workers: W
               {/* Action items */}
               {detail.action_items.length > 0 && (
                 <div className="space-y-2">
-                  <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wider">
                     Action Items ({detail.action_items.length})
                   </h4>
                   <div className="space-y-1.5">
                     {detail.action_items.map(t => (
                       <div key={t.task_id} className={`flex items-start gap-3 rounded-lg px-3 py-2 border text-sm
                         ${t.status === "dismissed"
-                          ? "opacity-40 bg-slate-900/20 border-slate-800"
-                          : "bg-slate-900/60 border-slate-800/60"}`}>
+                          ? "opacity-40 bg-slate-100 border-slate-200"
+                          : "bg-white border-slate-200"}`}>
                         <div className="flex-1 min-w-0">
-                          <p className={`text-slate-200 ${t.status === "dismissed" ? "line-through" : ""}`}>
+                          <p className={`text-slate-900 ${t.status === "dismissed" ? "line-through" : ""}`}>
                             {t.description}
                           </p>
                           <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
@@ -342,8 +342,8 @@ function MeetingCard({ meeting, workers }: { meeting: MeetingSummary; workers: W
                   </h4>
                   <div className="space-y-1">
                     {detail.unresolved_items.map(t => (
-                      <div key={t.task_id} className="flex items-start gap-3 rounded-lg px-3 py-2 bg-slate-900/40 border border-slate-800/40 text-sm opacity-70">
-                        <p className="text-slate-400">{t.description}</p>
+                        <div key={t.task_id} className="flex items-start gap-3 rounded-lg px-3 py-2 bg-white border border-slate-200 text-sm opacity-80">
+                          <p className="text-slate-700">{t.description}</p>
                       </div>
                     ))}
                   </div>
@@ -380,7 +380,7 @@ export default function HistoryPage() {
   if (status === "loading") {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Loader2 size={28} className="animate-spin text-violet-400" />
+        <Loader2 size={28} className="animate-spin text-sky-500" />
       </div>
     )
   }
@@ -388,9 +388,9 @@ export default function HistoryPage() {
   if (status === "unauthenticated") {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen gap-4">
-        <p className="text-slate-400">Sign in to view meeting history.</p>
+        <p className="text-slate-600">Sign in to view meeting history.</p>
         <button onClick={() => signIn("google")}
-          className="px-5 py-2.5 bg-violet-600 hover:bg-violet-500 rounded-xl text-sm font-medium transition-colors">
+          className="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-sm font-medium transition-colors">
           Sign in with Google
         </button>
       </div>
@@ -398,16 +398,16 @@ export default function HistoryPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100">
+    <main className="min-h-screen bg-slate-50 text-slate-900">
       <div className="max-w-2xl mx-auto px-4 py-10 space-y-6">
         {/* Header */}
         <div className="flex items-center gap-3">
-          <Link href="/" className="p-2 text-slate-500 hover:text-slate-300 transition-colors">
+          <Link href="/" className="p-2 text-slate-500 hover:text-slate-900 transition-colors rounded-lg hover:bg-white border border-transparent hover:border-slate-200">
             <ArrowLeft size={18} />
           </Link>
           <div>
-            <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-              <History size={20} className="text-violet-400" />
+            <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+              <History size={20} className="text-sky-600" />
               Meeting History
             </h1>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -418,7 +418,7 @@ export default function HistoryPage() {
 
         {/* Error */}
         {error && (
-          <div className="flex items-center justify-between bg-red-900/20 border border-red-700/40 text-red-400 text-sm px-4 py-3 rounded-xl">
+          <div className="flex items-center justify-between bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl">
             {error}
             <button onClick={() => setError(null)}><X size={14} /></button>
           </div>
@@ -427,13 +427,13 @@ export default function HistoryPage() {
         {/* Content */}
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <Loader2 size={24} className="animate-spin text-violet-400" />
+            <Loader2 size={24} className="animate-spin text-sky-500" />
           </div>
         ) : meetings.length === 0 ? (
-          <div className="text-center py-20 text-slate-600">
-            <History size={40} className="mx-auto mb-4 opacity-30" />
+          <div className="text-center py-20 text-slate-500 bg-white border border-slate-200 rounded-2xl">
+            <History size={40} className="mx-auto mb-4 opacity-30 text-sky-500" />
             <p className="text-sm">No meetings yet.</p>
-            <Link href="/" className="mt-3 inline-block text-xs text-violet-400 hover:text-violet-300 transition-colors">
+            <Link href="/" className="mt-3 inline-block text-xs text-sky-700 hover:text-sky-900 transition-colors">
               Upload your first meeting →
             </Link>
           </div>
