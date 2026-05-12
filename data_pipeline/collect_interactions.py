@@ -147,12 +147,12 @@ def collect(
     limit: int = 10000,
 ) -> int:
     """Query DB and write JSONL. Returns number of records written."""
-    import sys
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+    from sqlalchemy import func
 
     from meeting_agent.db.engine import get_session
     from meeting_agent.db.models import FeedbackCorrection, Meeting, Task
-    from sqlalchemy import select
 
     written = 0
     out = Path(out_path)
@@ -160,7 +160,6 @@ def collect(
 
     with get_session() as session:
         # Find meetings that have at least min_corrections human corrections
-        from sqlalchemy import func
         eligible_ids = (
             session.query(FeedbackCorrection.meeting_id)
             .group_by(FeedbackCorrection.meeting_id)

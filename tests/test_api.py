@@ -1,6 +1,7 @@
 """Integration tests for the FastAPI application."""
 
 import json
+import wave
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
@@ -31,8 +32,19 @@ def sample_roster_json():
 
 @pytest.fixture
 def sample_audio_bytes():
-    """Minimal WAV header (44 bytes) — just enough for upload validation."""
-    return b"RIFF" + b"\x00" * 40
+    """Small valid silent WAV file."""
+    buf = BytesIO()
+    with wave.open(buf, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(16000)
+        wav.writeframes(b"\x00\x00" * 160)
+    return buf.getvalue()
+
+
+@pytest.fixture
+def invalid_audio_bytes():
+    return b"not a real wav file"
 
 
 @pytest.fixture
@@ -107,6 +119,39 @@ def test_submit_meeting_empty_roster(client, sample_audio_bytes):
             data={"roster_json": "{}"},
         )
     assert resp.status_code == 202
+
+
+def test_submit_meeting_rejects_unsupported_extension(client, sample_roster_json, sample_audio_bytes):
+    resp = client.post(
+        "/meetings",
+        files={"audio": ("meeting.txt", BytesIO(sample_audio_bytes), "text/plain")},
+        data={"roster_json": sample_roster_json},
+    )
+    assert resp.status_code == 415
+
+
+def test_submit_meeting_rejects_oversized_upload(client, sample_roster_json, sample_audio_bytes):
+    with patch("meeting_agent.api.main.MAX_BYTES", 10), \
+         patch("meeting_agent.api.main.process_meeting_task") as mock_task:
+        resp = client.post(
+            "/meetings",
+            files={"audio": ("meeting.wav", BytesIO(sample_audio_bytes), "audio/wav")},
+            data={"roster_json": sample_roster_json},
+        )
+    assert resp.status_code == 413
+    mock_task.apply_async.assert_not_called()
+
+
+def test_submit_meeting_rejects_invalid_audio_content(client, sample_roster_json, invalid_audio_bytes):
+    with patch("meeting_agent.api.main.process_meeting_task") as mock_task:
+        resp = client.post(
+            "/meetings",
+            files={"audio": ("meeting.wav", BytesIO(invalid_audio_bytes), "audio/wav")},
+            data={"roster_json": sample_roster_json},
+        )
+    assert resp.status_code == 422
+    assert "Invalid audio file" in resp.json()["detail"]
+    mock_task.apply_async.assert_not_called()
 
 
 # ── Poll results ──────────────────────────────────────────────────────────────

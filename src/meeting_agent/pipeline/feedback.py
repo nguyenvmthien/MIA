@@ -6,7 +6,7 @@ Corrections are written to two sinks:
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -34,7 +34,7 @@ class TaskCorrection(BaseModel):
 
     def model_post_init(self, __context) -> None:
         if self.submitted_at is None:
-            self.submitted_at = datetime.utcnow()
+            self.submitted_at = datetime.now(timezone.utc)
 
 
 class FeedbackSubmission(BaseModel):

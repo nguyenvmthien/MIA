@@ -263,6 +263,16 @@ function MeetingCard({ meeting, workers }: { meeting: MeetingSummary; workers: W
       {/* Expanded detail */}
       {expanded && (
         <div className="border-t border-slate-200 px-4 pb-4 pt-3 space-y-4 bg-slate-50/60">
+          {["pending", "processing", "completed"].includes(meeting.status) && (
+            <Link
+              href={`/?meeting_id=${encodeURIComponent(meeting.meeting_id)}`}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-semibold transition-colors"
+            >
+              {meeting.status === "completed" ? <Calendar size={12} /> : <Loader2 size={12} className="animate-spin" />}
+              {meeting.status === "completed" ? "Resume review" : "Resume processing"}
+            </Link>
+          )}
+
           {meeting.status === "failed" && meeting.error && (
             <div className="flex items-start gap-2 text-red-700 text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2">
               <AlertCircle size={13} className="flex-shrink-0 mt-0.5" />

@@ -27,7 +27,7 @@ from meeting_agent.monitoring.metrics import (
     STAGE_LATENCY,
 )
 from meeting_agent.pipeline.cache import cached_llm_call
-from meeting_agent.pipeline.guardrails import GuardrailError, parse_and_validate
+from meeting_agent.pipeline.guardrails import GuardrailError, parse_and_validate, sanitize_input
 from meeting_agent.pipeline.pii import mask_pii
 from meeting_agent.pipeline.rag import SpeakerIndex
 from meeting_agent.pipeline.router import routed_chat
@@ -88,7 +88,7 @@ def _chunk_turns(turns: list[TranscriptTurn], budget: int) -> list[list[Transcri
 
 
 def _turns_to_text(turns: list[TranscriptTurn]) -> str:
-    return "\n".join(f"[{t.display_name}]: {t.text}" for t in turns)
+    return "\n".join(f"[{t.display_name}]: {sanitize_input(t.text)}" for t in turns)
 
 
 def _next_friday() -> str:

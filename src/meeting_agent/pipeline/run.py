@@ -7,14 +7,13 @@ Called by the Celery worker or the CLI.
 import logging
 import time
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from meeting_agent.config import settings
 from meeting_agent.monitoring.anomaly import check_run as anomaly_check
 from meeting_agent.monitoring.metrics import (
     AUDIO_DURATION,
-    JOBS_TOTAL,
     PARTICIPANTS_COUNT,
     PIPELINE_ERRORS,
     TASKS_EXTRACTED,
@@ -119,7 +118,6 @@ def run_pipeline(
             len(summary.unresolved_items) + len(summary.human_review_items)
         )
         TASKS_PER_MEETING.observe(len(resolved_tasks))
-        JOBS_TOTAL.labels(status="completed").inc()
 
         metrics = RunMetrics(
             total_tokens_used=total_tokens,
@@ -141,12 +139,11 @@ def run_pipeline(
             log.warning("Anomalies detected in meeting %s: %s", meeting_id, anomalies)
 
         summary.job_status = JobStatus.completed
-        summary.processed_at = datetime.utcnow()
+        summary.processed_at = datetime.now(timezone.utc)
 
     except Exception as exc:
         summary.job_status = JobStatus.failed
         summary.error = str(exc)
-        JOBS_TOTAL.labels(status="failed").inc()
         PIPELINE_ERRORS.labels(stage="run", error_type=type(exc).__name__).inc()
         raise
 

@@ -44,7 +44,6 @@ def _silence_bytes(ms: int) -> bytes:
 
 def _write_wav(pcm: bytes, path: Path) -> None:
     import struct
-    num_samples = len(pcm) // 2
     with open(path, "wb") as f:
         # WAV header
         f.write(b"RIFF")

@@ -288,7 +288,9 @@ def run_evaluation(gold_path: str, model: str, mode: str = "few_shot") -> dict:
         )
 
     n = len(gold_samples)
-    avg = lambda key: sum(m[key] for m in all_metrics) / n if n else 0
+
+    def avg(key: str) -> float:
+        return sum(m[key] for m in all_metrics) / n if n else 0
 
     assignee_accs = [m["assignee_accuracy"] for m in all_metrics if m["assignee_accuracy"] is not None]
 

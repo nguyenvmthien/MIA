@@ -9,6 +9,7 @@ import {
 } from "lucide-react"
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+const ACTIVE_MEETING_KEY = "mia.activeMeetingId"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -20,7 +21,8 @@ type Task = {
 }
 type ParticipantDetail = { speaker_id: string; display_name: string; worker_id: string | null }
 type MeetingResult = {
-  meeting_id: string; summary_text?: string; participants?: string[]
+  meeting_id: string; status?: string; job_status?: string
+  summary_text?: string; participants?: string[]
   participants_detail?: ParticipantDetail[]
   action_items: Task[]; human_review_items: Task[]; unresolved_items: Task[]
   run_metrics?: { total_tokens_used: number; tasks_extracted: number; stage_timings: Record<string, number> }
@@ -126,7 +128,6 @@ function UploadStep({ onSubmit }: { onSubmit: (file: File, roster: Worker[]) => 
     if (f) setFile(f)
   }, [])
 
-  const allSelected = workers.length > 0 && selected.length === workers.length
   const noneSelected = selected.length === 0
   // If no explicit selection, submit with all workers (default = everyone)
   const rosterToSubmit = noneSelected ? workers : workers.filter(w => selected.includes(w.worker_id))
@@ -797,6 +798,58 @@ export default function Home() {
   const [result, setResult] = useState<MeetingResult | null>(null)
   const [events, setEvents] = useState<{ task_description: string; html_link?: string; due_date?: string }[]>([])
   const [submitError, setSubmitError] = useState("")
+  const [resumeLoading, setResumeLoading] = useState(false)
+
+  const resumeMeeting = useCallback(async (id: string, persist = true) => {
+    const trimmed = id.trim()
+    if (!trimmed) return
+
+    setResumeLoading(true)
+    setSubmitError("")
+    setMeetingId(trimmed)
+
+    try {
+      const r = await fetch(`${API}/meetings/${trimmed}`)
+      const data = await r.json()
+      const nextStatus = data.status ?? data.job_status ?? "pending"
+
+      if (!r.ok || nextStatus === "failed") {
+        localStorage.removeItem(ACTIVE_MEETING_KEY)
+        setStep("upload")
+        setSubmitError(data.error ?? data.detail ?? "Meeting processing failed")
+        return
+      }
+
+      if (persist) localStorage.setItem(ACTIVE_MEETING_KEY, trimmed)
+
+      if (nextStatus === "completed") {
+        setResult(data)
+        setStep("review")
+      } else {
+        setResult(null)
+        setStep("processing")
+      }
+    } catch {
+      setStep("upload")
+      setSubmitError("Cannot resume meeting because the backend is unreachable")
+    } finally {
+      setResumeLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (status !== "authenticated") return
+    const params = new URLSearchParams(window.location.search)
+    const idFromUrl = params.get("meeting_id")
+    const idFromStorage = localStorage.getItem(ACTIVE_MEETING_KEY)
+    const idToResume = idFromUrl || idFromStorage
+    if (idToResume) {
+      const timer = window.setTimeout(() => {
+        void resumeMeeting(idToResume)
+      }, 0)
+      return () => window.clearTimeout(timer)
+    }
+  }, [status, resumeMeeting])
 
   const handleSubmit = async (file: File, roster: Worker[]) => {
     setSubmitError("")
@@ -808,6 +861,7 @@ export default function Home() {
       if (!r.ok) throw new Error(await r.text())
       const data = await r.json()
       setMeetingId(data.meeting_id)
+      localStorage.setItem(ACTIVE_MEETING_KEY, data.meeting_id)
       setStep("processing")
     } catch (e: unknown) {
       setSubmitError(e instanceof Error ? e.message : "Submission failed")
@@ -874,6 +928,7 @@ export default function Home() {
       }
     }
 
+    localStorage.removeItem(ACTIVE_MEETING_KEY)
     setStep("done")
   }
 
@@ -917,10 +972,14 @@ export default function Home() {
       }).catch(() => null)
     }
 
+    localStorage.removeItem(ACTIVE_MEETING_KEY)
     setStep("done")
   }
 
-  const reset = () => { setStep("upload"); setMeetingId(""); setResult(null); setEvents([]) }
+  const reset = () => {
+    localStorage.removeItem(ACTIVE_MEETING_KEY)
+    setStep("upload"); setMeetingId(""); setResult(null); setEvents([])
+  }
 
   if (status === "loading") {
     return (
@@ -1017,6 +1076,13 @@ export default function Home() {
       <main className="flex-1 flex justify-center px-4 py-10">
         <div className="w-full max-w-lg">
           <StepBar current={step} />
+
+          {resumeLoading && (
+            <div className="mb-5 flex items-center gap-3 text-sky-700 text-sm bg-sky-50 border border-sky-200 rounded-xl px-4 py-3">
+              <Loader2 size={15} className="animate-spin flex-shrink-0" />
+              Restoring your meeting...
+            </div>
+          )}
 
           {submitError && (
             <div className="mb-5 flex items-center gap-3 text-red-600 text-sm bg-red-50 border border-red-200 rounded-xl px-4 py-3">

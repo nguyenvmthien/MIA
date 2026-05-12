@@ -8,7 +8,7 @@ import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, status
@@ -41,6 +41,12 @@ from meeting_agent.db.repository import (
     resolve_participant as db_resolve_participant,
 )
 from meeting_agent.pipeline.feedback import FeedbackSubmission, feedback_stats, save_feedback
+from meeting_agent.pipeline.ingest import (
+    MAX_BYTES,
+    SUPPORTED_FORMATS,
+    IngestError,
+    validate_audio_content,
+)
 from meeting_agent.pipeline.router import router_stats
 from meeting_agent.pipeline.worker_registry import (
     add_worker,
@@ -70,12 +76,44 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 _SEED_WORKERS = [
     Worker(worker_id="w1", name="Alice Chen", role="Manager",
-           email="thien792003@gmail.com", aliases=["Alice"]),
+           email="alice@example.com", aliases=["Alice"]),
     Worker(worker_id="w2", name="Bob Kim", role="Engineer",
-           email="jamesnguyen070903@gmail.com", aliases=["Bob", "Bobby"]),
+           email="bob@example.com", aliases=["Bob", "Bobby"]),
     Worker(worker_id="w3", name="Carol Davis", role="Engineer",
-           email="minhthien792003@gmail.com", aliases=["Carol"]),
+           email="carol@example.com", aliases=["Carol"]),
 ]
+
+
+def _validated_upload_suffix(filename: str | None) -> str:
+    suffix = Path(filename or "audio.wav").suffix.lower() or ".wav"
+    if suffix not in SUPPORTED_FORMATS:
+        supported = ", ".join(sorted(SUPPORTED_FORMATS))
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"Unsupported audio format '{suffix}'. Supported: {supported}",
+        )
+    return suffix
+
+
+def _copy_upload_with_limit(upload: UploadFile, dest_path: Path) -> int:
+    bytes_written = 0
+    with dest_path.open("wb") as f:
+        while True:
+            chunk = upload.file.read(1024 * 1024)
+            if not chunk:
+                break
+            bytes_written += len(chunk)
+            if bytes_written > MAX_BYTES:
+                dest_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=413,
+                    detail=(
+                        f"Uploaded file is too large. Max allowed for "
+                        f"{settings.max_audio_duration_hours}h audio."
+                    ),
+                )
+            f.write(chunk)
+    return bytes_written
 
 
 @asynccontextmanager
@@ -178,13 +216,17 @@ async def submit_meeting(
     meeting_id = str(uuid.uuid4())
 
     # Save uploaded file to a temp path that the Celery worker can access
-    suffix = Path(audio.filename or "audio.wav").suffix or ".wav"
+    suffix = _validated_upload_suffix(audio.filename)
     dest_dir = Path(settings.audio_storage_path) / meeting_id
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_path = dest_dir / f"upload{suffix}"
 
-    with dest_path.open("wb") as f:
-        shutil.copyfileobj(audio.file, f)
+    _copy_upload_with_limit(audio, dest_path)
+    try:
+        validate_audio_content(dest_path)
+    except IngestError as exc:
+        dest_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=422, detail=str(exc))
 
     # Insert a pending row in the DB immediately so the meeting is queryable
     # even before the Celery worker picks up the job.
@@ -356,14 +398,15 @@ async def ab_test_start(req: ABTestStartRequest):
         raise HTTPException(status_code=422, detail="traffic must be between 0 and 1 exclusive")
     ab = _ab_module()
     model_a = os.environ.get("OLLAMA_LLM_MODEL", "qwen2.5:3b")
-    experiment_id = f"ab_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    now = datetime.now(timezone.utc)
+    experiment_id = f"ab_{now.strftime('%Y%m%d_%H%M%S')}"
     state = {
         "active": True,
         "experiment_id": experiment_id,
         "model_a": model_a,
         "model_b": req.model_b,
         "traffic_b": req.traffic,
-        "started_at": datetime.utcnow().isoformat(),
+        "started_at": now.isoformat(),
     }
     ab.save_state(state)
     return state
@@ -377,7 +420,7 @@ async def ab_test_stop():
     if not state.get("active"):
         raise HTTPException(status_code=404, detail="No active A/B test")
     state["active"] = False
-    state["stopped_at"] = datetime.utcnow().isoformat()
+    state["stopped_at"] = datetime.now(timezone.utc).isoformat()
     ab.save_state(state)
     results = ab.get_results(state["experiment_id"])
     return {"state": state, "results": results}

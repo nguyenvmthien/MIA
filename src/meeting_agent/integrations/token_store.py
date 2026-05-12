@@ -14,6 +14,7 @@ Usage:
     delete_token("user123")
 """
 
+import hashlib
 import json
 import logging
 import os
@@ -23,6 +24,12 @@ log = logging.getLogger(__name__)
 
 _TOKEN_DIR = Path("data/tokens")
 _KEY_FILE = _TOKEN_DIR / ".key"
+
+
+def _token_path(user_id: str) -> Path:
+    """Return a safe token path for a user identifier."""
+    digest = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
+    return _TOKEN_DIR / f"{digest}.enc"
 
 
 def _get_fernet():
@@ -54,7 +61,7 @@ def save_token(user_id: str, token_dict: dict) -> None:
     _TOKEN_DIR.mkdir(parents=True, exist_ok=True)
     f = _get_fernet()
     encrypted = f.encrypt(json.dumps(token_dict).encode())
-    path = _TOKEN_DIR / f"{user_id}.enc"
+    path = _token_path(user_id)
     path.write_bytes(encrypted)
     path.chmod(0o600)
     log.debug("Token saved for user %s", user_id)
@@ -62,7 +69,7 @@ def save_token(user_id: str, token_dict: dict) -> None:
 
 def load_token(user_id: str) -> dict | None:
     """Decrypt and return the stored token dict for user_id, or None if not found."""
-    path = _TOKEN_DIR / f"{user_id}.enc"
+    path = _token_path(user_id)
     if not path.exists():
         return None
     try:
@@ -76,7 +83,7 @@ def load_token(user_id: str) -> dict | None:
 
 def delete_token(user_id: str) -> bool:
     """Delete stored token for user_id. Returns True if deleted."""
-    path = _TOKEN_DIR / f"{user_id}.enc"
+    path = _token_path(user_id)
     if path.exists():
         path.unlink()
         log.debug("Token deleted for user %s", user_id)
@@ -85,4 +92,4 @@ def delete_token(user_id: str) -> bool:
 
 
 def has_token(user_id: str) -> bool:
-    return (_TOKEN_DIR / f"{user_id}.enc").exists()
+    return _token_path(user_id).exists()

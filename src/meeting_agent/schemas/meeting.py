@@ -1,6 +1,6 @@
 """MeetingSummary and RunMetrics — top-level output artifacts."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -56,7 +56,7 @@ class MeetingSummary(BaseModel):
     meeting_id: str = Field(description="Unique meeting identifier")
     job_status: JobStatus = Field(default=JobStatus.pending)
     audio_filename: str | None = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     processed_at: datetime | None = None
     duration_ms: int | None = None
     participants: list[str] = Field(default_factory=list)

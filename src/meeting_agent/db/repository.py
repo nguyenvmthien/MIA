@@ -6,7 +6,7 @@ without sharing connection objects across OS threads.
 """
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any
 
 from sqlalchemy import func, select
@@ -71,8 +71,8 @@ def upsert_meeting_result(summary_dict: dict) -> None:
             id=meeting_id,
             status=summary_dict.get("job_status", "completed"),
             audio_filename=summary_dict.get("audio_filename"),
-            created_at=summary_dict.get("created_at") or datetime.utcnow(),
-            processed_at=summary_dict.get("processed_at") or datetime.utcnow(),
+            created_at=summary_dict.get("created_at") or datetime.now(timezone.utc),
+            processed_at=summary_dict.get("processed_at") or datetime.now(timezone.utc),
             duration_ms=summary_dict.get("duration_ms"),
             participants=summary_dict.get("participants") or [],
             summary_text=summary_dict.get("summary_text"),
@@ -85,7 +85,7 @@ def upsert_meeting_result(summary_dict: dict) -> None:
             index_elements=["id"],
             set_={
                 "status": summary_dict.get("job_status", "completed"),
-                "processed_at": summary_dict.get("processed_at") or datetime.utcnow(),
+                "processed_at": summary_dict.get("processed_at") or datetime.now(timezone.utc),
                 "duration_ms": summary_dict.get("duration_ms"),
                 "participants": summary_dict.get("participants") or [],
                 "summary_text": summary_dict.get("summary_text"),

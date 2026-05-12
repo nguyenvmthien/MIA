@@ -2,7 +2,7 @@
 
 import logging
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from celery import Celery
@@ -127,7 +127,7 @@ def _mark_failed_in_db(meeting_id: str, error: str) -> None:
         upsert_meeting_result({
             "meeting_id": meeting_id,
             "job_status": "failed",
-            "processed_at": datetime.utcnow().isoformat(),
+            "processed_at": datetime.now(timezone.utc).isoformat(),
             "error": error,
             "action_items": [],
             "unresolved_items": [],

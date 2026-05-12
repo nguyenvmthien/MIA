@@ -66,7 +66,7 @@ def _silence_aiff(duration_ms: int, out_path: str) -> bool:
     """Generate silence of given duration using ffmpeg."""
     result = subprocess.run(
         ["ffmpeg", "-y", "-f", "lavfi", "-i",
-         f"anullsrc=r=22050:cl=mono", "-t", str(duration_ms / 1000),
+         "anullsrc=r=22050:cl=mono", "-t", str(duration_ms / 1000),
          "-loglevel", "error", out_path],
         capture_output=True,
     )
@@ -147,7 +147,7 @@ def convert_jsonl(input_path: str, out_dir: str, limit: int | None = None) -> in
                 size_kb = Path(out_mp3).stat().st_size // 1024
                 print(f"     ✓ {size_kb} KB")
             else:
-                print(f"     ✗ failed")
+                print("     ✗ failed")
 
     print(f"\nDone: {saved} MP3s saved to {out_dir}")
     return saved

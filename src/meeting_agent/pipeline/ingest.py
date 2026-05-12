@@ -1,6 +1,7 @@
 """Stage 1 — Ingest: validate and store the uploaded audio file."""
 
 import shutil
+import subprocess
 import time
 from pathlib import Path
 
@@ -13,6 +14,23 @@ MAX_BYTES = settings.max_audio_duration_hours * 3600 * 320_000  # rough upper bo
 
 class IngestError(Exception):
     pass
+
+
+def validate_audio_content(source_path: str | Path) -> None:
+    """Verify the file contains at least one readable audio stream."""
+    source = Path(source_path)
+    cmd = [
+        "ffprobe",
+        "-v", "error",
+        "-select_streams", "a:0",
+        "-show_entries", "stream=codec_type",
+        "-of", "csv=p=0",
+        str(source),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0 or "audio" not in result.stdout.lower():
+        detail = result.stderr.strip() or "No readable audio stream found."
+        raise IngestError(f"Invalid audio file: {detail}")
 
 
 def ingest_audio(source_path: str | Path, meeting_id: str) -> Path:
@@ -40,6 +58,8 @@ def ingest_audio(source_path: str | Path, meeting_id: str) -> Path:
             f"File too large ({file_size / 1e6:.1f} MB). "
             f"Max allowed for {settings.max_audio_duration_hours}h audio."
         )
+
+    validate_audio_content(source)
 
     dest_dir = Path(settings.audio_storage_path) / meeting_id
     dest_dir.mkdir(parents=True, exist_ok=True)
