@@ -89,10 +89,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
-    command: celery -A meeting_agent.pipeline.worker_task.celery_app worker --loglevel=info --concurrency=${CELERY_WORKER_CONCURRENCY:-2}
+    command: >
+      sh -c "rm -rf /tmp/prometheus_multiproc &&
+             mkdir -p /tmp/prometheus_multiproc &&
+             celery -A meeting_agent.pipeline.worker_task.celery_app worker
+             --loglevel=info --concurrency=${CELERY_WORKER_CONCURRENCY:-2}"
     env_file: .env
     environment:
       <<: *db-env
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+      WORKER_METRICS_PORT: "9100"
     volumes:
       - ./data:/app/data
     depends_on:
@@ -150,6 +156,9 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=15d"
+    depends_on:
+      - api
+      - worker
 
   # ── Grafana ────────────────────────────────────────────────────────────────
   grafana:

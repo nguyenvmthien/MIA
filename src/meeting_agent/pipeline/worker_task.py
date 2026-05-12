@@ -1,9 +1,11 @@
 """Celery task definition for async meeting processing."""
 
 import logging
+import os
 from datetime import datetime, timezone
 
 from celery import Celery
+from celery.signals import worker_ready
 
 from meeting_agent.config import settings
 
@@ -34,6 +36,14 @@ celery_app.conf.update(
         },
     },
 )
+
+
+@worker_ready.connect
+def _start_prometheus_worker_metrics(**_: object) -> None:
+    """Expose metrics from Celery worker processes for Prometheus scraping."""
+    from meeting_agent.monitoring.worker_metrics import start_worker_metrics_server
+
+    start_worker_metrics_server(int(os.environ.get("WORKER_METRICS_PORT", "9100")))
 
 
 @celery_app.task(name="meeting_agent.check_retrain")
@@ -81,7 +91,11 @@ def process_meeting_task(
     Celery task: run the full pipeline and return MeetingSummary as a dict.
     Called by the API after accepting an upload.
     """
-    from meeting_agent.monitoring.metrics import JOBS_IN_FLIGHT, JOBS_TOTAL
+    from meeting_agent.monitoring.metrics import (
+        JOBS_IN_FLIGHT,
+        JOBS_TOTAL,
+        MEETINGS_COMPLETED_BY_MODEL,
+    )
     from meeting_agent.pipeline.run import run_pipeline
     from meeting_agent.schemas.worker import WorkerRoster
 
@@ -91,6 +105,9 @@ def process_meeting_task(
         result = run_pipeline(audio_path, roster, meeting_id=meeting_id)
         JOBS_TOTAL.labels(status="completed").inc()
         result_dict = result.model_dump(mode="json")
+        MEETINGS_COMPLETED_BY_MODEL.labels(
+            model_version=result_dict.get("model_version") or "unknown"
+        ).inc()
         if owner_user_id:
             result_dict["owner_user_id"] = owner_user_id
 

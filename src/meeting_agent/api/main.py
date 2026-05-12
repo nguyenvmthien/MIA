@@ -7,7 +7,7 @@ import shutil
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, status
@@ -26,6 +26,9 @@ from meeting_agent.db.repository import (
     delete_meeting as db_delete_meeting,
 )
 from meeting_agent.db.repository import (
+    fail_stale_pending_meetings as db_fail_stale_pending_meetings,
+)
+from meeting_agent.db.repository import (
     get_business_metrics as db_get_business_metrics,
 )
 from meeting_agent.db.repository import (
@@ -33,6 +36,7 @@ from meeting_agent.db.repository import (
 )
 from meeting_agent.db.repository import (
     insert_meeting_stub,
+    upsert_meeting_result,
 )
 from meeting_agent.db.repository import (
     list_meetings as db_list_meetings,
@@ -112,6 +116,51 @@ _SEED_WORKERS = [
     Worker(worker_id="d939e2f0", name="Ian Wright", role="Backend Developer", email="ian.wright@example.com", aliases=["Ian", "Wright", "ian"]),
 ]
 
+_STALE_PENDING_ERROR = (
+    "Meeting processing did not start before the pending timeout. "
+    "The job may have been lost during a service restart; please submit the file again."
+)
+
+
+def _parse_api_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _fail_stale_pending_meeting(db_row: dict | None) -> dict | None:
+    if not db_row or db_row.get("job_status") != "pending":
+        return None
+    created_at = _parse_api_datetime(db_row.get("created_at"))
+    if created_at is None:
+        return None
+    timeout = timedelta(minutes=max(settings.pending_meeting_timeout_minutes, 1))
+    if datetime.now(timezone.utc) - created_at < timeout:
+        return None
+
+    meeting_id = db_row["meeting_id"]
+    upsert_meeting_result({
+        "meeting_id": meeting_id,
+        "job_status": "failed",
+        "owner_user_id": db_row.get("owner_user_id"),
+        "audio_filename": db_row.get("audio_filename"),
+        "processed_at": datetime.now(timezone.utc),
+        "error": _STALE_PENDING_ERROR,
+    })
+    refreshed = db_get_meeting(meeting_id, owner_user_id=db_row.get("owner_user_id"))
+    return refreshed or {
+        "meeting_id": meeting_id,
+        "status": "failed",
+        "job_status": "failed",
+        "error": _STALE_PENDING_ERROR,
+    }
+
 
 def _owner_scope(principal: Principal) -> str | None:
     if not auth_is_configured() or principal.is_admin:
@@ -155,6 +204,13 @@ def _copy_upload_with_limit(upload: UploadFile, dest_path: Path) -> int:
 async def lifespan(app: FastAPI):
     Path(settings.audio_storage_path).mkdir(parents=True, exist_ok=True)
     Path(settings.transcript_storage_path).mkdir(parents=True, exist_ok=True)
+    try:
+        db_fail_stale_pending_meetings(
+            settings.pending_meeting_timeout_minutes,
+            _STALE_PENDING_ERROR,
+        )
+    except Exception as exc:
+        logging.getLogger(__name__).debug("Stale pending cleanup skipped on startup: %s", exc)
     existing = list_workers()
     if existing and {w.worker_id for w in existing}.issubset(_LEGACY_SEED_WORKER_IDS):
         for worker in existing:
@@ -227,6 +283,42 @@ async def health():
 
 @app.get("/metrics", tags=["ops"], response_class=PlainTextResponse)
 async def metrics():
+    try:
+        from meeting_agent.monitoring.metrics import (
+            CORRECTION_RATE,
+            DB_FEEDBACK_TOTAL,
+            DB_MEETINGS_TOTAL,
+            DB_MODEL_MEETINGS_TOTAL,
+            DB_TASKS_TOTAL,
+            FALSE_POSITIVE_RATE,
+            TRAINING_SAMPLES_READY,
+        )
+
+        db_fail_stale_pending_meetings(
+            settings.pending_meeting_timeout_minutes,
+            _STALE_PENDING_ERROR,
+        )
+        biz = db_get_business_metrics()
+        CORRECTION_RATE.set(biz["correction_rate"])
+        FALSE_POSITIVE_RATE.set(biz["false_positive_rate"])
+        TRAINING_SAMPLES_READY.set(biz["training_ready_samples"])
+        for status_name in ("pending", "processing", "completed", "failed"):
+            DB_MEETINGS_TOTAL.labels(status=status_name).set(
+                biz.get("meetings_by_status", {}).get(status_name, 0)
+            )
+        for bucket in ("action", "unresolved", "human_review"):
+            DB_TASKS_TOTAL.labels(bucket=bucket).set(
+                biz.get("tasks_by_bucket", {}).get(bucket, 0)
+            )
+        for feedback_type in ("correction", "false_positive", "missing"):
+            DB_FEEDBACK_TOTAL.labels(type=feedback_type).set(
+                biz.get("feedback_by_type", {}).get(feedback_type, 0)
+            )
+        for row in biz.get("model_version_stats", []):
+            model_version = row.get("model_version") or "unknown"
+            DB_MODEL_MEETINGS_TOTAL.labels(model_version=model_version).set(row.get("meetings", 0))
+    except Exception as exc:
+        logging.getLogger(__name__).debug("Business metric gauge refresh failed: %s", exc)
     return PlainTextResponse(
         generate_latest().decode("utf-8"),
         media_type=CONTENT_TYPE_LATEST,
@@ -306,11 +398,21 @@ async def get_meeting(meeting_id: str, principal: Principal = Depends(require_us
 
     # Job is still running — skip DB lookup
     if celery_result.state in ("PENDING", "STARTED"):
-        if auth_is_configured() and db_get_meeting(
-            meeting_id,
-            owner_user_id=_owner_scope(principal),
-        ) is None:
+        db_row = None
+        try:
+            db_row = db_get_meeting(
+                meeting_id,
+                owner_user_id=_owner_scope(principal),
+            )
+        except Exception as exc:
+            if auth_is_configured():
+                raise
+            logging.getLogger(__name__).debug("Pending meeting DB lookup failed: %s", exc)
+        if auth_is_configured() and db_row is None:
             raise HTTPException(status_code=404, detail=f"Meeting {meeting_id} not found")
+        stale_row = _fail_stale_pending_meeting(db_row)
+        if stale_row:
+            return stale_row
         status_str = "pending" if celery_result.state == "PENDING" else "processing"
         return {"meeting_id": meeting_id, "status": status_str}
 

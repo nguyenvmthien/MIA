@@ -101,6 +101,12 @@ TASKS_PER_MEETING = Histogram(
     buckets=[0, 1, 2, 3, 5, 8, 10, 15, 20],
 )
 
+MEETINGS_COMPLETED_BY_MODEL = Counter(
+    "meeting_completed_by_model_version_total",
+    "Completed meetings by model version",
+    labelnames=["model_version"],
+)
+
 FEEDBACK_SUBMITTED = Counter(
     "meeting_feedback_submitted_total",
     "User feedback submissions",
@@ -144,6 +150,30 @@ TRAINING_SAMPLES_READY = Gauge(
     "Number of meetings with ≥1 human correction — usable as fine-tuning samples",
 )
 
+DB_MEETINGS_TOTAL = Gauge(
+    "meeting_db_meetings_total",
+    "Current persisted meetings by status, read from PostgreSQL",
+    labelnames=["status"],
+)
+
+DB_TASKS_TOTAL = Gauge(
+    "meeting_db_tasks_total",
+    "Current persisted tasks by bucket, read from PostgreSQL",
+    labelnames=["bucket"],
+)
+
+DB_FEEDBACK_TOTAL = Gauge(
+    "meeting_db_feedback_total",
+    "Current persisted feedback records by type, read from PostgreSQL",
+    labelnames=["type"],
+)
+
+DB_MODEL_MEETINGS_TOTAL = Gauge(
+    "meeting_db_model_meetings_total",
+    "Current persisted completed meetings by model version, read from PostgreSQL",
+    labelnames=["model_version"],
+)
+
 # ── RAG metrics ───────────────────────────────────────────────────────────────
 RAG_QUERIES = Counter(
     "meeting_rag_queries_total",
@@ -169,6 +199,12 @@ JOBS_IN_FLIGHT = Gauge(
 def _preinit() -> None:
     JOBS_TOTAL.labels(status="completed")
     JOBS_TOTAL.labels(status="failed")
+    for status in ("pending", "processing", "completed", "failed"):
+        DB_MEETINGS_TOTAL.labels(status=status)
+    for bucket in ("action", "unresolved", "human_review"):
+        DB_TASKS_TOTAL.labels(bucket=bucket)
+    for feedback_type in ("correction", "false_positive", "missing"):
+        DB_FEEDBACK_TOTAL.labels(type=feedback_type)
     for stage in ("ingest", "preprocess", "stt", "diarize", "llm", "guardrails", "assignment"):
         STAGE_LATENCY.labels(stage=stage)
     for reason in ("no_evidence", "invalid_assignee", "date_hallucination"):

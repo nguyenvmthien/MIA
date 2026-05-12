@@ -6,7 +6,7 @@ without sharing connection objects across OS threads.
 """
 
 import logging
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import func, select
@@ -47,6 +47,32 @@ def insert_meeting_stub(
         )
         session.add(meeting)
     log.debug("Inserted meeting stub %s", meeting_id)
+
+
+def fail_stale_pending_meetings(timeout_minutes: int, error_message: str) -> int:
+    """Mark pending meetings older than timeout as failed.
+
+    A Celery task can be lost if the API is restarted after creating the DB stub
+    but before the broker keeps the task. Without this cleanup, clients poll a
+    pending meeting forever and dashboards over-report queued work.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=max(timeout_minutes, 1))
+    with get_session() as session:
+        count = (
+            session.query(Meeting)
+            .filter(Meeting.status == "pending", Meeting.created_at < cutoff)
+            .update(
+                {
+                    Meeting.status: "failed",
+                    Meeting.processed_at: datetime.now(timezone.utc),
+                    Meeting.error: error_message,
+                },
+                synchronize_session=False,
+            )
+        )
+    if count:
+        log.warning("Marked %d stale pending meetings as failed", count)
+    return count
 
 
 def upsert_meeting_result(summary_dict: dict) -> None:
@@ -555,6 +581,12 @@ def get_business_metrics() -> dict:
         completed = session.scalar(
             select(func.count()).where(Meeting.status == "completed")
         ) or 0
+        status_rows = (
+            session.query(Meeting.status, func.count(Meeting.id))
+            .group_by(Meeting.status)
+            .all()
+        )
+        meetings_by_status = {status or "unknown": count for status, count in status_rows}
 
         # Correction rate = total corrections / completed meetings
         total_corrections = session.scalar(
@@ -566,6 +598,12 @@ def get_business_metrics() -> dict:
         total_action_tasks = session.scalar(
             select(func.count()).select_from(Task).where(Task.bucket == "action")
         ) or 0
+        task_rows = (
+            session.query(Task.bucket, func.count(Task.id))
+            .group_by(Task.bucket)
+            .all()
+        )
+        tasks_by_bucket = {bucket or "unknown": count for bucket, count in task_rows}
         dismissed_tasks = session.scalar(
             select(func.count()).select_from(Task).where(
                 Task.bucket == "action", Task.status == "dismissed"
@@ -583,6 +621,9 @@ def get_business_metrics() -> dict:
         false_positives = session.scalar(
             select(func.count()).where(FeedbackCorrection.is_false_positive.is_(True))
         ) or 0
+        missing_tasks = session.scalar(
+            select(func.count()).where(FeedbackCorrection.is_missing.is_(True))
+        ) or 0
         desc_corrections = session.scalar(
             select(func.count()).where(
                 FeedbackCorrection.corrected_description.isnot(None)
@@ -591,6 +632,11 @@ def get_business_metrics() -> dict:
         assignee_corrections = session.scalar(
             select(func.count()).where(
                 FeedbackCorrection.corrected_assignee.isnot(None)
+            )
+        ) or 0
+        due_date_corrections = session.scalar(
+            select(func.count()).where(
+                FeedbackCorrection.corrected_due_date.isnot(None)
             )
         ) or 0
 
@@ -612,17 +658,26 @@ def get_business_metrics() -> dict:
         return {
             "total_meetings": total_meetings,
             "completed_meetings": completed,
+            "meetings_by_status": meetings_by_status,
             "total_corrections": total_corrections,
             "correction_rate": correction_rate,
             "false_positive_rate": fp_rate,
             "dismissed_tasks": dismissed_tasks,
             "total_action_tasks": total_action_tasks,
+            "tasks_by_bucket": tasks_by_bucket,
             "meetings_with_corrections": meetings_with_corrections,
             "training_ready_samples": meetings_with_corrections,
             "corrections_breakdown": {
                 "false_positives": false_positives,
+                "missing_tasks": missing_tasks,
                 "description_edits": desc_corrections,
                 "assignee_edits": assignee_corrections,
+                "due_date_edits": due_date_corrections,
+            },
+            "feedback_by_type": {
+                "correction": max(total_corrections - false_positives - missing_tasks, 0),
+                "false_positive": false_positives,
+                "missing": missing_tasks,
             },
             "model_version_stats": version_stats,
         }
