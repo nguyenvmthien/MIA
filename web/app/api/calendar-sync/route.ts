@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthenticated" }, { status: 401 })
   }
 
-  const { meetingId, tasks, taskIds } = await req.json()
+  const { meetingId, taskIds } = await req.json()
   const userId = session.user.email
   const accessToken = session.accessToken
 

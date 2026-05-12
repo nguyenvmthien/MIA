@@ -66,6 +66,7 @@ class MeetingSummary(BaseModel):
     action_items: list[ExtractedTask] = Field(default_factory=list)
     unresolved_items: list[ExtractedTask] = Field(default_factory=list)
     human_review_items: list[ExtractedTask] = Field(default_factory=list)
+    meeting_artifacts: list[dict] = Field(default_factory=list)
     run_metrics: RunMetrics = Field(default_factory=RunMetrics)
     error: str | None = None
     model_version: str | None = None

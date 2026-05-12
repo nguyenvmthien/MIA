@@ -6,10 +6,10 @@ to simulate a realistic multi-speaker meeting recording.
 
 Usage:
     # Generate audio for all samples in a JSONL file:
-    python data_pipeline/tts_audio.py --input data/training/synthetic.jsonl --out data/audio/
+    python -m meeting_agent.mlops.data_pipeline.tts_audio --input data/training/synthetic.jsonl --out data/audio/
 
     # Generate only long meetings (~10 min), pick first N:
-    python data_pipeline/tts_audio.py --input data/training/synthetic.jsonl --out data/audio/ --min-turns 40 --count 5
+    python -m meeting_agent.mlops.data_pipeline.tts_audio --input data/training/synthetic.jsonl --out data/audio/ --min-turns 40 --count 5
 """
 
 import argparse

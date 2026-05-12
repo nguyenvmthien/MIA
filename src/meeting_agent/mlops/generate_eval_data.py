@@ -5,10 +5,10 @@ Produces 45 diverse meeting transcripts across 5 meeting types, each with
 gold-annotated action items. Output matches the gold_smoke.jsonl schema exactly.
 
 Usage:
-    python train/generate_eval_data.py                    # generate all 45
-    python train/generate_eval_data.py --count 10         # generate 10
-    python train/generate_eval_data.py --out data/eval/gold_v1.jsonl
-    python train/generate_eval_data.py --dry-run          # print first prompt only
+    python -m meeting_agent.mlops.generate_eval_data                    # generate all 45
+    python -m meeting_agent.mlops.generate_eval_data --count 10         # generate 10
+    python -m meeting_agent.mlops.generate_eval_data --out data/eval/gold_v1.jsonl
+    python -m meeting_agent.mlops.generate_eval_data --dry-run          # print first prompt only
 """
 
 import argparse

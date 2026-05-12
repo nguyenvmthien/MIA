@@ -7,10 +7,10 @@ Supports two LLM backends:
 
 Usage:
     # Ollama (local):
-    python data_pipeline/synthetic.py --count 50 --out data/synthetic.jsonl
+    python -m meeting_agent.mlops.data_pipeline.synthetic --count 50 --out data/synthetic.jsonl
 
     # Gemini Flash (requires GEMINI_API_KEY in .env):
-    python data_pipeline/synthetic.py --count 200 --provider gemini --out data/training/synthetic.jsonl
+    python -m meeting_agent.mlops.data_pipeline.synthetic --count 200 --provider gemini --out data/training/synthetic.jsonl
 """
 
 import argparse

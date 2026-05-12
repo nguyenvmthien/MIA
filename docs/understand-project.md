@@ -329,16 +329,13 @@ MEETING-AGENT/
 │   ├── integrations/
 │   │   └── google_calendar.py   # Google Calendar API client
 │   └── config.py                # Pydantic settings (đọc từ .env)
-├── train/
-│   ├── finetune.py              # QLoRA fine-tuning (Unsloth + MLflow)
-│   ├── retrain.py               # Automated retrain pipeline
-│   ├── evaluate.py              # Precision/recall/F1 eval harness
-│   ├── distill.py               # Knowledge distillation 3B→1.5B
-│   └── drift_detector.py        # PSI drift detection
-├── data_pipeline/
-│   ├── collect.py               # Build JSONL từ audio dirs
-│   ├── synthetic.py             # Generate synthetic meeting data bằng LLM
-│   └── validate.py              # Schema + bias + leakage check
+│   ├── mlops/
+│   │   ├── finetune.py          # QLoRA fine-tuning (Unsloth + MLflow)
+│   │   ├── retrain.py           # Automated retrain pipeline
+│   │   ├── evaluate.py          # Precision/recall/F1 eval harness
+│   │   ├── distill.py           # Knowledge distillation 3B→1.5B
+│   │   ├── drift_detector.py    # PSI drift detection
+│   │   └── data_pipeline/       # Collection, synthetic data, validation
 ├── alembic/                     # DB migrations
 │   ├── env.py
 │   └── versions/

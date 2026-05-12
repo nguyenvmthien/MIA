@@ -10,43 +10,31 @@ Checks:
   5. Duplicate detection (near-identical transcripts)
 
 Usage:
-    python data_pipeline/validate.py --train data/train.jsonl --val data/val.jsonl
+    python -m meeting_agent.mlops.data_pipeline.validate --train data/train.jsonl --val data/val.jsonl
 """
 
 import argparse
-import json
 import logging
+import sys
 from collections import Counter
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from meeting_agent.mlops.data_contracts import load_jsonl_records, validate_records
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-REQUIRED_FIELDS = {"transcript", "meeting_date", "action_items"}
-
 
 def load_jsonl(path: str) -> list[dict]:
-    rows = []
-    with open(path) as f:
-        for i, line in enumerate(f):
-            line = line.strip()
-            if line:
-                try:
-                    rows.append(json.loads(line))
-                except json.JSONDecodeError as exc:
-                    log.warning("Line %d: JSON parse error — %s", i + 1, exc)
-    return rows
+    return load_jsonl_records(path)
 
 
 def check_schema(samples: list[dict], name: str) -> list[str]:
     """Return list of error messages for schema violations."""
-    errors = []
-    for i, s in enumerate(samples):
-        missing = REQUIRED_FIELDS - set(s.keys())
-        if missing:
-            errors.append(f"{name}[{i}]: missing fields {missing}")
-        if not isinstance(s.get("action_items"), list):
-            errors.append(f"{name}[{i}]: action_items must be a list")
-    return errors
+    allowed = {"meeting_raw_v1", "sft_v1"}
+    return [f"{name}: {error}" for error in validate_records(samples, allowed=allowed)]
 
 
 def check_speaker_balance(samples: list[dict], name: str, threshold: float = 0.8) -> list[str]:
@@ -96,7 +84,13 @@ def check_duplicates(samples: list[dict], name: str) -> list[str]:
     seen = {}
     warnings = []
     for i, s in enumerate(samples):
-        key = s.get("transcript", "")[:100].strip().lower()
+        key = (s.get("transcript") or s.get("input") or "")[:100].strip().lower()
+        if not key:
+            key = " ".join(
+                turn.get("text", "") for turn in s.get("transcript_turns", [])
+            )[:100].strip().lower()
+        if not key:
+            continue
         if key in seen:
             warnings.append(f"{name}[{i}]: near-duplicate of sample {seen[key]}")
         else:

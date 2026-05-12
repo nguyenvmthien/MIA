@@ -4,8 +4,8 @@ Query Prometheus for per-stage latency stats and print a report.
 Requires Prometheus running at PROMETHEUS_URL (default http://localhost:9090).
 
 Usage:
-    python train/latency_report.py
-    python train/latency_report.py --url http://localhost:9090 --out data/eval/results/latency.json
+    python -m meeting_agent.mlops.latency_report
+    python -m meeting_agent.mlops.latency_report --url http://localhost:9090 --out data/eval/results/latency.json
 """
 
 import argparse

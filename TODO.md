@@ -19,7 +19,7 @@
 - [x] Long meeting support (`--long --duration 30`) — multi-segment concat
 - [x] macOS TTS: `tts_macos.py` — transcript → MP3 dùng `say`, 12 file sẵn sàng
 - [x] 200 short + 5 long meetings đã gen xong (`synthetic.jsonl`, `synthetic_long.jsonl`)
-- [x] Validate output — tất cả pass (`data_pipeline/validate.py`)
+- [x] Validate output — tất cả pass (`src/meeting_agent/mlops/data_pipeline/validate.py`)
 
 ### 1.3 Human annotation
 - [x] Corrections từ UI lưu vào DB → export được 13 mẫu sau dedupe (`feedback_corrections.jsonl`)
@@ -42,8 +42,8 @@
 
 ### 2.2 Chạy fine-tuning
 - [x] Chuẩn bị `smoke_10.jsonl` (10 examples) sẵn sàng test
-- [ ] Chạy fine-tuning trên Colab (Mac không support Unsloth — cần CUDA): `python train/finetune.py --data data/training/smoke_10.jsonl --output models/qwen-meeting-v1 --epochs 1`
-- [ ] Chạy full training: `python train/finetune.py --data data/training/synthetic.jsonl --epochs 3`
+- [ ] Chạy fine-tuning trên Colab (Mac không support Unsloth — cần CUDA): `python3 -m meeting_agent.mlops.finetune --data data/training/smoke_10.jsonl --output models/qwen-meeting-v1 --epochs 1`
+- [ ] Chạy full training: `python3 -m meeting_agent.mlops.finetune --data data/training/synthetic.jsonl --epochs 3`
 - [ ] Log experiment vào MLflow
 
 ### 2.3 Deploy model
@@ -96,8 +96,8 @@
 ## 5. Code / Architecture
 
 ### 5.1 Refactor
-- [ ] Move `train/` vào `src/meeting_agent/train/` — xóa `sys.path` hacks trong `worker_task.py`
-- [ ] Move `data_pipeline/` vào `src/meeting_agent/data_pipeline/`
+- [x] Move `train/` vào `src/meeting_agent/mlops/` — xóa `sys.path` hacks trong `worker_task.py`
+- [x] Move `data_pipeline/` vào `src/meeting_agent/mlops/data_pipeline/`
 
 ### 5.2 Features còn thiếu
 - [x] Meeting history page (`/history`)

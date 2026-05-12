@@ -4,14 +4,13 @@ import json
 import logging
 import os
 import shutil
-import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +19,7 @@ from pydantic import BaseModel
 
 # Import metrics so they are registered in the API process (required for /metrics to expose them)
 import meeting_agent.monitoring.metrics  # noqa: F401
+from meeting_agent.api.auth import Principal, auth_is_configured, require_admin, require_user
 from meeting_agent.api.calendar_router import router as calendar_router
 from meeting_agent.config import settings
 from meeting_agent.db.repository import (
@@ -74,14 +74,49 @@ _HTTP_DURATION = Histogram(
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+_LEGACY_SEED_WORKER_IDS = {"w1", "w2", "w3"}
+
 _SEED_WORKERS = [
-    Worker(worker_id="w1", name="Alice Chen", role="Manager",
-           email="alice@example.com", aliases=["Alice"]),
-    Worker(worker_id="w2", name="Bob Kim", role="Engineer",
-           email="bob@example.com", aliases=["Bob", "Bobby"]),
-    Worker(worker_id="w3", name="Carol Davis", role="Engineer",
-           email="carol@example.com", aliases=["Carol"]),
+    Worker(worker_id="e365fb28", name="Carol White", role="UX Designer", email="carol.white@example.com", aliases=["Carol", "White", "carol"]),
+    Worker(worker_id="02946910", name="David Lee", role="QA Engineer", email="david.lee@example.com", aliases=["David", "Lee", "david"]),
+    Worker(worker_id="1977d792", name="Eva Martinez", role="DevOps Engineer", email="eva.martinez@example.com", aliases=["Eva", "Martinez", "eva"]),
+    Worker(worker_id="4a3985f7", name="Frank Nguyen", role="Frontend Developer", email="frank.nguyen@example.com", aliases=["Frank", "Nguyen", "frank"]),
+    Worker(worker_id="809c3ce2", name="Grace Park", role="Engineering Manager", email="grace.park@example.com", aliases=["Grace", "Park", "grace"]),
+    Worker(worker_id="f651c2a5", name="Henry Zhou", role="Data Engineer", email="henry.zhou@example.com", aliases=["Henry", "Zhou", "henry"]),
+    Worker(worker_id="613b2885", name="Isabelle Durand", role="Marketing Manager", email="isabelle.durand@example.com", aliases=["Isabelle", "Durand", "isabelle"]),
+    Worker(worker_id="16b89e06", name="Jake Thompson", role="Content Strategist", email="jake.thompson@example.com", aliases=["Jake", "Thompson", "jake"]),
+    Worker(worker_id="72280322", name="Karen Patel", role="Brand Designer", email="karen.patel@example.com", aliases=["Karen", "Patel", "karen"]),
+    Worker(worker_id="e9ed1a02", name="Liam O'Brien", role="Growth Marketer", email="liam.obrien@example.com", aliases=["Liam", "O'Brien", "liam"]),
+    Worker(worker_id="21daa3f8", name="Maya Singh", role="Social Media Manager", email="maya.singh@example.com", aliases=["Maya", "Singh", "maya"]),
+    Worker(worker_id="1051d317", name="Nathan Brooks", role="SEO Specialist", email="nathan.brooks@example.com", aliases=["Nathan", "Brooks", "nathan"]),
+    Worker(worker_id="43a8ec9b", name="Olivia Zhang", role="CFO", email="olivia.zhang@example.com", aliases=["Olivia", "Zhang", "olivia"]),
+    Worker(worker_id="15451f0e", name="Peter Walsh", role="Financial Analyst", email="peter.walsh@example.com", aliases=["Peter", "Walsh", "peter"]),
+    Worker(worker_id="490b21dd", name="Quinn Adams", role="Accountant", email="quinn.adams@example.com", aliases=["Quinn", "Adams", "quinn"]),
+    Worker(worker_id="c0a8df2d", name="Rachel Kim", role="Budget Controller", email="rachel.kim@example.com", aliases=["Rachel", "Kim", "rachel"]),
+    Worker(worker_id="03f79533", name="Samuel Torres", role="Treasury Manager", email="samuel.torres@example.com", aliases=["Samuel", "Torres", "samuel"]),
+    Worker(worker_id="b18aabf6", name="Tina Muller", role="Sales Director", email="tina.muller@example.com", aliases=["Tina", "Muller", "tina"]),
+    Worker(worker_id="aacccab6", name="Umar Hassan", role="Account Executive", email="umar.hassan@example.com", aliases=["Umar", "Hassan", "umar"]),
+    Worker(worker_id="507d3978", name="Vanessa Li", role="Customer Success Manager", email="vanessa.li@example.com", aliases=["Vanessa", "Li", "vanessa"]),
+    Worker(worker_id="8aa0e74c", name="William Clark", role="Business Development Manager", email="william.clark@example.com", aliases=["William", "Clark", "william"]),
+    Worker(worker_id="132d49a3", name="Xiao Feng", role="Partnership Manager", email="xiao.feng@example.com", aliases=["Xiao", "Feng", "xiao"]),
+    Worker(worker_id="0e991bdb", name="Yuki Tanaka", role="Operations Manager", email="yuki.tanaka@example.com", aliases=["Yuki", "Tanaka", "yuki"]),
+    Worker(worker_id="602577cc", name="Zoe Hernandez", role="HR Manager", email="zoe.hernandez@example.com", aliases=["Zoe", "Hernandez", "zoe"]),
+    Worker(worker_id="d7af6df0", name="Aaron Scott", role="Supply Chain Manager", email="aaron.scott@example.com", aliases=["Aaron", "Scott", "aaron"]),
+    Worker(worker_id="8398f771", name="Bella Johnson", role="Talent Acquisition", email="bella.johnson@example.com", aliases=["Bella", "Johnson", "bella"]),
+    Worker(worker_id="e37fbb2f", name="Carlos Rivera", role="Office Manager", email="carlos.rivera@example.com", aliases=["Carlos", "Rivera", "carlos"]),
+    Worker(worker_id="14c549c7", name="Diana Moore", role="Legal Counsel", email="diana.moore@example.com", aliases=["Diana", "Moore", "diana"]),
+    Worker(worker_id="fc57e13b", name="Edward Hill", role="Compliance Officer", email="edward.hill@example.com", aliases=["Edward", "Hill", "edward"]),
+    Worker(worker_id="a9f54575", name="Fiona Campbell", role="CEO", email="fiona.campbell@example.com", aliases=["Fiona", "Campbell", "fiona"]),
+    Worker(worker_id="ac9db293", name="George Baker", role="COO", email="george.baker@example.com", aliases=["George", "Baker", "george"]),
+    Worker(worker_id="c624f6ce", name="Hannah Morris", role="Product Manager", email="hannah.morris@example.com", aliases=["Hannah", "Morris", "hannah"]),
+    Worker(worker_id="d939e2f0", name="Ian Wright", role="Backend Developer", email="ian.wright@example.com", aliases=["Ian", "Wright", "ian"]),
 ]
+
+
+def _owner_scope(principal: Principal) -> str | None:
+    if not auth_is_configured() or principal.is_admin:
+        return None
+    return principal.user_id
 
 
 def _validated_upload_suffix(filename: str | None) -> str:
@@ -120,13 +155,20 @@ def _copy_upload_with_limit(upload: UploadFile, dest_path: Path) -> int:
 async def lifespan(app: FastAPI):
     Path(settings.audio_storage_path).mkdir(parents=True, exist_ok=True)
     Path(settings.transcript_storage_path).mkdir(parents=True, exist_ok=True)
-    # Seed worker DB with example workers if empty
-    if not list_workers():
-        for w in _SEED_WORKERS:
-            try:
-                add_worker(w)
-            except ValueError:
-                pass
+    existing = list_workers()
+    if existing and {w.worker_id for w in existing}.issubset(_LEGACY_SEED_WORKER_IDS):
+        for worker in existing:
+            delete_worker(worker.worker_id)
+        existing = []
+    existing_ids = {w.worker_id for w in existing}
+    existing_names = {w.name.lower() for w in existing}
+    for w in _SEED_WORKERS:
+        if w.worker_id in existing_ids or w.name.lower() in existing_names:
+            continue
+        try:
+            add_worker(w)
+        except ValueError:
+            pass
     yield
 
 
@@ -200,6 +242,7 @@ async def submit_meeting(
         default="{}",
         description='JSON WorkerRoster: {"workers": [{"worker_id": "w1", "name": "Alice", ...}]}',
     ),
+    principal: Principal = Depends(require_user),
 ):
     """
     Submit a meeting audio file for async processing.
@@ -231,7 +274,7 @@ async def submit_meeting(
     # Insert a pending row in the DB immediately so the meeting is queryable
     # even before the Celery worker picks up the job.
     try:
-        insert_meeting_stub(meeting_id, audio.filename)
+        insert_meeting_stub(meeting_id, audio.filename, owner_user_id=_owner_scope(principal))
     except Exception as exc:
         logging.getLogger(__name__).warning("Could not insert meeting stub (non-fatal): %s", exc)
 
@@ -241,6 +284,7 @@ async def submit_meeting(
             "audio_path": str(dest_path),
             "roster_dict": roster.model_dump(),
             "meeting_id": meeting_id,
+            "owner_user_id": _owner_scope(principal),
         },
         task_id=meeting_id,
     )
@@ -249,7 +293,7 @@ async def submit_meeting(
 
 
 @app.get("/meetings/{meeting_id}", tags=["meetings"])
-async def get_meeting(meeting_id: str):
+async def get_meeting(meeting_id: str, principal: Principal = Depends(require_user)):
     """
     Poll for the result of a previously submitted meeting job.
 
@@ -262,12 +306,17 @@ async def get_meeting(meeting_id: str):
 
     # Job is still running — skip DB lookup
     if celery_result.state in ("PENDING", "STARTED"):
+        if auth_is_configured() and db_get_meeting(
+            meeting_id,
+            owner_user_id=_owner_scope(principal),
+        ) is None:
+            raise HTTPException(status_code=404, detail=f"Meeting {meeting_id} not found")
         status_str = "pending" if celery_result.state == "PENDING" else "processing"
         return {"meeting_id": meeting_id, "status": status_str}
 
     # Job failed according to Celery
     if celery_result.state == "FAILURE":
-        db_row = db_get_meeting(meeting_id)
+        db_row = db_get_meeting(meeting_id, owner_user_id=_owner_scope(principal))
         if db_row:
             return db_row
         return JSONResponse(
@@ -277,24 +326,30 @@ async def get_meeting(meeting_id: str):
 
     # Job succeeded — serve from DB (authoritative, survives Redis TTL expiry)
     if celery_result.state == "SUCCESS":
-        db_row = db_get_meeting(meeting_id)
+        db_row = db_get_meeting(meeting_id, owner_user_id=_owner_scope(principal))
         if db_row:
             db_row.setdefault("status", db_row.get("job_status", "completed"))
             return db_row
+        if auth_is_configured():
+            raise HTTPException(status_code=404, detail=f"Meeting {meeting_id} not found")
         # DB persist may still be in-flight — fall back to Redis payload
         data = celery_result.result
         data.setdefault("status", data.get("job_status", "completed"))
         return data
 
     # Unknown state — try DB, then return raw state
-    db_row = db_get_meeting(meeting_id)
+    db_row = db_get_meeting(meeting_id, owner_user_id=_owner_scope(principal))
     if db_row:
         return db_row
     return {"meeting_id": meeting_id, "status": celery_result.state.lower()}
 
 
 @app.post("/meetings/{meeting_id}/feedback", tags=["meetings"])
-async def submit_feedback(meeting_id: str, submission: FeedbackSubmission):
+async def submit_feedback(
+    meeting_id: str,
+    submission: FeedbackSubmission,
+    principal: Principal = Depends(require_user),
+):
     """
     Submit corrections to extracted tasks for a completed meeting.
 
@@ -309,6 +364,11 @@ async def submit_feedback(meeting_id: str, submission: FeedbackSubmission):
         TASKS_EDITED,
         TRAINING_SAMPLES_READY,
     )
+    if auth_is_configured() and db_get_meeting(
+        meeting_id,
+        owner_user_id=_owner_scope(principal),
+    ) is None:
+        raise HTTPException(status_code=404, detail=f"Meeting {meeting_id} not found")
     for correction in submission.corrections:
         correction.meeting_id = meeting_id
     count = save_feedback(submission)
@@ -339,7 +399,10 @@ async def submit_feedback(meeting_id: str, submission: FeedbackSubmission):
 
 
 @app.post("/admin/retrain", tags=["ops"])
-async def trigger_retrain(force: bool = False):
+async def trigger_retrain(
+    force: bool = False,
+    _principal: Principal = Depends(require_admin),
+):
     """
     Manually trigger the retraining pipeline.
 
@@ -353,7 +416,7 @@ async def trigger_retrain(force: bool = False):
 
 
 @app.get("/admin/retrain/state", tags=["ops"])
-async def get_retrain_state():
+async def get_retrain_state(_principal: Principal = Depends(require_admin)):
     """Return the current retraining state (last run, correction counts, history)."""
     state_file = Path("data/training/.retrain_state.json")
     if not state_file.exists():
@@ -362,28 +425,26 @@ async def get_retrain_state():
 
 
 @app.get("/admin/router-stats", tags=["ops"])
-async def get_router_stats():
+async def get_router_stats(_principal: Principal = Depends(require_admin)):
     """Per-endpoint health, in-flight count, and error rate for the inference router."""
     return router_stats()
 
 
 # ── A/B test admin endpoints ──────────────────────────────────────────────────
 
-_TRAIN_DIR = str(Path(__file__).parent.parent.parent.parent.parent / "train")
-
-
 def _ab_module():
-    if _TRAIN_DIR not in sys.path:
-        sys.path.insert(0, _TRAIN_DIR)
-    import ab_test
+    from meeting_agent.mlops import ab_test
+
     return ab_test
 
 
 @app.get("/admin/ab-test/status", tags=["ops"])
-async def ab_test_status():
+async def ab_test_status(_principal: Principal = Depends(require_admin)):
     """Return current A/B test state."""
     ab = _ab_module()
-    return ab.load_state()
+    state = ab.load_state()
+    state["runtime_enabled"] = ab.runtime_enabled()
+    return state
 
 
 class ABTestStartRequest(BaseModel):
@@ -392,7 +453,10 @@ class ABTestStartRequest(BaseModel):
 
 
 @app.post("/admin/ab-test/start", tags=["ops"])
-async def ab_test_start(req: ABTestStartRequest):
+async def ab_test_start(
+    req: ABTestStartRequest,
+    _principal: Principal = Depends(require_admin),
+):
     """Start an A/B test between the current champion and a challenger model."""
     if req.traffic <= 0 or req.traffic >= 1:
         raise HTTPException(status_code=422, detail="traffic must be between 0 and 1 exclusive")
@@ -407,13 +471,14 @@ async def ab_test_start(req: ABTestStartRequest):
         "model_b": req.model_b,
         "traffic_b": req.traffic,
         "started_at": now.isoformat(),
+        "requires_env": "AB_TEST_ENABLED=true",
     }
     ab.save_state(state)
-    return state
+    return {**state, "runtime_enabled": ab.runtime_enabled()}
 
 
 @app.delete("/admin/ab-test/stop", tags=["ops"])
-async def ab_test_stop():
+async def ab_test_stop(_principal: Principal = Depends(require_admin)):
     """Stop the active A/B test and return aggregated results."""
     ab = _ab_module()
     state = ab.load_state()
@@ -427,7 +492,7 @@ async def ab_test_stop():
 
 
 @app.get("/admin/ab-test/results", tags=["ops"])
-async def ab_test_results():
+async def ab_test_results(_principal: Principal = Depends(require_admin)):
     """Return aggregated A/B test results for the current (or last) experiment."""
     ab = _ab_module()
     results = ab.get_results()
@@ -437,7 +502,7 @@ async def ab_test_results():
 
 
 @app.get("/metrics/business", tags=["ops"])
-async def business_metrics():
+async def business_metrics(_principal: Principal = Depends(require_admin)):
     """
     Business KPIs computed from DB — suitable for Grafana JSON datasource panels.
 
@@ -448,13 +513,17 @@ async def business_metrics():
 
 
 @app.get("/feedback/stats", tags=["meetings"])
-async def get_feedback_stats():
+async def get_feedback_stats(_principal: Principal = Depends(require_admin)):
     """Return aggregate statistics about accumulated user feedback."""
     return feedback_stats()
 
 
 @app.get("/feedback/export", tags=["meetings"])
-async def export_feedback_for_finetuning(limit: int = 500, format: str = "raw"):
+async def export_feedback_for_finetuning(
+    limit: int = 500,
+    format: str = "raw",
+    _principal: Principal = Depends(require_admin),
+):
     """
     Export human-reviewed meeting data as fine-tuning examples.
 
@@ -562,9 +631,9 @@ async def export_feedback_for_finetuning(limit: int = 500, format: str = "raw"):
 # ── Worker registry endpoints ─────────────────────────────────────────────────
 
 @app.get("/workers", tags=["workers"])
-async def get_workers():
+async def get_workers(principal: Principal = Depends(require_user)):
     """List all registered workers (the participant database)."""
-    return {"workers": [w.model_dump() for w in list_workers()]}
+    return {"workers": [w.model_dump() for w in list_workers(owner_user_id=_owner_scope(principal))]}
 
 
 class WorkerCreate(BaseModel):
@@ -576,7 +645,10 @@ class WorkerCreate(BaseModel):
 
 
 @app.post("/workers", status_code=status.HTTP_201_CREATED, tags=["workers"])
-async def create_worker(body: WorkerCreate):
+async def create_worker(
+    body: WorkerCreate,
+    principal: Principal = Depends(require_user),
+):
     """
     Add a new worker to the participant database.
 
@@ -592,34 +664,48 @@ async def create_worker(body: WorkerCreate):
         skills=body.skills,
     )
     try:
-        created = add_worker(worker)
+        created = add_worker(worker, owner_user_id=_owner_scope(principal))
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     return created.model_dump()
 
 
 @app.put("/workers/{worker_id}", tags=["workers"])
-async def edit_worker(worker_id: str, worker: Worker):
+async def edit_worker(
+    worker_id: str,
+    worker: Worker,
+    principal: Principal = Depends(require_user),
+):
     """Update an existing worker's fields by worker_id."""
-    result = update_worker(worker_id, worker)
+    result = update_worker(worker_id, worker, owner_user_id=_owner_scope(principal))
     if result is None:
         raise HTTPException(status_code=404, detail=f"Worker '{worker_id}' not found.")
     return result.model_dump()
 
 
 @app.delete("/workers/{worker_id}", tags=["workers"])
-async def remove_worker(worker_id: str):
+async def remove_worker(worker_id: str, principal: Principal = Depends(require_user)):
     """Remove a worker from the participant database by worker_id."""
-    found = delete_worker(worker_id)
+    found = delete_worker(worker_id, owner_user_id=_owner_scope(principal))
     if not found:
         raise HTTPException(status_code=404, detail=f"Worker '{worker_id}' not found.")
     return {"worker_id": worker_id, "deleted": True}
 
 
 @app.get("/meetings", tags=["meetings"])
-async def list_meetings(limit: int = 50, offset: int = 0):
+async def list_meetings(
+    limit: int = 50,
+    offset: int = 0,
+    principal: Principal = Depends(require_user),
+):
     """List all meetings, newest first. Returns summary cards (no tasks/transcripts)."""
-    return {"meetings": db_list_meetings(limit=limit, offset=offset)}
+    return {
+        "meetings": db_list_meetings(
+            limit=limit,
+            offset=offset,
+            owner_user_id=_owner_scope(principal),
+        )
+    }
 
 
 class ResolveParticipantRequest(BaseModel):
@@ -628,16 +714,30 @@ class ResolveParticipantRequest(BaseModel):
 
 
 @app.post("/meetings/{meeting_id}/participants/{speaker_id}/resolve", tags=["meetings"])
-async def resolve_participant(meeting_id: str, speaker_id: str, body: ResolveParticipantRequest):
+async def resolve_participant(
+    meeting_id: str,
+    speaker_id: str,
+    body: ResolveParticipantRequest,
+    principal: Principal = Depends(require_user),
+):
     """Map an unresolved speaker label to a roster worker."""
-    ok = db_resolve_participant(meeting_id, speaker_id, body.worker_id, body.display_name)
+    ok = db_resolve_participant(
+        meeting_id,
+        speaker_id,
+        body.worker_id,
+        body.display_name,
+        owner_user_id=_owner_scope(principal),
+    )
     if not ok:
         raise HTTPException(status_code=404, detail=f"Participant '{speaker_id}' not found in meeting '{meeting_id}'.")
     return {"meeting_id": meeting_id, "speaker_id": speaker_id, "resolved_to": body.display_name}
 
 
 @app.delete("/meetings/{meeting_id}", tags=["meetings"])
-async def delete_meeting_data(meeting_id: str):
+async def delete_meeting_data(
+    meeting_id: str,
+    principal: Principal = Depends(require_user),
+):
     """Delete stored audio, transcript data, and DB rows for a meeting (GDPR compliance)."""
     audio_dir = Path(settings.audio_storage_path) / meeting_id
     transcript_dir = Path(settings.transcript_storage_path) / meeting_id
@@ -648,6 +748,6 @@ async def delete_meeting_data(meeting_id: str):
             shutil.rmtree(d)
             deleted.append(str(d))
 
-    db_deleted = db_delete_meeting(meeting_id)
+    db_deleted = db_delete_meeting(meeting_id, owner_user_id=_owner_scope(principal))
 
     return {"meeting_id": meeting_id, "deleted_paths": deleted, "db_deleted": db_deleted}

@@ -1,22 +1,13 @@
 """Celery task definition for async meeting processing."""
 
 import logging
-import sys
 from datetime import datetime, timezone
-from pathlib import Path
 
 from celery import Celery
 
 from meeting_agent.config import settings
 
 log = logging.getLogger(__name__)
-
-_TRAIN_DIR = str(Path(__file__).parent.parent.parent.parent / "train")
-
-
-def _ensure_train_path() -> None:
-    if _TRAIN_DIR not in sys.path:
-        sys.path.insert(0, _TRAIN_DIR)
 
 celery_app = Celery(
     "meeting_agent",
@@ -48,8 +39,8 @@ celery_app.conf.update(
 @celery_app.task(name="meeting_agent.check_retrain")
 def check_retrain_task(force: bool = False) -> dict:
     """Periodic task: check feedback threshold and trigger retraining if met."""
-    _ensure_train_path()
-    from retrain import run_retrain  # type: ignore
+    from meeting_agent.mlops.retrain import run_retrain
+
     result = run_retrain(force=force)
     return result
 
@@ -64,10 +55,10 @@ def drift_check_task() -> dict:
     if weekly.get("status") == "alert":
         log.warning("WEEKLY DRIFT ALERT: %s", weekly.get("alerts"))
 
-    # Also run PSI-based drift check if train/ is available
+    # Also run PSI-based drift check from the packaged MLOps module.
     try:
-        _ensure_train_path()
-        from drift_detector import run_drift_check  # type: ignore
+        from meeting_agent.mlops.drift_detector import run_drift_check
+
         psi = run_drift_check()
         log.info("PSI drift check: overall=%s max_psi=%.4f",
                  psi.get("overall_level"), psi.get("max_psi", 0))
@@ -79,7 +70,13 @@ def drift_check_task() -> dict:
 
 
 @celery_app.task(bind=True, name="meeting_agent.process_meeting")
-def process_meeting_task(self, audio_path: str, roster_dict: dict, meeting_id: str) -> dict:
+def process_meeting_task(
+    self,
+    audio_path: str,
+    roster_dict: dict,
+    meeting_id: str,
+    owner_user_id: str | None = None,
+) -> dict:
     """
     Celery task: run the full pipeline and return MeetingSummary as a dict.
     Called by the API after accepting an upload.
@@ -94,6 +91,8 @@ def process_meeting_task(self, audio_path: str, roster_dict: dict, meeting_id: s
         result = run_pipeline(audio_path, roster, meeting_id=meeting_id)
         JOBS_TOTAL.labels(status="completed").inc()
         result_dict = result.model_dump(mode="json")
+        if owner_user_id:
+            result_dict["owner_user_id"] = owner_user_id
 
         # Persist full result to PostgreSQL (primary store)
         _persist_to_db(result_dict, meeting_id)
@@ -105,7 +104,7 @@ def process_meeting_task(self, audio_path: str, roster_dict: dict, meeting_id: s
     except Exception as exc:
         JOBS_TOTAL.labels(status="failed").inc()
         # Mark the meeting as failed in the DB before propagating
-        _mark_failed_in_db(meeting_id, str(exc))
+        _mark_failed_in_db(meeting_id, str(exc), owner_user_id=owner_user_id)
         raise self.retry(exc=exc, max_retries=0)  # no retry at job level
     finally:
         JOBS_IN_FLIGHT.dec()
@@ -120,12 +119,17 @@ def _persist_to_db(result_dict: dict, meeting_id: str) -> None:
         log.error("Failed to persist meeting %s to DB (result still in Redis): %s", meeting_id, exc)
 
 
-def _mark_failed_in_db(meeting_id: str, error: str) -> None:
+def _mark_failed_in_db(
+    meeting_id: str,
+    error: str,
+    owner_user_id: str | None = None,
+) -> None:
     """Update the meeting row to status=failed (best-effort)."""
     try:
         from meeting_agent.db.repository import upsert_meeting_result
         upsert_meeting_result({
             "meeting_id": meeting_id,
+            "owner_user_id": owner_user_id,
             "job_status": "failed",
             "processed_at": datetime.now(timezone.utc).isoformat(),
             "error": error,
@@ -139,19 +143,21 @@ def _mark_failed_in_db(meeting_id: str, error: str) -> None:
 
 def _log_drift_record(result_dict: dict, meeting_id: str) -> None:
     try:
-        _ensure_train_path()
-        from drift_detector import append_record  # type: ignore
+        from meeting_agent.mlops.drift_detector import append_record
 
         tasks = result_dict.get("action_items", [])
+        metrics = result_dict.get("run_metrics", {}) or {}
         n_tasks = len(tasks)
-        token_counts = [t.get("token_count", 0) for t in tasks if t.get("token_count")]
-        avg_tokens = sum(token_counts) / len(token_counts) if token_counts else 0
-        hallucinated = sum(1 for t in tasks if t.get("hallucination_flag", False))
+        total_tokens = metrics.get("total_tokens_used", 0) or 0
+        llm_calls = metrics.get("llm_calls", 0) or 0
+        avg_tokens = total_tokens / llm_calls if llm_calls else total_tokens
+        hallucinated = metrics.get("hallucination_flags", 0) or 0
         assigned = sum(1 for t in tasks if t.get("assignee"))
         halluc_rate = hallucinated / n_tasks if n_tasks > 0 else 0.0
         assignee_rate = assigned / n_tasks if n_tasks > 0 else 0.0
 
         append_record({
+            "schema_version": "drift_v1",
             "meeting_id": meeting_id,
             "tasks_extracted": n_tasks,
             "avg_token_count": avg_tokens,

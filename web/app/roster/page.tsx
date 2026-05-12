@@ -1,7 +1,7 @@
 "use client"
 
 import { useSession, signIn } from "next-auth/react"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import {
   Plus, Trash2, Pencil, Check, X, Loader2, Users, ArrowLeft, ChevronDown, ChevronUp,
@@ -189,7 +189,7 @@ export default function RosterPage() {
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const r = await fetch(`${API}/workers`)
@@ -200,9 +200,15 @@ export default function RosterPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  useEffect(() => { if (status === "authenticated") load() }, [status])
+  useEffect(() => {
+    if (status !== "authenticated") return
+    const timer = window.setTimeout(() => {
+      void load()
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [load, status])
 
   const handleAdd = async (form: Omit<Worker, "worker_id">) => {
     setSaving(true)

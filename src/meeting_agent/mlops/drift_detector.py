@@ -20,9 +20,9 @@ Current window read from Redis key: drift:current_window (list of JSON records)
 Fallback: data/training/.drift_current.jsonl (file-append by worker_task.py)
 
 Usage:
-    python train/drift_detector.py                   # compute PSI, print report
-    python train/drift_detector.py --set-reference   # snapshot current as new reference
-    python train/drift_detector.py --out data/training/.drift_report.json
+    python -m meeting_agent.mlops.drift_detector                   # compute PSI, print report
+    python -m meeting_agent.mlops.drift_detector --set-reference   # snapshot current as new reference
+    python -m meeting_agent.mlops.drift_detector --out data/training/.drift_report.json
 """
 
 import argparse
@@ -30,11 +30,16 @@ import json
 import logging
 import math
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+try:
+    from meeting_agent.mlops.data_contracts import DriftRecord
+except Exception:  # pragma: no cover - train scripts can run outside installed package
+    DriftRecord = None  # type: ignore
 
 REFERENCE_PATH = Path("data/training/.drift_reference.json")
 CURRENT_WINDOW_FILE = Path("data/training/.drift_current.jsonl")
@@ -67,6 +72,8 @@ def _redis_client():
 
 def append_record(record: dict) -> None:
     """Append a production inference record to the current drift window."""
+    if DriftRecord is not None:
+        record = DriftRecord.model_validate(record).model_dump(mode="json")
     r = _redis_client()
     if r:
         try:
@@ -147,7 +154,7 @@ def set_reference(records: list[dict] | None = None) -> dict:
         raise RuntimeError("No records available to set as reference")
     features = _extract_feature_values(records)
     ref = {
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "n_records": len(records),
         "features": {k: v for k, v in features.items()},
     }
@@ -212,7 +219,7 @@ def run_drift_check(min_records: int = 30) -> dict:
 
     report = {
         "status": "ok",
-        "computed_at": datetime.utcnow().isoformat(),
+        "computed_at": datetime.now(timezone.utc).isoformat(),
         "reference_created_at": ref.get("created_at"),
         "n_reference": ref.get("n_records", 0),
         "n_current": len(current_records),
@@ -243,7 +250,7 @@ def print_report(report: dict) -> None:
     print(f"{'='*56}\n")
     if report["overall_level"] == "alert":
         print("ACTION REQUIRED: PSI > 0.25 — significant distribution shift detected.")
-        print("Consider running: python train/retrain.py --force\n")
+        print("Consider running: python -m meeting_agent.mlops.retrain --force\n")
     elif report["overall_level"] == "warn":
         print("WARNING: PSI 0.10–0.25 — moderate shift, monitor closely.\n")
 

@@ -17,10 +17,11 @@ import logging
 import os
 import secrets
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
+from meeting_agent.api.auth import Principal, auth_is_configured, require_user
 from meeting_agent.integrations.google_calendar import (
     create_event_from_task,
     exchange_code,
@@ -41,7 +42,10 @@ _pending_states: dict[str, str] = {}
 # ── OAuth flow ────────────────────────────────────────────────────────────────
 
 @router.get("/auth/google/login")
-async def google_login(user_id: str = Query(..., description="Caller-supplied user identifier")):
+async def google_login(
+    user_id: str | None = Query(default=None, description="Development user identifier"),
+    principal: Principal = Depends(require_user),
+):
     """
     Start the Google OAuth2 flow.
 
@@ -49,8 +53,11 @@ async def google_login(user_id: str = Query(..., description="Caller-supplied us
     browser. On completion Google calls /auth/google/callback.
     """
     try:
+        owner_id = principal.user_id if auth_is_configured() else user_id
+        if not owner_id:
+            raise HTTPException(status_code=422, detail="user_id is required when auth is disabled")
         state = secrets.token_urlsafe(24)
-        _pending_states[state] = user_id
+        _pending_states[state] = owner_id
         url = get_auth_url(state=state)
         return RedirectResponse(url)
     except RuntimeError as e:
@@ -89,14 +96,18 @@ async def google_callback(
 
 
 @router.get("/auth/google/status/{user_id}", tags=["calendar"])
-async def google_auth_status(user_id: str):
+async def google_auth_status(user_id: str, principal: Principal = Depends(require_user)):
     """Return whether the user has a stored Google Calendar token."""
+    if auth_is_configured() and not principal.is_admin and user_id != principal.user_id:
+        raise HTTPException(status_code=403, detail="Cannot inspect another user's token")
     return {"user_id": user_id, "connected": has_token(user_id)}
 
 
 @router.delete("/auth/google/token/{user_id}", tags=["calendar"])
-async def revoke_google_token(user_id: str):
+async def revoke_google_token(user_id: str, principal: Principal = Depends(require_user)):
     """Delete the stored Google Calendar token for user_id."""
+    if auth_is_configured() and not principal.is_admin and user_id != principal.user_id:
+        raise HTTPException(status_code=403, detail="Cannot delete another user's token")
     deleted = delete_token(user_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"No token found for user '{user_id}'")
@@ -104,18 +115,24 @@ async def revoke_google_token(user_id: str):
 
 
 class _DirectTokenBody(BaseModel):
-    user_id: str
+    user_id: str | None = None
     access_token: str
 
 
 @router.post("/auth/google/token-direct", tags=["calendar"])
-async def store_token_direct(body: _DirectTokenBody):
+async def store_token_direct(
+    body: _DirectTokenBody,
+    principal: Principal = Depends(require_user),
+):
     """
     Accept an access token obtained by the Next.js frontend (NextAuth)
     and persist it so the backend can call the Calendar API on behalf of the user.
     """
-    save_token(body.user_id, {"access_token": body.access_token})
-    return {"user_id": body.user_id, "stored": True}
+    owner_id = principal.user_id if auth_is_configured() else body.user_id
+    if not owner_id:
+        raise HTTPException(status_code=422, detail="user_id is required when auth is disabled")
+    save_token(owner_id, {"access_token": body.access_token})
+    return {"user_id": owner_id, "stored": True}
 
 
 # ── Calendar sync ─────────────────────────────────────────────────────────────
@@ -127,8 +144,9 @@ class _CalendarSyncBody(BaseModel):
 @router.post("/meetings/{meeting_id}/calendar-sync", tags=["calendar"])
 async def sync_to_calendar(
     meeting_id: str,
-    user_id: str = Query(..., description="User whose Google Calendar to write to"),
+    user_id: str | None = Query(default=None, description="Development Google Calendar user id"),
     body: _CalendarSyncBody = _CalendarSyncBody(),
+    principal: Principal = Depends(require_user),
 ):
     """
     Create Google Calendar events for all action items in a completed meeting.
@@ -142,8 +160,13 @@ async def sync_to_calendar(
     from meeting_agent.db.models import FeedbackCorrection
     from meeting_agent.db.repository import get_meeting
 
+    owner_id = principal.user_id if auth_is_configured() else user_id
+    if not owner_id:
+        raise HTTPException(status_code=422, detail="user_id is required when auth is disabled")
+
     # Fetch meeting from DB (includes any feedback-corrected state)
-    meeting_data = get_meeting(meeting_id)
+    owner_scope = None if not auth_is_configured() or principal.is_admin else principal.user_id
+    meeting_data = get_meeting(meeting_id, owner_user_id=owner_scope)
     if meeting_data is None or meeting_data.get("status") not in ("completed", "done"):
         raise HTTPException(
             status_code=404,
@@ -151,11 +174,11 @@ async def sync_to_calendar(
         )
 
     # Get and possibly refresh token
-    token = refresh_if_expired(user_id)
+    token = refresh_if_expired(owner_id)
     if token is None:
         raise HTTPException(
             status_code=401,
-            detail=f"No Google Calendar token for user '{user_id}'. Visit /auth/google/login?user_id={user_id}",
+            detail=f"No Google Calendar token for user '{owner_id}'. Visit /auth/google/login",
         )
 
     access_token: str = token["access_token"]
@@ -205,7 +228,7 @@ async def sync_to_calendar(
             return None
         try:
             from meeting_agent.pipeline.worker_registry import list_workers
-            for w in list_workers():
+            for w in list_workers(owner_user_id=owner_scope):
                 if w.name.lower() == (assignee or "").lower() or w.worker_id == assignee:
                     return w.email
         except Exception:
@@ -216,6 +239,7 @@ async def sync_to_calendar(
     errors = []
 
     for item in action_items:
+        task_id = item.get("task_id") or item.get("description", "unknown")
         title = item.get("description", "Action item")
         due = item.get("due_date")
         assignee = item.get("assignee")
@@ -224,6 +248,22 @@ async def sync_to_calendar(
         email = _worker_email(assignee)
 
         try:
+            existing_event = _get_existing_calendar_event(
+                meeting_id=meeting_id,
+                task_id=task_id,
+                user_id=owner_id,
+            )
+            if existing_event and existing_event.get("status") == "created":
+                created_events.append({
+                    "task_id": task_id,
+                    "task_description": title,
+                    "event_id": existing_event.get("event_id"),
+                    "html_link": existing_event.get("html_link"),
+                    "due_date": due,
+                    "status": "already_synced",
+                })
+                continue
+
             event = create_event_from_task(
                 access_token=access_token,
                 title=title,
@@ -231,22 +271,30 @@ async def sync_to_calendar(
                 due_date=due,
                 assignee_email=email,
             )
+            persisted = _upsert_calendar_event(
+                meeting_id=meeting_id,
+                task_id=task_id,
+                user_id=owner_id,
+                event=event,
+            )
             created_events.append({
+                "task_id": task_id,
                 "task_description": title,
-                "event_id": event.get("id"),
-                "html_link": event.get("htmlLink"),
+                "event_id": persisted.get("event_id"),
+                "html_link": persisted.get("html_link"),
                 "due_date": due,
+                "status": "created",
             })
             CALENDAR_EVENTS_CREATED.inc()
         except Exception as e:
             log.warning("Failed to create Calendar event for task '%s': %s", title, e)
+            _mark_calendar_event_failed(
+                meeting_id=meeting_id,
+                task_id=task_id,
+                user_id=owner_id,
+                error=str(e),
+            )
             errors.append({"task": title, "error": str(e)})
-
-    # Persist event IDs alongside meeting result (best-effort)
-    try:
-        _save_calendar_ids(meeting_id, created_events)
-    except Exception:
-        pass
 
     return {
         "meeting_id": meeting_id,
@@ -256,9 +304,39 @@ async def sync_to_calendar(
     }
 
 
-def _save_calendar_ids(meeting_id: str, events: list[dict]) -> None:
-    import json
-    from pathlib import Path
-    out = Path("data/transcripts") / f"{meeting_id}_calendar.json"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"meeting_id": meeting_id, "events": events}, indent=2))
+def _get_existing_calendar_event(meeting_id: str, task_id: str, user_id: str) -> dict | None:
+    try:
+        from meeting_agent.db.repository import get_calendar_event
+        return get_calendar_event(meeting_id, task_id, user_id, provider="google")
+    except Exception as exc:
+        log.debug("Calendar event lookup failed (non-fatal): %s", exc)
+        return None
+
+
+def _upsert_calendar_event(meeting_id: str, task_id: str, user_id: str, event: dict) -> dict:
+    from meeting_agent.db.repository import upsert_calendar_event
+
+    return upsert_calendar_event(
+        meeting_id=meeting_id,
+        task_id=task_id,
+        user_id=user_id,
+        provider="google",
+        provider_event_id=event.get("id"),
+        html_link=event.get("htmlLink"),
+        status="created",
+    )
+
+
+def _mark_calendar_event_failed(meeting_id: str, task_id: str, user_id: str, error: str) -> None:
+    try:
+        from meeting_agent.db.repository import upsert_calendar_event
+        upsert_calendar_event(
+            meeting_id=meeting_id,
+            task_id=task_id,
+            user_id=user_id,
+            provider="google",
+            status="failed",
+            last_error=error,
+        )
+    except Exception as exc:
+        log.debug("Calendar event failure persistence failed (non-fatal): %s", exc)

@@ -17,18 +17,18 @@ Last updated: 2026-04-12
 | Sub-requirement | Status | Location |
 |---|---|---|
 | Choose right LLM architecture | ✅ | `config.py` — WhisperX + Qwen2.5-3B |
-| Fine-tuning strategies (LoRA, QLoRA) | 🆕→✅ | `train/finetune.py` |
-| Efficient training (PEFT, QLoRA) | 🆕→✅ | `train/finetune.py` + Unsloth |
-| Model versioning system | 🆕→✅ | `train/finetune.py` — MLflow `log_model` |
+| Fine-tuning strategies (LoRA, QLoRA) | 🆕→✅ | `src/meeting_agent/mlops/finetune.py` |
+| Efficient training (PEFT, QLoRA) | 🆕→✅ | `src/meeting_agent/mlops/finetune.py` + Unsloth |
+| Model versioning system | 🆕→✅ | `src/meeting_agent/mlops/finetune.py` — MLflow `log_model` |
 
 ## 2. Data Management & Preprocessing
 
 | Sub-requirement | Status | Location |
 |---|---|---|
-| Structured data collection pipeline | 🆕→✅ | `data_pipeline/collect.py` |
-| Data validation (bias/leakage) | 🆕→✅ | `data_pipeline/validate.py` |
+| Structured data collection pipeline | 🆕→✅ | `src/meeting_agent/mlops/data_pipeline/collect.py` |
+| Data validation (bias/leakage) | 🆕→✅ | `src/meeting_agent/mlops/data_pipeline/validate.py` |
 | Regular dataset updates | 🆕→✅ | feedback loop → `pipeline/feedback.py` |
-| Synthetic data generation | 🆕→✅ | `data_pipeline/synthetic.py` |
+| Synthetic data generation | 🆕→✅ | `src/meeting_agent/mlops/data_pipeline/synthetic.py` |
 
 ## 3. Model Deployment & Inference Optimization
 
@@ -36,7 +36,7 @@ Last updated: 2026-04-12
 |---|---|---|
 | Right inference framework | ✅ | Ollama (`orchestrator.py`) |
 | Quantization (GGUF Q4_K_M) | ✅ | `config.py`, Ollama |
-| Distillation / pruning | 🆕→✅ | `train/distill.py` — KD teacher→student (3B→1.5B) + magnitude LoRA pruning |
+| Distillation / pruning | 🆕→✅ | `src/meeting_agent/mlops/distill.py` — KD teacher→student (3B→1.5B) + magnitude LoRA pruning |
 | Docker / containerized deploy | ✅ | `Dockerfile`, `docker-compose.yml` |
 | Caching (Redis prompt cache) | 🔧→✅ | `pipeline/cache.py` + wired into `orchestrator.py` |
 | Caching (FAISS speaker RAG) | 🔧→✅ | `pipeline/rag.py` + wired into `orchestrator.py` |
@@ -77,7 +77,7 @@ Last updated: 2026-04-12
 |---|---|---|
 | GDPR compliance | ✅ | `DELETE /meetings/{id}` in `api/main.py` |
 | PII masking | 🔧→✅ | `pipeline/pii.py` |
-| Fairness / bias detection | 🆕→✅ | `data_pipeline/validate.py` — speaker equity check |
+| Fairness / bias detection | 🆕→✅ | `src/meeting_agent/mlops/data_pipeline/validate.py` — speaker equity check |
 | Audit trail | 🆕→✅ | LangSmith traces + `monitoring/anomaly.py` |
 | Explainability (provenance) | ✅ | `source_turn_ids` on every `ExtractedTask` |
 
@@ -87,9 +87,9 @@ Last updated: 2026-04-12
 |---|---|---|
 | CI/CD pipeline | 🆕→✅ | `.github/workflows/ci.yml` |
 | Feedback loop → retrain | 🆕→✅ | `pipeline/feedback.py` |
-| Regular retraining schedule | 🆕→✅ | `train/retrain.py` — feedback threshold check + Celery Beat + `POST /admin/retrain` |
-| AutoML / hyperparameter search | ✅ | `train/finetune.py --search` — Optuna over rank/lr/batch |
-| Architecture experiments | ✅ | MLflow experiment tracking in `train/finetune.py` |
+| Regular retraining schedule | 🆕→✅ | `src/meeting_agent/mlops/retrain.py` — feedback threshold check + Celery Beat + `POST /admin/retrain` |
+| AutoML / hyperparameter search | ✅ | `python3 -m meeting_agent.mlops.finetune --search` — Optuna over rank/lr/batch |
+| Architecture experiments | ✅ | MLflow experiment tracking in `src/meeting_agent/mlops/finetune.py` |
 
 ---
 
@@ -115,13 +115,13 @@ src/meeting_agent/
     metrics.py       Prometheus counters & histograms
     anomaly.py       Rolling Z-score anomaly detector (NEW)
   api/main.py        FastAPI (UPDATED — feedback, retrain, router-stats endpoints)
-train/
+src/meeting_agent/mlops/
   finetune.py        QLoRA fine-tuning (Unsloth + MLflow + Optuna)
   dataset.py         Dataset loading and instruction formatting
   evaluate.py        Precision / Recall / F1 evaluation harness
   distill.py         Knowledge distillation (3B→1.5B) + LoRA pruning (NEW)
   retrain.py         Automated retraining scheduler (NEW)
-data_pipeline/
+src/meeting_agent/mlops/data_pipeline/
   collect.py         Audio dir → JSONL training data
   validate.py        Bias, leakage, schema, duplicate checks
   synthetic.py       LLM-generated synthetic meeting data

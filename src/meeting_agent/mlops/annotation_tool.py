@@ -6,16 +6,16 @@ annotator accept, edit, or reject the LLM-generated action items.
 
 Usage:
     # Review synthetic batch and produce gold_v1.jsonl
-    python train/annotation_tool.py review \
+    python -m meeting_agent.mlops.annotation_tool review \
         --input data/eval/synthetic_batch_1.jsonl \
         --output data/eval/gold_v1.jsonl
 
     # Annotate raw transcript text manually
-    python train/annotation_tool.py annotate \
+    python -m meeting_agent.mlops.annotation_tool annotate \
         --output data/eval/gold_v1.jsonl
 
     # Show stats on an existing gold file
-    python train/annotation_tool.py stats --input data/eval/gold_v1.jsonl
+    python -m meeting_agent.mlops.annotation_tool stats --input data/eval/gold_v1.jsonl
 """
 
 import json

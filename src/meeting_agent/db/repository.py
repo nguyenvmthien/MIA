@@ -13,14 +13,26 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from meeting_agent.db.engine import get_session
-from meeting_agent.db.models import FeedbackCorrection, Meeting, MeetingParticipant, Task
+from meeting_agent.db.models import (
+    CalendarEvent,
+    FeedbackCorrection,
+    Meeting,
+    MeetingArtifact,
+    MeetingParticipant,
+    Task,
+    TranscriptTurnRow,
+)
 
 log = logging.getLogger(__name__)
 
 
 # ── Meeting ───────────────────────────────────────────────────────────────────
 
-def insert_meeting_stub(meeting_id: str, audio_filename: str | None) -> None:
+def insert_meeting_stub(
+    meeting_id: str,
+    audio_filename: str | None,
+    owner_user_id: str | None = None,
+) -> None:
     """Insert a pending meeting row immediately when the upload is accepted.
 
     This ensures the meeting is queryable even before the Celery task starts,
@@ -30,6 +42,7 @@ def insert_meeting_stub(meeting_id: str, audio_filename: str | None) -> None:
         meeting = Meeting(
             id=meeting_id,
             status="pending",
+            owner_user_id=owner_user_id,
             audio_filename=audio_filename,
         )
         session.add(meeting)
@@ -65,35 +78,42 @@ def upsert_meeting_result(summary_dict: dict) -> None:
             raw_metrics["stage_timings"] = stage.model_dump()
 
     # ── Upsert meeting row ────────────────────────────────────────────────────
+    owner_user_id = summary_dict.get("owner_user_id")
+    insert_values = {
+        "id": meeting_id,
+        "status": summary_dict.get("job_status", "completed"),
+        "owner_user_id": owner_user_id,
+        "audio_filename": summary_dict.get("audio_filename"),
+        "created_at": summary_dict.get("created_at") or datetime.now(timezone.utc),
+        "processed_at": summary_dict.get("processed_at") or datetime.now(timezone.utc),
+        "duration_ms": summary_dict.get("duration_ms"),
+        "participants": summary_dict.get("participants") or [],
+        "summary_text": summary_dict.get("summary_text"),
+        "run_metrics": raw_metrics or None,
+        "transcript_turns": summary_dict.get("transcript_turns") or None,
+        "error": summary_dict.get("error"),
+        "model_version": summary_dict.get("model_version"),
+    }
+    update_values = {
+        "status": summary_dict.get("job_status", "completed"),
+        "processed_at": summary_dict.get("processed_at") or datetime.now(timezone.utc),
+        "duration_ms": summary_dict.get("duration_ms"),
+        "participants": summary_dict.get("participants") or [],
+        "summary_text": summary_dict.get("summary_text"),
+        "run_metrics": raw_metrics or None,
+        "transcript_turns": summary_dict.get("transcript_turns") or None,
+        "error": summary_dict.get("error"),
+        "model_version": summary_dict.get("model_version"),
+    }
+    if owner_user_id:
+        update_values["owner_user_id"] = owner_user_id
+
     stmt = (
         pg_insert(Meeting)
-        .values(
-            id=meeting_id,
-            status=summary_dict.get("job_status", "completed"),
-            audio_filename=summary_dict.get("audio_filename"),
-            created_at=summary_dict.get("created_at") or datetime.now(timezone.utc),
-            processed_at=summary_dict.get("processed_at") or datetime.now(timezone.utc),
-            duration_ms=summary_dict.get("duration_ms"),
-            participants=summary_dict.get("participants") or [],
-            summary_text=summary_dict.get("summary_text"),
-            run_metrics=raw_metrics or None,
-            transcript_turns=summary_dict.get("transcript_turns") or None,
-            error=summary_dict.get("error"),
-            model_version=summary_dict.get("model_version"),
-        )
+        .values(**insert_values)
         .on_conflict_do_update(
             index_elements=["id"],
-            set_={
-                "status": summary_dict.get("job_status", "completed"),
-                "processed_at": summary_dict.get("processed_at") or datetime.now(timezone.utc),
-                "duration_ms": summary_dict.get("duration_ms"),
-                "participants": summary_dict.get("participants") or [],
-                "summary_text": summary_dict.get("summary_text"),
-                "run_metrics": raw_metrics or None,
-                "transcript_turns": summary_dict.get("transcript_turns") or None,
-                "error": summary_dict.get("error"),
-                "model_version": summary_dict.get("model_version"),
-            },
+            set_=update_values,
         )
     )
 
@@ -103,6 +123,8 @@ def upsert_meeting_result(summary_dict: dict) -> None:
         # ── Delete existing tasks and participants, then re-insert ───────────
         session.query(Task).filter_by(meeting_id=meeting_id).delete()
         session.query(MeetingParticipant).filter_by(meeting_id=meeting_id).delete()
+        session.query(TranscriptTurnRow).filter_by(meeting_id=meeting_id).delete()
+        session.query(MeetingArtifact).filter_by(meeting_id=meeting_id).delete()
 
         for p in summary_dict.get("meeting_participants") or []:
             session.add(MeetingParticipant(
@@ -111,6 +133,29 @@ def upsert_meeting_result(summary_dict: dict) -> None:
                 display_name=p.get("display_name", p.get("speaker_id", "")),
                 worker_id=p.get("worker_id"),
                 email=p.get("email"),
+            ))
+
+        for idx, turn in enumerate(summary_dict.get("transcript_turns") or []):
+            session.add(TranscriptTurnRow(
+                meeting_id=meeting_id,
+                turn_id=turn.get("turn_id") or f"turn_{idx}",
+                speaker_id=turn.get("speaker_id", ""),
+                speaker_name=turn.get("speaker_name"),
+                worker_id=turn.get("worker_id"),
+                start_ms=turn.get("start_ms", 0) or 0,
+                end_ms=turn.get("end_ms", 0) or 0,
+                text=turn.get("text", ""),
+                asr_confidence=turn.get("asr_confidence"),
+            ))
+
+        for artifact in summary_dict.get("meeting_artifacts") or []:
+            session.add(MeetingArtifact(
+                meeting_id=meeting_id,
+                artifact_type=artifact.get("artifact_type", "unknown"),
+                storage_uri=artifact.get("storage_uri"),
+                payload=artifact.get("payload"),
+                checksum=artifact.get("checksum"),
+                artifact_metadata=artifact.get("metadata") or artifact.get("artifact_metadata"),
             ))
 
         buckets = {
@@ -139,10 +184,13 @@ def upsert_meeting_result(summary_dict: dict) -> None:
     log.info("Upserted meeting %s with status=%s", meeting_id, summary_dict.get("job_status"))
 
 
-def get_meeting(meeting_id: str) -> dict | None:
+def get_meeting(meeting_id: str, owner_user_id: str | None = None) -> dict | None:
     """Return a meeting as a plain dict, or None if not found."""
     with get_session() as session:
-        meeting = session.get(Meeting, meeting_id)
+        query = session.query(Meeting).filter(Meeting.id == meeting_id)
+        if owner_user_id is not None:
+            query = query.filter(Meeting.owner_user_id == owner_user_id)
+        meeting = query.first()
         if meeting is None:
             return None
 
@@ -171,7 +219,7 @@ def get_meeting(meeting_id: str) -> dict | None:
                 if p.email:
                     return p.email
                 if p.worker_id:
-                    w = get_worker(p.worker_id)
+                    w = get_worker(p.worker_id, owner_user_id=meeting.owner_user_id)
                     return w.email if w else None
                 return None
         except Exception:
@@ -187,8 +235,36 @@ def get_meeting(meeting_id: str) -> dict | None:
             for p in meeting.meeting_participants
         ]
 
+        transcript_turns = [
+            {
+                "turn_id": t.turn_id,
+                "speaker_id": t.speaker_id,
+                "speaker_name": t.speaker_name,
+                "worker_id": t.worker_id,
+                "start_ms": t.start_ms,
+                "end_ms": t.end_ms,
+                "text": t.text,
+                "asr_confidence": t.asr_confidence,
+            }
+            for t in sorted(meeting.transcript_rows, key=lambda row: (row.start_ms, row.id))
+        ]
+        if not transcript_turns:
+            transcript_turns = meeting.transcript_turns or []
+
+        artifacts = [
+            {
+                "artifact_type": a.artifact_type,
+                "storage_uri": a.storage_uri,
+                "checksum": a.checksum,
+                "metadata": a.artifact_metadata,
+                "created_at": a.created_at.isoformat() if a.created_at else None,
+            }
+            for a in meeting.artifacts
+        ]
+
         return {
             "meeting_id": meeting.id,
+            "owner_user_id": meeting.owner_user_id,
             "status": meeting.status,
             "job_status": meeting.status,
             "audio_filename": meeting.audio_filename,
@@ -197,6 +273,7 @@ def get_meeting(meeting_id: str) -> dict | None:
             "duration_ms": meeting.duration_ms,
             "participants": [p["display_name"] for p in participants_detail],
             "participants_detail": participants_detail,
+            "transcript_turns": transcript_turns,
             "summary_text": meeting.summary_text,
             "action_items": tasks_by_bucket["action"],
             "unresolved_items": tasks_by_bucket["unresolved"],
@@ -204,6 +281,7 @@ def get_meeting(meeting_id: str) -> dict | None:
             "run_metrics": meeting.run_metrics,
             "error": meeting.error,
             "model_version": meeting.model_version,
+            "artifacts": artifacts,
         }
 
 
@@ -251,16 +329,17 @@ def apply_corrections_to_tasks(meeting_id: str, corrections: list[dict]) -> int:
     return updated
 
 
-def list_meetings(limit: int = 50, offset: int = 0) -> list[dict]:
+def list_meetings(
+    limit: int = 50,
+    offset: int = 0,
+    owner_user_id: str | None = None,
+) -> list[dict]:
     """Return a summary list of all meetings, newest first."""
     with get_session() as session:
-        meetings = (
-            session.query(Meeting)
-            .order_by(Meeting.created_at.desc())
-            .offset(offset)
-            .limit(limit)
-            .all()
-        )
+        query = session.query(Meeting)
+        if owner_user_id is not None:
+            query = query.filter(Meeting.owner_user_id == owner_user_id)
+        meetings = query.order_by(Meeting.created_at.desc()).offset(offset).limit(limit).all()
         result = []
         for m in meetings:
             task_count = sum(1 for t in m.tasks if t.bucket == "action")
@@ -271,6 +350,7 @@ def list_meetings(limit: int = 50, offset: int = 0) -> list[dict]:
             ]
             result.append({
                 "meeting_id": m.id,
+                "owner_user_id": m.owner_user_id,
                 "status": m.status,
                 "audio_filename": m.audio_filename,
                 "created_at": m.created_at.isoformat() if m.created_at else None,
@@ -285,14 +365,24 @@ def list_meetings(limit: int = 50, offset: int = 0) -> list[dict]:
         return result
 
 
-def resolve_participant(meeting_id: str, speaker_id: str, worker_id: str, display_name: str) -> bool:
+def resolve_participant(
+    meeting_id: str,
+    speaker_id: str,
+    worker_id: str,
+    display_name: str,
+    owner_user_id: str | None = None,
+) -> bool:
     """Assign a roster worker to an unresolved speaker label in a meeting."""
     with get_session() as session:
-        p = (
-            session.query(MeetingParticipant)
-            .filter_by(meeting_id=meeting_id, speaker_id=speaker_id)
-            .first()
-        )
+        meeting_query = session.query(Meeting).filter(Meeting.id == meeting_id)
+        if owner_user_id is not None:
+            meeting_query = meeting_query.filter(Meeting.owner_user_id == owner_user_id)
+        if meeting_query.first() is None:
+            return False
+        p = session.query(MeetingParticipant).filter_by(
+            meeting_id=meeting_id,
+            speaker_id=speaker_id,
+        ).first()
         if p is None:
             return False
         old_display_name = p.display_name  # e.g. "SPEAKER_00" or whatever pipeline set
@@ -309,15 +399,101 @@ def resolve_participant(meeting_id: str, speaker_id: str, worker_id: str, displa
     return True
 
 
-def delete_meeting(meeting_id: str) -> bool:
+def delete_meeting(meeting_id: str, owner_user_id: str | None = None) -> bool:
     """Delete meeting and all related tasks/corrections (cascades via FK).
     Returns True if the row existed."""
     with get_session() as session:
-        meeting = session.get(Meeting, meeting_id)
+        query = session.query(Meeting).filter(Meeting.id == meeting_id)
+        if owner_user_id is not None:
+            query = query.filter(Meeting.owner_user_id == owner_user_id)
+        meeting = query.first()
         if meeting is None:
             return False
         session.delete(meeting)
     return True
+
+
+# ── Calendar events ───────────────────────────────────────────────────────────
+
+def _calendar_event_to_dict(event: CalendarEvent) -> dict:
+    return {
+        "meeting_id": event.meeting_id,
+        "task_id": event.task_id,
+        "user_id": event.user_id,
+        "provider": event.provider,
+        "event_id": event.provider_event_id,
+        "html_link": event.html_link,
+        "status": event.status,
+        "last_error": event.last_error,
+        "created_at": event.created_at.isoformat() if event.created_at else None,
+        "updated_at": event.updated_at.isoformat() if event.updated_at else None,
+    }
+
+
+def get_calendar_event(
+    meeting_id: str,
+    task_id: str,
+    user_id: str,
+    provider: str = "google",
+) -> dict | None:
+    with get_session() as session:
+        event = (
+            session.query(CalendarEvent)
+            .filter_by(
+                meeting_id=meeting_id,
+                task_id=task_id,
+                user_id=user_id,
+                provider=provider,
+            )
+            .first()
+        )
+        return _calendar_event_to_dict(event) if event else None
+
+
+def upsert_calendar_event(
+    *,
+    meeting_id: str,
+    task_id: str,
+    user_id: str,
+    provider: str = "google",
+    provider_event_id: str | None = None,
+    html_link: str | None = None,
+    status: str = "created",
+    last_error: str | None = None,
+) -> dict:
+    with get_session() as session:
+        event = (
+            session.query(CalendarEvent)
+            .filter_by(
+                meeting_id=meeting_id,
+                task_id=task_id,
+                user_id=user_id,
+                provider=provider,
+            )
+            .first()
+        )
+        if event is None:
+            event = CalendarEvent(
+                meeting_id=meeting_id,
+                task_id=task_id,
+                user_id=user_id,
+                provider=provider,
+            )
+            session.add(event)
+        event.provider_event_id = provider_event_id
+        event.html_link = html_link
+        event.status = status
+        event.last_error = last_error
+        session.flush()
+        return _calendar_event_to_dict(event)
+
+
+def list_calendar_events(meeting_id: str, user_id: str | None = None) -> list[dict]:
+    with get_session() as session:
+        query = session.query(CalendarEvent).filter(CalendarEvent.meeting_id == meeting_id)
+        if user_id is not None:
+            query = query.filter(CalendarEvent.user_id == user_id)
+        return [_calendar_event_to_dict(event) for event in query.order_by(CalendarEvent.id).all()]
 
 
 # ── Feedback ──────────────────────────────────────────────────────────────────

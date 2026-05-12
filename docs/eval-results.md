@@ -1,6 +1,6 @@
 # Evaluation Results
 
-**Harness:** `train/evaluate.py`  
+**Harness:** `src/meeting_agent/mlops/evaluate.py`  
 **Gold set:** `data/eval/gold_smoke.jsonl` (5 meeting samples, 13 labeled action items)  
 **Model:** `qwen2.5:3b` (base, no fine-tuning, GGUF Q4_K_M via Ollama)  
 **Date:** 2026-04-12  
@@ -88,12 +88,12 @@ These results are for the **base model with zero fine-tuning**. Expected improve
 
 ```bash
 # Smoke set (5 samples — fast, ~4 min on CPU)
-python train/evaluate.py \
+python3 -m meeting_agent.mlops.evaluate \
   --gold data/eval/gold_smoke.jsonl \
   --out  data/eval/results_smoke.json
 
 # Full set (when available)
-python train/evaluate.py \
+python3 -m meeting_agent.mlops.evaluate \
   --gold data/eval/gold.jsonl \
   --out  data/eval/results_full.json
 ```

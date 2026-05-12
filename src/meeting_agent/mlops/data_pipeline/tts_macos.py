@@ -5,7 +5,7 @@ Each speaker is assigned a different voice so diarization has distinct signals.
 Turns are concatenated in order with short silence gaps between speakers.
 
 Usage:
-    python data_pipeline/tts_macos.py \
+    python -m meeting_agent.mlops.data_pipeline.tts_macos \
         --input data/training/synthetic_v1_20260504.jsonl \
         --out-dir data/audio/synthetic_tts \
         --limit 12

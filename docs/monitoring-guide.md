@@ -167,10 +167,10 @@ Returns correction counts, most-corrected assignees, and false-positive rates. U
 
 ```bash
 # Check if retraining threshold is met (default: 50 corrections)
-python train/retrain.py --check
+python3 -m meeting_agent.mlops.retrain --check
 
 # Force retrain now
-python train/retrain.py --force
+python3 -m meeting_agent.mlops.retrain --force
 ```
 
 View retraining history:

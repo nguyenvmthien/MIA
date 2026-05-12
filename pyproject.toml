@@ -102,9 +102,9 @@ select = ["E", "F", "I", "UP"]
 "src/meeting_agent/pipeline/assignment.py" = ["E501"]
 "src/meeting_agent/pipeline/feedback.py" = ["E501"]
 "tests/*.py" = ["E501", "F841"]
-# train/ and data_pipeline/ use sys.path hacks and long CLI strings by design
-"train/*.py" = ["E501", "E402", "F401", "E741"]
-"data_pipeline/*.py" = ["E501", "E402", "F401"]
+# MLOps CLI modules contain long help strings and optional training imports.
+"src/meeting_agent/mlops/*.py" = ["E501", "E402", "F401", "E741"]
+"src/meeting_agent/mlops/data_pipeline/*.py" = ["E501", "E402", "F401"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

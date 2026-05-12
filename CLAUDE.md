@@ -17,8 +17,8 @@ PYTHONPATH=src pytest tests/test_guardrails.py -v
 # Run with coverage
 PYTHONPATH=src pytest tests/ --cov=meeting_agent --cov-report=term-missing
 
-# Lint (currently commented out in CI but configured)
-ruff check src/ tests/ train/ data_pipeline/
+# Lint
+ruff check src/ tests/ scripts/
 mypy src/meeting_agent --ignore-missing-imports
 
 # Start API server (local)
@@ -54,12 +54,12 @@ Audio → ingest → preprocess (ffmpeg/noise reduce) → STT (WhisperX+Pyannote
 
 **Async execution:** Celery workers handle pipeline jobs asynchronously. Celery Beat triggers automated retraining every 24 hours when `RETRAIN_MIN_CORRECTIONS` threshold (default 50) is reached.
 
-**Training stack** (`train/`, requires `pip install -e ".[train]"`):
+**Training stack** (`src/meeting_agent/mlops/`, requires `pip install -e ".[train]"`):
 - `finetune.py` — QLoRA via Unsloth + MLflow experiment tracking + Optuna hyperparameter search
 - `distill.py` — knowledge distillation (3B→1.5B) and LoRA magnitude pruning
 - `evaluate.py` — precision/recall/F1 harness; CI threshold is 0.70 precision
 
-**Data pipeline** (`data_pipeline/`): `collect.py` builds JSONL training data from audio dirs; `synthetic.py` generates synthetic meetings via LLM; `validate.py` checks schema/bias/leakage.
+**Data pipeline** (`src/meeting_agent/mlops/data_pipeline/`): `collect.py` builds JSONL training data from audio dirs; `synthetic.py` generates synthetic meetings via LLM; `validate.py` checks schema/bias/leakage.
 
 **Feedback loop:** Corrections submitted via `POST /meetings/{id}/feedback` are stored in `data/transcripts/_feedback.jsonl` and consumed by the retraining pipeline.
 

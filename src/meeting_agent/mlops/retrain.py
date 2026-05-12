@@ -6,8 +6,8 @@ a new fine-tuning run when enough new data has been collected.
 
 Three ways to run:
   1. CLI (one-shot check)
-       python train/retrain.py --check
-       python train/retrain.py --force
+       python -m meeting_agent.mlops.retrain --check
+       python -m meeting_agent.mlops.retrain --force
 
   2. Celery Beat (periodic — runs inside the worker process)
        Configured in pipeline/worker_task.py beat_schedule
@@ -23,12 +23,13 @@ Thresholds (configurable via env):
 """
 
 import argparse
+import hashlib
 import json
 import logging
 import os
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -45,6 +46,7 @@ MLFLOW_TRACKING_URI     = os.environ.get("MLFLOW_TRACKING_URI", "http://localhos
 
 # State file tracks how many corrections were present at the last retrain
 _STATE_FILE = Path("data/training/.retrain_state.json")
+_PROMOTION_MANIFEST_PATH = Path("data/training/.promotion_manifest.json")
 
 
 def _load_state() -> dict:
@@ -63,38 +65,20 @@ def _export_feedback_as_training_data(out_path: str) -> int:
     Convert accumulated feedback corrections into JSONL training examples
     and write to out_path for inclusion in the next training run.
     """
-    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-    from meeting_agent.pipeline.feedback import load_feedback
+    try:
+        from meeting_agent.mlops.data_pipeline.collect_interactions import collect
 
-    corrections = load_feedback(limit=10_000)
-    if not corrections:
+        exported = collect(out_path=out_path, fmt="sft", min_corrections=1, limit=10_000)
+    except Exception as exc:
+        log.warning("DB-backed feedback export failed: %s", exc)
+        exported = 0
+    if exported == 0:
+        log.warning(
+            "No DB-backed feedback examples exported; refusing to fabricate transcript text"
+        )
         return 0
-
-    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-    count = 0
-    with open(out_path, "w") as f:
-        for c in corrections:
-            if c.is_false_positive:
-                continue  # skip — these tell us what NOT to extract (handled by negative examples)
-            row = {
-                "transcript": f"[Action item]: {c.original_description}",
-                "meeting_date": (
-                    c.submitted_at.date().isoformat() if c.submitted_at else "2026-01-01"
-                ),
-                "participants": c.corrected_assignee or c.original_assignee or "",
-                "action_items": [{
-                    "description": c.corrected_description or c.original_description,
-                    "assignee": c.corrected_assignee or c.original_assignee,
-                    "due_date": c.corrected_due_date or c.original_due_date,
-                    "priority": "medium",
-                    "notes": "human-corrected example",
-                }],
-            }
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
-            count += 1
-
-    log.info("Exported %d feedback corrections → %s", count, out_path)
-    return count
+    log.info("Exported %d DB-backed feedback examples → %s", exported, out_path)
+    return exported
 
 
 def _get_champion_f1() -> float:
@@ -117,15 +101,74 @@ def _get_champion_f1() -> float:
     return 0.0
 
 
-def _promote_mlflow_model(eval_result: dict) -> None:
-    """Transition the latest Staging model to Production in MLflow."""
+def _sha256_path(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    h = hashlib.sha256()
+    if path.is_file():
+        h.update(path.read_bytes())
+        return h.hexdigest()
+    files = sorted(p for p in path.rglob("*") if p.is_file())
+    if not files:
+        return None
+    for file_path in files:
+        h.update(str(file_path.relative_to(path)).encode())
+        with file_path.open("rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+    return h.hexdigest()
+
+
+def _build_promotion_manifest(
+    eval_result: dict,
+    output_dir: str,
+    *,
+    mlflow_model_version: str | None = None,
+    mlflow_run_id: str | None = None,
+) -> dict:
+    output_path = Path(output_dir)
+    gguf_path = output_path / "gguf"
+    adapter_path = output_path / "adapter"
+    ollama_tag = os.environ.get(
+        "PROMOTED_OLLAMA_MODEL_TAG",
+        f"meeting-agent:{output_path.name}",
+    )
+    artifact_path = gguf_path if gguf_path.exists() else output_path
+    return {
+        "schema_version": "model_promotion_v1",
+        "promoted_at": datetime.now(timezone.utc).isoformat(),
+        "ollama_model_tag": ollama_tag,
+        "output_dir": str(output_path),
+        "artifact_path": str(artifact_path),
+        "artifact_sha256": _sha256_path(artifact_path),
+        "adapter_path": str(adapter_path) if adapter_path.exists() else None,
+        "mlflow_registered_model": "meeting-agent-qwen",
+        "mlflow_model_version": mlflow_model_version,
+        "mlflow_run_id": mlflow_run_id,
+        "eval_result": eval_result,
+        "serving_update": {
+            "automatic": False,
+            "env_var": "OLLAMA_LLM_MODEL",
+            "target_value": ollama_tag,
+            "rollback_value": os.environ.get("OLLAMA_LLM_MODEL", "qwen2.5:3b"),
+        },
+    }
+
+
+def _write_promotion_manifest(manifest: dict) -> None:
+    _PROMOTION_MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _PROMOTION_MANIFEST_PATH.write_text(json.dumps(manifest, indent=2))
+
+
+def _promote_mlflow_model(eval_result: dict) -> dict:
+    """Transition the latest Staging model to Production in MLflow and write deploy metadata."""
     try:
         import mlflow
         client = mlflow.MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
         versions = client.get_latest_versions("meeting-agent-qwen", stages=["Staging"])
         if not versions:
             log.warning("No Staging model found in MLflow to promote")
-            return
+            return {"promoted": False, "reason": "No Staging model found in MLflow"}
         v = versions[0]
         client.transition_model_version_stage(
             name="meeting-agent-qwen",
@@ -134,10 +177,30 @@ def _promote_mlflow_model(eval_result: dict) -> None:
             archive_existing_versions=True,
         )
         client.set_model_version_tag(v.name, v.version, "eval_f1", str(eval_result.get("avg_f1", "")))
-        client.set_model_version_tag(v.name, v.version, "promoted_at", datetime.utcnow().isoformat())
-        log.info("MLflow: model version %s promoted to Production", v.version)
+        client.set_model_version_tag(
+            v.name,
+            v.version,
+            "promoted_at",
+            datetime.now(timezone.utc).isoformat(),
+        )
+        manifest = _build_promotion_manifest(
+            eval_result,
+            RETRAIN_OUTPUT_DIR,
+            mlflow_model_version=str(v.version),
+            mlflow_run_id=v.run_id,
+        )
+        _write_promotion_manifest(manifest)
+        client.set_model_version_tag(v.name, v.version, "ollama_model_tag", manifest["ollama_model_tag"])
+        client.set_model_version_tag(v.name, v.version, "artifact_sha256", manifest["artifact_sha256"] or "")
+        log.info(
+            "MLflow: model version %s promoted to Production; manifest=%s",
+            v.version,
+            _PROMOTION_MANIFEST_PATH,
+        )
+        return {"promoted": True, "manifest": manifest}
     except Exception as e:
-        log.warning("MLflow promotion failed (non-fatal): %s", e)
+        log.warning("MLflow promotion failed: %s", e)
+        return {"promoted": False, "reason": str(e)}
 
 
 def should_retrain(force: bool = False) -> tuple[bool, str]:
@@ -148,7 +211,6 @@ def should_retrain(force: bool = False) -> tuple[bool, str]:
     if force:
         return True, "forced"
 
-    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
     from meeting_agent.pipeline.feedback import load_feedback
 
     current_count = len(load_feedback(limit=100_000))
@@ -184,17 +246,44 @@ def run_retrain(force: bool = False) -> dict:
         return {"status": "failed", "reason": "No training data files found"}
 
     # Validate dataset before training
-    validate_result = subprocess.run(
-        [sys.executable, "data_pipeline/validate.py", "--train", data_files[0]],
-        capture_output=True, text=True,
-    )
-    if validate_result.returncode != 0:
-        log.warning("Data validation warnings:\n%s", validate_result.stdout)
+    validation_reports = []
+    for data_file in data_files:
+        validate_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "meeting_agent.mlops.data_pipeline.validate",
+                "--train",
+                data_file,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        validation_reports.append({
+            "file": data_file,
+            "returncode": validate_result.returncode,
+            "stdout": validate_result.stdout,
+            "stderr": validate_result.stderr,
+        })
+        if validate_result.returncode != 0:
+            report_path = Path("data/training/.validation_report.json")
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text(json.dumps(validation_reports, indent=2))
+            log.error("Data validation failed for %s; aborting retrain", data_file)
+            return {
+                "status": "failed",
+                "reason": f"Data validation failed for {data_file}",
+                "validation_report": str(report_path),
+            }
+
+    report_path = Path("data/training/.validation_report.json")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(validation_reports, indent=2))
 
     # Run fine-tuning as subprocess so it runs in its own process/GPU context
     log.info("Starting fine-tuning with data: %s", data_files)
     cmd = [
-        sys.executable, "train/finetune.py",
+        sys.executable, "-m", "meeting_agent.mlops.finetune",
         "--data", *data_files,
         "--output", RETRAIN_OUTPUT_DIR,
         "--mlflow-uri", MLFLOW_TRACKING_URI,
@@ -212,18 +301,19 @@ def run_retrain(force: bool = False) -> dict:
     # ── CI gate: evaluate new model vs champion ───────────────────────────────
     eval_result = {}
     promoted = False
+    promotion_result: dict = {}
     if success:
         gold_path = os.environ.get("EVAL_GOLD_PATH", "data/eval/gold_smoke.jsonl")
         if Path(gold_path).exists():
             log.info("Running CI eval gate on %s ...", gold_path)
             eval_cmd = [
-                sys.executable, "train/evaluate.py",
+                sys.executable, "-m", "meeting_agent.mlops.evaluate",
                 "--gold", gold_path,
                 "--mode", "finetuned",
+                "--model", RETRAIN_OUTPUT_DIR,
                 "--out", "data/training/.ci_eval_result.json",
             ]
-            eval_env = {**os.environ, "EVAL_FINETUNED_MODEL": RETRAIN_OUTPUT_DIR}
-            eval_proc = subprocess.run(eval_cmd, capture_output=True, text=True, env=eval_env)
+            eval_proc = subprocess.run(eval_cmd, capture_output=True, text=True)
             ci_passed = eval_proc.returncode == 0
 
             if Path("data/training/.ci_eval_result.json").exists():
@@ -240,20 +330,19 @@ def run_retrain(force: bool = False) -> dict:
                 log.warning("CI gate: F1 dropped %.3f vs champion (%.3f→%.3f), NOT promoting",
                             f1_drop, champion_f1, new_f1)
             else:
-                promoted = True
                 log.info("CI gate PASSED (F1=%.3f, champion=%.3f), promoting model", new_f1, champion_f1)
-                _promote_mlflow_model(eval_result)
+                promotion_result = _promote_mlflow_model(eval_result)
+                promoted = bool(promotion_result.get("promoted"))
         else:
             log.warning("Gold eval set not found at %s — skipping CI gate", gold_path)
 
     # Update state
-    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
     from meeting_agent.pipeline.feedback import load_feedback
     current_count = len(load_feedback(limit=100_000))
 
     state = _load_state()
     run_record = {
-        "triggered_at": datetime.utcnow().isoformat(),
+        "triggered_at": datetime.now(timezone.utc).isoformat(),
         "reason": reason,
         "data_files": data_files,
         "feedback_corrections_included": exported,
@@ -261,6 +350,7 @@ def run_retrain(force: bool = False) -> dict:
         "output_dir": RETRAIN_OUTPUT_DIR,
         "eval_result": eval_result,
         "promoted": promoted,
+        "promotion_result": promotion_result,
     }
     state["last_correction_count"] = current_count
     state["last_retrain_at"] = run_record["triggered_at"]
@@ -275,6 +365,7 @@ def run_retrain(force: bool = False) -> dict:
         "corrections_included": exported,
         "eval_f1": eval_result.get("avg_f1"),
         "promoted": promoted,
+        "promotion_manifest": str(_PROMOTION_MANIFEST_PATH) if promoted else None,
     }
 
 

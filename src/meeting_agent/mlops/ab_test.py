@@ -10,10 +10,10 @@ Routing is deterministic per meeting_id (same meeting always uses same model).
 Results stored in Redis: ab_test:{experiment_id}:{model}:{metric}
 
 Usage:
-    python train/ab_test.py start --model-b qwen2.5:3b-v2 --traffic 0.1
-    python train/ab_test.py status
-    python train/ab_test.py stop
-    python train/ab_test.py results
+    python -m meeting_agent.mlops.ab_test start --model-b qwen2.5:3b-v2 --traffic 0.1
+    python -m meeting_agent.mlops.ab_test status
+    python -m meeting_agent.mlops.ab_test stop
+    python -m meeting_agent.mlops.ab_test results
 """
 
 import argparse
@@ -21,13 +21,14 @@ import hashlib
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 _STATE_FILE = Path("data/training/.ab_test_state.json")
+_ENABLED_VALUES = {"1", "true", "yes", "on"}
 
 
 # ── State management ──────────────────────────────────────────────────────────
@@ -44,6 +45,11 @@ def save_state(state: dict) -> None:
     _STATE_FILE.write_text(json.dumps(state, indent=2))
 
 
+def runtime_enabled() -> bool:
+    """A/B routing is inert unless explicitly enabled in the runtime environment."""
+    return os.environ.get("AB_TEST_ENABLED", "").strip().lower() in _ENABLED_VALUES
+
+
 # ── Routing logic ─────────────────────────────────────────────────────────────
 
 def route(meeting_id: str, model_a: str, model_b: str, traffic_b: float) -> str:
@@ -51,23 +57,39 @@ def route(meeting_id: str, model_a: str, model_b: str, traffic_b: float) -> str:
     Deterministic routing: hash meeting_id to [0,1), use model B if < traffic_b.
     Same meeting_id always routes to the same model.
     """
+    if traffic_b <= 0:
+        return model_a
+    if traffic_b >= 1:
+        return model_b
     h = int(hashlib.md5(meeting_id.encode()).hexdigest(), 16)
     bucket = (h % 10000) / 10000.0
     return model_b if bucket < traffic_b else model_a
 
 
+def get_assignment_for_meeting(meeting_id: str, default_model: str | None = None) -> dict:
+    """Return assignment metadata for routing and audit logs."""
+    fallback_model = default_model or os.environ.get("OLLAMA_LLM_MODEL", "qwen2.5:3b")
+    state = load_state()
+    if not runtime_enabled() or not state.get("active"):
+        return {
+            "enabled": False,
+            "experiment_id": None,
+            "model": fallback_model,
+            "variant": "control",
+        }
+
+    model = route(meeting_id, state["model_a"], state["model_b"], state["traffic_b"])
+    return {
+        "enabled": True,
+        "experiment_id": state["experiment_id"],
+        "model": model,
+        "variant": "B" if model == state["model_b"] else "A",
+    }
+
+
 def get_model_for_meeting(meeting_id: str) -> str:
     """Return the model name to use for this meeting_id, respecting A/B state."""
-    state = load_state()
-    if not state.get("active"):
-        # No A/B test — use env var
-        return os.environ.get("OLLAMA_LLM_MODEL", "qwen2.5:3b")
-    return route(
-        meeting_id,
-        state["model_a"],
-        state["model_b"],
-        state["traffic_b"],
-    )
+    return get_assignment_for_meeting(meeting_id)["model"]
 
 
 # ── Result logging ────────────────────────────────────────────────────────────
@@ -82,7 +104,7 @@ def log_result(
     record = {
         "meeting_id": meeting_id,
         "model": model,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         **metrics,
     }
     try:
@@ -133,12 +155,15 @@ def get_results(experiment_id: str | None = None) -> dict:
         records = by_model
 
     summary = {}
+    min_sample_size = int(os.environ.get("AB_TEST_MIN_SAMPLE_SIZE", "30"))
     for model, recs in records.items():
         if not recs:
             continue
         n = len(recs)
         summary[model] = {
             "n_meetings": n,
+            "ready": n >= min_sample_size,
+            "min_sample_size": min_sample_size,
             "avg_tasks_extracted": sum(r.get("tasks_extracted", 0) for r in recs) / n,
             "avg_tokens": sum(r.get("total_tokens", 0) for r in recs) / n,
             "avg_latency_ms": sum(r.get("llm_latency_ms", 0) for r in recs) / n,
@@ -146,21 +171,30 @@ def get_results(experiment_id: str | None = None) -> dict:
                 sum(r.get("tasks_extracted", 1) for r in recs), 1),
         }
 
-    return {"experiment_id": experiment_id, "models": summary}
+    return {
+        "experiment_id": experiment_id,
+        "min_sample_size": min_sample_size,
+        "ready": bool(summary) and all(m["ready"] for m in summary.values()),
+        "models": summary,
+    }
 
 
 # ── CLI commands ──────────────────────────────────────────────────────────────
 
 def cmd_start(model_b: str, traffic: float) -> None:
+    if traffic <= 0 or traffic >= 1:
+        raise ValueError("traffic must be between 0 and 1 exclusive")
     model_a = os.environ.get("OLLAMA_LLM_MODEL", "qwen2.5:3b")
-    experiment_id = f"ab_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    now = datetime.now(timezone.utc)
+    experiment_id = f"ab_{now.strftime('%Y%m%d_%H%M%S')}"
     state = {
         "active": True,
         "experiment_id": experiment_id,
         "model_a": model_a,
         "model_b": model_b,
         "traffic_b": traffic,
-        "started_at": datetime.utcnow().isoformat(),
+        "started_at": now.isoformat(),
+        "requires_env": "AB_TEST_ENABLED=true",
     }
     save_state(state)
     log.info("A/B test started: experiment=%s  A=%s  B=%s  traffic_b=%.0f%%",
@@ -173,6 +207,7 @@ def cmd_status() -> None:
     if not state.get("active"):
         print("No active A/B test.")
         return
+    print(f"Runtime on : {runtime_enabled()}")
     print(f"Experiment : {state['experiment_id']}")
     print(f"Model A    : {state['model_a']} (champion, {(1-state['traffic_b'])*100:.0f}% traffic)")
     print(f"Model B    : {state['model_b']} (challenger, {state['traffic_b']*100:.0f}% traffic)")
@@ -201,7 +236,7 @@ def cmd_stop() -> None:
         print("No active A/B test.")
         return
     state["active"] = False
-    state["stopped_at"] = datetime.utcnow().isoformat()
+    state["stopped_at"] = datetime.now(timezone.utc).isoformat()
     save_state(state)
     print(f"A/B test stopped: {state['experiment_id']}")
     cmd_results()

@@ -6,7 +6,7 @@ Supports:
   - Manual transcript import (pre-existing .txt/.json files)
 
 Usage:
-    python data_pipeline/collect.py --audio-dir data/raw/audio --out data/training/collected.jsonl
+    python -m meeting_agent.mlops.data_pipeline.collect --audio-dir data/raw/audio --out data/training/collected.jsonl
 """
 
 import argparse

@@ -15,14 +15,14 @@ Modes:
 
 Usage:
     # Single mode
-    python train/evaluate.py --gold data/eval/gold_v1.jsonl
+    python -m meeting_agent.mlops.evaluate --gold data/eval/gold_v1.jsonl
 
     # Compare all modes
-    python train/evaluate.py --gold data/eval/gold_v1.jsonl --compare \
+    python -m meeting_agent.mlops.evaluate --gold data/eval/gold_v1.jsonl --compare \
         --out data/eval/results/compare_20260429.json
 
     # Zero-shot only
-    python train/evaluate.py --gold data/eval/gold_smoke.jsonl \
+    python -m meeting_agent.mlops.evaluate --gold data/eval/gold_smoke.jsonl \
         --mode zero_shot --out data/eval/results/zero_shot.json
 """
 
@@ -30,13 +30,12 @@ import argparse
 import json
 import logging
 import math
-import os
 import re
 import sys
 import time
 import uuid
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -139,43 +138,6 @@ def _is_hallucinated(task: dict, transcript_turns: list[dict]) -> bool:
     return len(overlap) / len(content_words) < 0.3  # <30% overlap = hallucination
 
 
-# ── Prompt mode helpers ───────────────────────────────────────────────────────
-
-_FEW_SHOT_EXAMPLES = """
-FEW-SHOT EXAMPLES:
-
-Input: "Bob, can you send the quarterly report to the client by this Friday?"
-Output: [{"description": "Send quarterly report to client", "assignee": "Bob", "due_date": "2026-05-02", "priority": "high", "notes": null}]
-
-Input: "We should probably look into caching at some point."
-Output: [{"description": "Investigate caching strategy", "assignee": null, "due_date": null, "priority": "low", "notes": "No owner or date specified"}]
-
-Input: "Great meeting everyone, see you next week."
-Output: []
-"""
-
-_NO_FEW_SHOT = "\nDo NOT use example outputs. Infer purely from the transcript."
-
-
-def _patch_prompt_mode(mode: str) -> None:
-    """Monkey-patch the prompt templates based on mode."""
-    import meeting_agent.prompts.templates as tmpl
-    original_system = tmpl.EXTRACT_TASKS_SYSTEM
-
-    if mode == "zero_shot":
-        # Remove few-shot examples section
-        patched = re.sub(
-            r"FEW-SHOT EXAMPLES:.*$", _NO_FEW_SHOT,
-            original_system, flags=re.DOTALL
-        )
-        tmpl.EXTRACT_TASKS_SYSTEM = patched
-    elif mode == "few_shot":
-        pass  # Default — keep as-is
-    elif mode == "finetuned":
-        # Use model override from env
-        pass
-
-
 # ── Per-sample evaluation ─────────────────────────────────────────────────────
 
 def evaluate_sample(
@@ -229,13 +191,6 @@ def run_evaluation(gold_path: str, model: str, mode: str = "few_shot") -> dict:
     from meeting_agent.schemas.transcript import TranscriptTurn
     from meeting_agent.schemas.worker import WorkerRoster
 
-    # Apply prompt mode patch before loading orchestrator
-    _patch_prompt_mode(mode)
-
-    # Override model if finetuned
-    if mode == "finetuned" and os.environ.get("EVAL_FINETUNED_MODEL"):
-        os.environ["OLLAMA_LLM_MODEL"] = os.environ["EVAL_FINETUNED_MODEL"]
-
     gold_samples = [json.loads(l) for l in Path(gold_path).read_text().splitlines() if l.strip()]
 
     all_metrics = []
@@ -264,6 +219,8 @@ def run_evaluation(gold_path: str, model: str, mode: str = "few_shot") -> dict:
                 turns, roster,
                 meeting_date=sample.get("meeting_date", "2026-01-01"),
                 meeting_id=f"eval_{i}",
+                model=model,
+                prompt_mode=mode,
             )
             predicted = [t.model_dump(mode="json") for t in predicted_tasks]
         except Exception as exc:
@@ -298,7 +255,7 @@ def run_evaluation(gold_path: str, model: str, mode: str = "few_shot") -> dict:
         "mode": mode,
         "model": model,
         "gold_file": gold_path,
-        "evaluated_at": datetime.utcnow().isoformat(),
+        "evaluated_at": datetime.now(timezone.utc).isoformat(),
         "samples": n,
         "avg_precision": round(avg("precision"), 4),
         "avg_recall": round(avg("recall"), 4),
@@ -347,7 +304,7 @@ def run_compare(gold_path: str, model: str, out_path: str | None) -> dict:
             results[mode] = {"error": str(e)}
 
     comparison = {
-        "compared_at": datetime.utcnow().isoformat(),
+        "compared_at": datetime.now(timezone.utc).isoformat(),
         "gold_file": gold_path,
         "model": model,
         "modes": results,

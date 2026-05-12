@@ -1,18 +1,20 @@
 """
 Export human-corrected meeting data from PostgreSQL → JSONL for fine-tuning.
 
-Produces instruction/input/output format compatible with train/finetune.py.
+Produces instruction/input/output format compatible with meeting_agent.mlops.finetune.
 
 Usage:
-    PYTHONPATH=src python data_pipeline/export_for_finetuning.py \
+    PYTHONPATH=src python -m meeting_agent.mlops.data_pipeline.export_for_finetuning \
         --out data/training/finetuning.jsonl \
         --min-corrections 1
 
 The output format per line:
     {
+        "schema_version": "sft_v1",
         "instruction": "<system prompt>",
         "input": "<transcript text>",
-        "output": "<json array of corrected tasks>"
+        "output": "<json array of corrected tasks>",
+        "source_meeting_id": "<meeting id>"
     }
 """
 
@@ -93,9 +95,12 @@ def export(out_path: str, min_corrections: int = 1) -> int:
                     continue
 
                 row = {
+                    "schema_version": "sft_v1",
                     "instruction": SYSTEM_INSTRUCTION,
                     "input": transcript_text,
                     "output": json.dumps(ground_truth, ensure_ascii=False),
+                    "source_meeting_id": str(mid),
+                    "model_version": meeting.model_version,
                 }
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
                 written += 1

@@ -18,7 +18,6 @@ RUN pip install --no-cache-dir -e "." \
 
 # --- App code layer (only invalidated when src/ changes) ---
 COPY src/ ./src/
-COPY train/ ./train/
 RUN pip install --no-cache-dir -e . --no-deps
 
 RUN mkdir -p data/audio data/transcripts data/tokens data/models data/training

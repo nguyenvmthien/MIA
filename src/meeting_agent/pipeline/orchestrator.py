@@ -107,6 +107,7 @@ def _raw_llm_call(
     system_prompt: str,
     user_prompt: str,
     meeting_id: str | None = None,
+    model: str | None = None,
 ) -> tuple[str, int]:
     """
     LLM call routed through InferenceRouter (multi-Ollama) or single Ollama.
@@ -114,7 +115,7 @@ def _raw_llm_call(
     """
     LLM_CALLS.inc()
     response = routed_chat(
-        model=settings.ollama_llm_model,
+        model=model or settings.ollama_llm_model,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -132,19 +133,35 @@ def _call_llm(
     system_prompt: str,
     user_prompt: str,
     meeting_id: str | None = None,
+    model: str | None = None,
 ) -> tuple[str, int]:
     """LLM call with Redis prompt cache + PII-masked logging."""
     log.debug("LLM call | system=%s…", mask_pii(system_prompt[:80]))
 
     def _call_fn(sys_p: str, usr_p: str) -> tuple[str, int]:
-        return _raw_llm_call(sys_p, usr_p, meeting_id=meeting_id)
+        return _raw_llm_call(sys_p, usr_p, meeting_id=meeting_id, model=model)
 
     return cached_llm_call(
-        model=settings.ollama_llm_model,
+        model=model or settings.ollama_llm_model,
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         call_fn=_call_fn,
     )
+
+
+def _prompt_for_mode(mode: str, roster: WorkerRoster) -> str:
+    system_prompt = EXTRACT_TASKS_SYSTEM.format(
+        roster=roster.names_for_prompt(),
+        friday=_next_friday(),
+    )
+    if mode == "zero_shot":
+        return (
+            system_prompt.split("FEW-SHOT EXAMPLES:", 1)[0].rstrip()
+            + "\n\nDo NOT use example outputs. Infer purely from the transcript."
+        )
+    if mode in {"few_shot", "finetuned"}:
+        return system_prompt
+    raise ValueError(f"Unsupported prompt mode: {mode}")
 
 
 # ── Public pipeline functions ─────────────────────────────────────────────────
@@ -154,6 +171,9 @@ def extract_action_items(
     roster: WorkerRoster,
     meeting_date: str,
     meeting_id: str,
+    model: str | None = None,
+    prompt_mode: str = "few_shot",
+    artifact_sink: list[dict] | None = None,
 ) -> tuple[list[ExtractedTask], int]:
     """
     Extract action items from all transcript turns via chunked LLM calls.
@@ -172,10 +192,7 @@ def extract_action_items(
     speaker_index = SpeakerIndex()
     speaker_index.build(turns)
 
-    system_prompt = EXTRACT_TASKS_SYSTEM.format(
-        roster=roster.names_for_prompt(),
-        friday=_next_friday(),
-    )
+    system_prompt = _prompt_for_mode(prompt_mode, roster)
 
     all_tasks: list[ExtractedTask] = []
     total_tokens = 0
@@ -204,7 +221,24 @@ def extract_action_items(
         task_id_prefix = f"{meeting_id}_c{chunk_idx}"
 
         try:
-            raw_output, tokens = _call_llm(system_prompt, user_prompt, meeting_id=meeting_id)
+            raw_output, tokens = _call_llm(
+                system_prompt,
+                user_prompt,
+                meeting_id=meeting_id,
+                model=model,
+            )
+            if artifact_sink is not None:
+                artifact_sink.append({
+                    "artifact_type": "llm_tasks_raw",
+                    "payload": {
+                        "chunk_idx": chunk_idx,
+                        "prompt_mode": prompt_mode,
+                        "model": model or settings.ollama_llm_model,
+                        "raw_output": raw_output,
+                        "tokens": tokens,
+                        "source_turn_ids": source_turn_ids,
+                    },
+                })
             total_tokens += tokens
             tasks = parse_and_validate(
                 raw_output,
@@ -227,6 +261,7 @@ def summarize_meeting(
     turns: list[TranscriptTurn],
     meeting_date: str,
     duration_ms: int,
+    artifact_sink: list[dict] | None = None,
 ) -> str:
     """Generate a concise meeting summary via the LLM."""
     participants = sorted({t.display_name for t in turns})
@@ -245,5 +280,14 @@ def summarize_meeting(
         transcript=full_text,
     )
 
-    summary, _ = _call_llm(SUMMARIZE_SYSTEM, user_prompt)
+    summary, tokens = _call_llm(SUMMARIZE_SYSTEM, user_prompt)
+    if artifact_sink is not None:
+        artifact_sink.append({
+            "artifact_type": "llm_summary_raw",
+            "payload": {
+                "model": settings.ollama_llm_model,
+                "raw_output": summary,
+                "tokens": tokens,
+            },
+        })
     return summary.strip()

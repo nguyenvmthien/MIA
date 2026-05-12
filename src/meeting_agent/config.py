@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     audio_storage_path: str = "./data/audio"
     transcript_storage_path: str = "./data/transcripts"
     workers_storage_path: str = "./data/workers.json"
+    artifact_retention_days: int = 30
+    raw_audio_retention_days: int = 7
+    pii_artifact_retention_days: int = 14
 
     # App
     log_level: str = "INFO"

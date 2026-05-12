@@ -57,6 +57,8 @@ htmlcov/
 docker-compose.override.yml
 
 meeting_agent.egg-info/docker/nginx/certs/
+docker/nginx/certs/
+docker/pgadmin/pgpass
 
 # Python cache
 **/__pycache__/

@@ -1,5 +1,6 @@
 """Stage 3 — STT + Diarization: WhisperX ASR + Pyannote speaker diarization."""
 
+import json
 import time
 import uuid
 from pathlib import Path
@@ -13,7 +14,10 @@ class STTError(Exception):
     pass
 
 
-def transcribe_and_diarize(audio_path: Path) -> tuple[list[TranscriptTurn], int]:
+def transcribe_and_diarize(
+    audio_path: Path,
+    artifact_sink: list[dict] | None = None,
+) -> tuple[list[TranscriptTurn], int]:
     """
     Run WhisperX ASR + Pyannote diarization on a preprocessed WAV file.
 
@@ -83,6 +87,17 @@ def transcribe_and_diarize(audio_path: Path) -> tuple[list[TranscriptTurn], int]
 
         diarize_ms = int((time.monotonic() - t1) * 1000)
         STAGE_LATENCY.labels(stage="diarize").observe(diarize_ms / 1000)
+
+    if artifact_sink is not None:
+        artifact_sink.append({
+            "artifact_type": "asr_raw",
+            "payload": json.loads(json.dumps(result, default=str)),
+            "metadata": {
+                "whisper_model": settings.whisper_model,
+                "language": result.get("language"),
+                "audio_path": str(audio_path),
+            },
+        })
 
     # ── Build TranscriptTurn list ─────────────────────────────────────────────
     turns: list[TranscriptTurn] = []

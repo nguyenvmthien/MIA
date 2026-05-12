@@ -6,13 +6,13 @@ Each record is either:
   - RLHF (preference): chosen (corrected) vs rejected (original model output) pairs
 
 Usage:
-    PYTHONPATH=src python data_pipeline/collect_interactions.py \
+    PYTHONPATH=src python -m meeting_agent.mlops.data_pipeline.collect_interactions \
         --out data/training/interactions_$(date +%Y%m%d).jsonl \
         --format sft \
         --min-corrections 1
 
     # RLHF preference pairs
-    PYTHONPATH=src python data_pipeline/collect_interactions.py \
+    PYTHONPATH=src python -m meeting_agent.mlops.data_pipeline.collect_interactions \
         --out data/training/rlhf_$(date +%Y%m%d).jsonl \
         --format rlhf
 """
@@ -66,8 +66,8 @@ def _build_sft_record(meeting: dict, corrections: list[dict]) -> dict | None:
     )
 
     return {
-        "format": "sft",
-        "meeting_id": meeting["meeting_id"],
+        "schema_version": "sft_v1",
+        "source_meeting_id": str(meeting["meeting_id"]),
         "model_version": meeting.get("model_version"),
         "created_at": meeting.get("processed_at"),
         "instruction": (
@@ -106,9 +106,9 @@ def _build_rlhf_records(meeting: dict, corrections: list[dict]) -> list[dict]:
         if c.get("is_false_positive"):
             # Rejected: model hallucinated a task that doesn't exist
             records.append({
-                "format": "rlhf",
-                "type": "false_positive",
-                "meeting_id": meeting["meeting_id"],
+                "schema_version": "rlhf_v1",
+                "feedback_type": "false_positive",
+                "source_meeting_id": str(meeting["meeting_id"]),
                 "model_version": meeting.get("model_version"),
                 "prompt": transcript_text,
                 "chosen": "[]",
@@ -127,9 +127,9 @@ def _build_rlhf_records(meeting: dict, corrections: list[dict]) -> list[dict]:
 
         if corrected != orig:
             records.append({
-                "format": "rlhf",
-                "type": "correction",
-                "meeting_id": meeting["meeting_id"],
+                "schema_version": "rlhf_v1",
+                "feedback_type": "correction",
+                "source_meeting_id": str(meeting["meeting_id"]),
                 "model_version": meeting.get("model_version"),
                 "prompt": transcript_text,
                 "chosen": json.dumps([corrected], ensure_ascii=False),
@@ -240,8 +240,7 @@ def collect(
                     records = _build_rlhf_records(meeting_dict, corrections)
                     for record in records:
                         f.write(json.dumps(record, ensure_ascii=False) + "\n")
-                        written += len(records)
-                        break  # already counted all at once
+                        written += 1
 
     log.info("Wrote %d records to %s", written, out)
     return written

@@ -5,7 +5,7 @@ Uses Unsloth for 4-bit NF4 base + LoRA adapters (rank=16).
 Logs every run to MLflow for model versioning.
 
 Usage:
-    python train/finetune.py \
+    python -m meeting_agent.mlops.finetune \
         --data data/training/meetings.jsonl \
         --output models/qwen-meeting-v1 \
         --epochs 3
@@ -104,7 +104,7 @@ def train(args, hparams: dict | None = None):
     """Run one training job and return eval metrics."""
     from trl import SFTConfig, SFTTrainer  # type: ignore
 
-    from train.dataset import build_dataset, train_val_split
+    from meeting_agent.mlops.dataset import build_dataset, train_val_split
 
     hp = {**DEFAULTS, **(hparams or {})}
 

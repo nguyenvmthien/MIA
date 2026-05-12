@@ -9,15 +9,15 @@ Hướng dẫn đầy đủ cách thu thập, sinh, validate, và chuẩn bị d
 ```
 [Nguồn dữ liệu]
        │
-       ├── 1. Audio thật     → data_pipeline/collect.py   → data/training/collected.jsonl
-       ├── 2. Synthetic LLM  → data_pipeline/synthetic.py → data/training/synthetic.jsonl
+       ├── 1. Audio thật     → meeting_agent.mlops.data_pipeline.collect   → data/training/collected.jsonl
+       ├── 2. Synthetic LLM  → meeting_agent.mlops.data_pipeline.synthetic → data/training/synthetic.jsonl
        └── 3. Feedback user  → data/transcripts/_feedback.jsonl (tự động)
                   │
                   ▼
-       data_pipeline/validate.py  (schema, bias, leakage, duplicate check)
+       meeting_agent.mlops.data_pipeline.validate  (schema, bias, leakage, duplicate check)
                   │
                   ▼
-       train/finetune.py  (QLoRA fine-tuning)
+       meeting_agent.mlops.finetune  (QLoRA fine-tuning)
 ```
 
 ---
@@ -69,16 +69,16 @@ rm data/audio/test_meeting.aiff
 
 ## 2. Sinh Synthetic Data (LLM-generated)
 
-`data_pipeline/synthetic.py` dùng Ollama (`qwen2.5:3b`) để sinh transcript cuộc họp giả cùng ground-truth action items.
+`src/meeting_agent/mlops/data_pipeline/synthetic.py` dùng Ollama (`qwen2.5:3b`) để sinh transcript cuộc họp giả cùng ground-truth action items.
 
 ### Cách chạy
 
 ```bash
 # Sinh 50 mẫu (mặc định)
-python3 data_pipeline/synthetic.py --count 50 --out data/training/synthetic.jsonl
+python3 -m meeting_agent.mlops.data_pipeline.synthetic --count 50 --out data/training/synthetic.jsonl
 
 # Sinh nhiều hơn cho fine-tuning
-python data_pipeline/synthetic.py --count 200 --out data/training/synthetic.jsonl
+python3 -m meeting_agent.mlops.data_pipeline.synthetic --count 200 --out data/training/synthetic.jsonl
 ```
 
 ### Cơ chế hoạt động
@@ -128,7 +128,7 @@ python data_pipeline/synthetic.py --count 200 --out data/training/synthetic.json
 ### Yêu cầu
 
 - Ollama đang chạy với model `qwen2.5:3b` đã pull
-- Hoặc chạy trong Docker: `docker compose exec api python data_pipeline/synthetic.py --count 50 --out data/training/synthetic.jsonl`
+- Hoặc chạy trong Docker: `docker compose exec api python3 -m meeting_agent.mlops.data_pipeline.synthetic --count 50 --out data/training/synthetic.jsonl`
 
 ---
 
@@ -136,12 +136,12 @@ python data_pipeline/synthetic.py --count 200 --out data/training/synthetic.json
 
 Khi bạn đã có `data/training/synthetic.jsonl`, có thể sinh audio tương ứng để test end-to-end từ input âm thanh.
 
-Script: `data_pipeline/synthetic_to_audio.py`
+Script: `src/meeting_agent/mlops/data_pipeline/synthetic_to_audio.py`
 
 ### Chạy thử nhanh (3 mẫu)
 
 ```bash
-python3 data_pipeline/synthetic_to_audio.py \
+python3 -m meeting_agent.mlops.data_pipeline.synthetic_to_audio \
   --input data/training/synthetic.jsonl \
   --out-dir data/audio/synthetic \
   --limit 3 \
@@ -151,7 +151,7 @@ python3 data_pipeline/synthetic_to_audio.py \
 ### Chuyển toàn bộ dataset
 
 ```bash
-python3 data_pipeline/synthetic_to_audio.py \
+python3 -m meeting_agent.mlops.data_pipeline.synthetic_to_audio \
   --input data/training/synthetic.jsonl \
   --out-dir data/audio/synthetic \
   --overwrite
@@ -177,11 +177,11 @@ python3 data_pipeline/synthetic_to_audio.py \
 
 ## 3. Thu thập từ Audio thật
 
-`data_pipeline/collect.py` chạy toàn bộ pipeline trên thư mục audio và lưu output làm training data.
+`src/meeting_agent/mlops/data_pipeline/collect.py` chạy toàn bộ pipeline trên thư mục audio và lưu output làm training data.
 
 ```bash
 # Thu thập từ thư mục audio
-python data_pipeline/collect.py audio \
+python3 -m meeting_agent.mlops.data_pipeline.collect audio \
   --audio-dir data/audio \
   --roster examples/roster.json \
   --out data/training/collected.jsonl
@@ -206,7 +206,7 @@ data/transcripts/_feedback.jsonl
 cat data/transcripts/_feedback.jsonl
 
 # Dùng feedback làm training data bổ sung
-python train/finetune.py \
+python3 -m meeting_agent.mlops.finetune \
   --data data/training/synthetic.jsonl data/transcripts/_feedback.jsonl \
   --output models/qwen-meeting-v2
 ```
@@ -218,7 +218,7 @@ python train/finetune.py \
 Trước khi fine-tune, luôn validate để tránh bias và data leakage.
 
 ```bash
-python data_pipeline/validate.py \
+python3 -m meeting_agent.mlops.data_pipeline.validate \
   --train data/training/synthetic.jsonl \
   --val   data/training/val.jsonl
 ```
@@ -241,19 +241,19 @@ python data_pipeline/validate.py \
 
 ```bash
 # Bước 1: Sinh synthetic data
-python data_pipeline/synthetic.py --count 100 --out data/training/synthetic.jsonl
+python3 -m meeting_agent.mlops.data_pipeline.synthetic --count 100 --out data/training/synthetic.jsonl
 
 # Bước 2: Sinh validation set riêng
-python data_pipeline/synthetic.py --count 20 --out data/training/val.jsonl
+python3 -m meeting_agent.mlops.data_pipeline.synthetic --count 20 --out data/training/val.jsonl
 
 # Bước 3: Validate
-python data_pipeline/validate.py \
+python3 -m meeting_agent.mlops.data_pipeline.validate \
   --train data/training/synthetic.jsonl \
   --val   data/training/val.jsonl
 
 # Bước 4: Fine-tune (cần GPU ≥ 8GB VRAM)
 pip install -e ".[train]"
-python train/finetune.py \
+python3 -m meeting_agent.mlops.finetune \
   --data data/training/synthetic.jsonl \
   --output models/qwen-meeting-v1 \
   --epochs 3

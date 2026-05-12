@@ -13,14 +13,14 @@ Distillation rationale:
 
 Usage:
     # Knowledge distillation (teacher → student)
-    python train/distill.py distill \
+    python -m meeting_agent.mlops.distill distill \
         --teacher models/qwen-meeting-v1/adapter \
         --student-base unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit \
         --data data/training/synthetic.jsonl \
         --output models/qwen-meeting-student
 
     # Magnitude-based LoRA pruning
-    python train/distill.py prune \
+    python -m meeting_agent.mlops.distill prune \
         --adapter models/qwen-meeting-v1/adapter \
         --output models/qwen-meeting-pruned \
         --sparsity 0.3
@@ -128,7 +128,7 @@ class DistillationTrainer:
     def train(self, data_paths: list[str], output_dir: str, epochs: int = 3):
         import mlflow  # type: ignore
 
-        from train.dataset import build_dataset
+        from meeting_agent.mlops.dataset import build_dataset
 
         teacher, t_tokenizer = self._load_teacher()
         student, s_tokenizer = self._load_student()

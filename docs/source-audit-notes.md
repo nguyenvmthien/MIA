@@ -244,10 +244,10 @@ Acceptance criteria:
 ### P1-8 Dataset Contracts Are Inconsistent
 
 Problem:
-- `train/dataset.py` expects raw rows with `transcript`, `meeting_date`, `participants`, `roster`, `action_items`.
-- `data_pipeline/export_for_finetuning.py` exports `instruction`, `input`, `output`.
-- `data_pipeline/collect_interactions.py` exports `instruction`, `input`, `output`, plus metadata.
-- `train/evaluate.py` expects gold rows with `transcript_turns`, `roster`, `action_items`.
+- `src/meeting_agent/mlops/dataset.py` expects raw rows with `transcript`, `meeting_date`, `participants`, `roster`, `action_items`.
+- `src/meeting_agent/mlops/data_pipeline/export_for_finetuning.py` exports `instruction`, `input`, `output`.
+- `src/meeting_agent/mlops/data_pipeline/collect_interactions.py` exports `instruction`, `input`, `output`, plus metadata.
+- `src/meeting_agent/mlops/evaluate.py` expects gold rows with `transcript_turns`, `roster`, `action_items`.
 
 Fix:
 - Define canonical schemas:
@@ -255,17 +255,17 @@ Fix:
   - SFT record.
   - RLHF preference record.
   - Eval gold record.
-- Make `train/dataset.py` load both raw records and SFT records through explicit adapters.
+- Make `src/meeting_agent/mlops/dataset.py` load both raw records and SFT records through explicit adapters.
 - Document schema versions in each JSONL.
 
 Acceptance criteria:
-- Any file produced by `export_for_finetuning.py` or `collect_interactions.py --format sft` can be loaded by `train/dataset.py`.
+- Any file produced by `export_for_finetuning.py` or `collect_interactions.py --format sft` can be loaded by `src/meeting_agent/mlops/dataset.py`.
 - Dataset compatibility smoke test is in CI.
 
 ### P1-9 Feedback Retraining Uses Weak Fabricated Inputs
 
 Problem:
-- `train/retrain.py` builds `transcript` as `[Action item]: {original_description}`.
+- `src/meeting_agent/mlops/retrain.py` builds `transcript` as `[Action item]: {original_description}`.
 - This loses meeting context and teaches a different task than production extraction.
 - False positives are skipped instead of becoming negative examples.
 
@@ -312,7 +312,7 @@ Acceptance criteria:
 ### P1-12 Evaluation Overrides Are Unreliable
 
 Problem:
-- `train/evaluate.py` mutates `os.environ["OLLAMA_LLM_MODEL"]`, but settings may already be instantiated.
+- `src/meeting_agent/mlops/evaluate.py` mutates `os.environ["OLLAMA_LLM_MODEL"]`, but settings may already be instantiated.
 - Prompt monkey-patching happens after importing `extract_action_items`, while orchestrator imports prompt constants at module load.
 
 Fix:
@@ -361,7 +361,7 @@ Current gaps:
 
 Fix:
 - Add CI jobs:
-  - `ruff check src/ tests/ train/ data_pipeline/`
+  - `ruff check src/ tests/ scripts/`
   - backend tests
   - `web/npm ci`, `npm run lint`, `npm run build`
   - Alembic upgrade smoke against Postgres
@@ -376,15 +376,15 @@ Acceptance criteria:
 ### P2-2 Current Ruff Check Fails
 
 Command:
-- `PYTHONPATH=src ruff check src/ tests/ train/ data_pipeline/`
+- `PYTHONPATH=src ruff check src/ tests/ scripts/`
 
 Current result:
 - 7 lint errors in MLOps/data scripts:
-  - `data_pipeline/collect_interactions.py`
-  - `data_pipeline/synthetic.py`
-  - `data_pipeline/tts_audio.py`
-  - `data_pipeline/tts_macos.py`
-  - `train/evaluate.py`
+  - `src/meeting_agent/mlops/data_pipeline/collect_interactions.py`
+  - `src/meeting_agent/mlops/data_pipeline/synthetic.py`
+  - `src/meeting_agent/mlops/data_pipeline/tts_audio.py`
+  - `src/meeting_agent/mlops/data_pipeline/tts_macos.py`
+  - `src/meeting_agent/mlops/evaluate.py`
 
 Acceptance criteria:
 - Ruff passes locally and in CI.
@@ -509,17 +509,18 @@ Eval gold record:
 ## Implementation Checklist
 
 Phase 1: Safety and ownership
-- Add auth dependency. Not started.
-- Add owner fields and ownership checks. Not started.
-- Fix Google token flow. Not started.
+- Add auth dependency. Done: backend supports Bearer/API-key user and admin tokens with 401/403 tests.
+- Add owner fields and ownership checks. Partially done: `meetings.owner_user_id` migration added; upload/get/list/delete/participant resolve/calendar sync use owner scope when auth is configured. Worker/team ownership is still pending.
+- Fix Google token flow. Partially done: token-direct and calendar sync derive user IDs from authenticated backend identity when auth is configured; unauthenticated local-dev compatibility remains.
 - Sanitize token filenames. Done in first implementation slice.
-- Remove personal seed data. Partially done for API seed workers; tracked `data/workers.json` still needs cleanup/removal.
+- Remove personal seed data. Done for API seed workers; tracked runtime `data/workers.json` was removed from the git index and is now ignored.
 
 Phase 2: Persistence
-- Move workers to DB.
-- Add calendar events table.
-- Add transcript/artifact tables.
-- Backfill from existing JSONB transcript data.
+- Move workers to DB. Done as DB-first registry with `workers` table and owner scope; file fallback remains only for local/test bootstrap when DB is unavailable.
+- Add calendar events table. Done with idempotent `(meeting_id, task_id, user_id, provider)` persistence and status/error fields.
+- Add transcript/artifact tables. Done for normalized transcript turns and meeting artifacts; uploaded audio artifacts include storage URI and SHA-256 checksum.
+- Backfill from existing JSONB transcript data. Done via `scripts/backfill_transcript_turns.py` / `make backfill-transcripts APPLY=1`.
+- Add artifact retention cleanup. Done via `scripts/cleanup_artifacts.py` / `make cleanup-artifacts APPLY=1`; dry-run is the default.
 
 Phase 3: Pipeline correctness
 - Apply prompt sanitization. Done for transcript text sent to orchestrator prompts.
@@ -529,23 +530,63 @@ Phase 3: Pipeline correctness
 - Add frontend job resume. Done: active meeting id is stored in browser storage, restored on page load, and History links can reopen processing/review.
 
 Phase 4: MLOps repair
-- Define canonical schemas.
-- Update exporters/loaders/evaluation to use adapters.
-- Fix retraining validation and feedback export.
-- Fix drift logging.
-- Add explicit A/B enablement.
+- Define canonical schemas. Done for raw meeting, SFT, RLHF preference, eval gold, and drift records.
+- Update exporters/loaders/evaluation to use adapters. Done for training loader, SFT/RLHF exporters, validation, and eval model/prompt overrides.
+- Fix retraining validation and feedback export. Partially done: validation now checks every data file and aborts on failure; feedback export now uses DB-backed full transcript context instead of fabricated prompts.
+- Fix model promotion metadata. Done: retrain promotion writes `model_promotion_v1` manifest with Ollama tag, artifact path/checksum, MLflow version/run, and manual serving update/rollback metadata.
+- Add explicit serving deploy command after promotion. Done via `scripts/deploy_promoted_model.py` / `make deploy-promoted-model APPLY=1`; dry-run is the default and apply writes a reversible serving env backup.
+- Fix drift logging. Done by deriving features from `run_metrics` and actual action item assignment state.
+- Add explicit A/B enablement. Done for runtime routing; admin endpoints now use backend admin auth when configured.
+- Refactor MLOps package layout. Done: root `train/` and `data_pipeline/` code moved under `src/meeting_agent/mlops/` and commands now use `python3 -m meeting_agent.mlops...`.
 
 Phase 5: CI and hygiene
 - Fix ruff failures. Done; full ruff passes locally.
-- Add web lint/build.
-- Add migration and dataset smoke tests.
-- Add generated-file/secret hygiene job.
-- Remove tracked generated/local files.
+- Add web lint/build. Done in CI; local `npm run lint` and `npm run build` pass.
+- Add migration and dataset smoke tests. Done: CI has Alembic upgrade smoke and dataset compatibility smoke.
+- Add generated-file/secret hygiene job. Done: `scripts/check_repo_hygiene.py` is wired into CI.
+- Remove tracked generated/local files. Done for tracked worker runtime data, local key/pgpass, and Python cache files via `git rm --cached`; local copies remain ignored.
 
 ## Verification So Far
 
-- `PYTHONPATH=src pytest tests/ -q` passed: 122 tests.
-- `PYTHONPATH=src ruff check src/ tests/ train/ data_pipeline/` passed.
+- `PYTHONPATH=src pytest tests/ -q` passed: 142 tests.
+- `PYTHONPATH=src ruff check src/ tests/ scripts/` passed.
+- `PYTHONPATH=src pytest tests/test_artifact_cleanup.py tests/test_deploy_promoted_model.py tests/test_retrain_promotion.py -q` passed: 6 tests.
+- `python3 scripts/check_repo_hygiene.py` passed.
+- `PYTHONPATH=src python3 scripts/dataset_compat_smoke.py` passed.
+- `PYTHONPATH=src python3 -m meeting_agent.mlops.finetune --help` passed.
+- `PYTHONPATH=src python3 -m meeting_agent.mlops.data_pipeline.validate --help` passed.
+- `PYTHONPATH=src python3 -m meeting_agent.mlops.retrain --check` passed.
+- `npm run lint` and `npm run build` passed in `web/`; build required running outside the sandbox because Turbopack needs process/port permissions.
+- `docker compose exec -T api alembic upgrade head` passed against the running Postgres stack.
+- `docker compose build api worker` passed after MLOps package refactor.
+- Docker smoke endpoints passed: API `/health` returned `{"status":"ok"}` and web on port 3001 returned the app shell.
 - Python 3.13 `datetime.utcnow()` warnings were removed from the app-side tested code paths.
 - Remaining warnings are from FAISS/SWIG import internals during one orchestrator sanitization test.
-- `python3 train/finetune.py --help` works in the local shell.
+- `train/` and `data_pipeline/` are no longer root-level runtime code directories.
+
+## Current State
+
+Completed production-readiness additions:
+- Backend auth/ownership foundation, sanitized token paths, DB-backed workers, DB-backed calendar events, normalized transcript rows, auditable meeting artifacts, prompt sanitization, upload validation, metric counting fix, and frontend job resume.
+- MLOps schema contracts, validation gates, DB-backed feedback export, drift records, explicit A/B enablement, promotion manifest, and controlled Ollama deploy command.
+- Root-level MLOps code was consolidated into `src/meeting_agent/mlops/`; `train/` and `data_pipeline/` are no longer runtime code roots.
+- CI/hygiene coverage for ruff, backend tests, web lint/build, migration smoke, dataset compatibility, generated-file/secret hygiene, and Docker builds.
+- Artifact retention cleanup for local raw audio and raw PII-bearing payloads.
+
+Remaining production hardening:
+1. Replace local-dev compatibility paths with fully authenticated frontend/backend proxy flow before production.
+2. Decide whether serving deploy should remain explicit (`make deploy-promoted-model APPLY=1`) or be triggered by a protected release workflow.
+
+Important Docker reminder:
+- Prefer testing through `docker compose up -d --build api worker web`.
+- Avoid `docker compose down -v` unless intentionally wiping Postgres, Redis, Ollama, and monitoring volumes.
+
+Current default roster note:
+- API bootstrap now seeds 33 sanitized default workers instead of the old 3-worker fixture. If the default-scope DB only contains legacy `w1/w2/w3`, startup removes those legacy seeds and inserts the 33-worker roster.
+
+Current artifact note:
+- `run_pipeline()` now records uploaded/raw/clean audio artifacts with checksums, raw ASR output, raw LLM summary output, and raw LLM task-extraction outputs into `meeting_artifacts`.
+- Artifact cleanup is retention-based and dry-run by default. Config knobs are `ARTIFACT_RETENTION_DAYS`, `RAW_AUDIO_RETENTION_DAYS`, and `PII_ARTIFACT_RETENTION_DAYS`.
+
+Current serving note:
+- Promotion still does not silently switch production serving. A promoted model now has an explicit deploy path that creates the Ollama tag and writes a backed-up serving env file when `APPLY=1` is provided.

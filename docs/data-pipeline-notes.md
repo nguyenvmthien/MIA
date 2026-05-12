@@ -23,7 +23,7 @@ GEMINI_API_KEY=AIza...   # lấy tại aistudio.google.com/apikey
 
 ### Chạy short meetings (3-6 phút)
 ```bash
-python data_pipeline/synthetic.py \
+python3 -m meeting_agent.mlops.data_pipeline.synthetic \
     --count 200 \
     --provider gemini \
     --out data/training/synthetic_v1_$(date +%Y%m%d).jsonl
@@ -31,7 +31,7 @@ python data_pipeline/synthetic.py \
 
 ### Chạy long meetings (30+ phút, multi-segment)
 ```bash
-python data_pipeline/synthetic.py \
+python3 -m meeting_agent.mlops.data_pipeline.synthetic \
     --long \
     --count 10 \
     --duration 30 \
@@ -67,7 +67,7 @@ python data_pipeline/synthetic.py \
 ## Bước 2: Convert transcript → audio (macOS TTS)
 
 ```bash
-python data_pipeline/tts_macos.py \
+python3 -m meeting_agent.mlops.data_pipeline.tts_macos \
     --input data/training/synthetic_v1_20260504.jsonl \
     --out-dir data/audio/synthetic_tts \
     --limit 12   # bỏ --limit để convert tất cả

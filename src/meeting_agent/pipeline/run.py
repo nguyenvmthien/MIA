@@ -4,6 +4,7 @@ Main pipeline runner — wires all stages together into a single batch job.
 Called by the Celery worker or the CLI.
 """
 
+import hashlib
 import logging
 import time
 import uuid
@@ -30,6 +31,25 @@ from meeting_agent.schemas.task import TaskStatus
 from meeting_agent.schemas.worker import WorkerRoster
 
 log = logging.getLogger(__name__)
+
+
+def _file_sha256(path: Path) -> str | None:
+    if not path.exists() or not path.is_file():
+        return None
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _file_artifact(path: Path, artifact_type: str) -> dict:
+    return {
+        "artifact_type": artifact_type,
+        "storage_uri": str(path),
+        "checksum": _file_sha256(path),
+        "metadata": {"bytes": path.stat().st_size if path.exists() else None},
+    }
 
 
 def run_pipeline(
@@ -63,16 +83,24 @@ def run_pipeline(
         # ── Stage 1: Ingest ───────────────────────────────────────────────────
         t = time.monotonic()
         stored_path = ingest_audio(audio_path, meeting_id)
+        summary.meeting_artifacts.append(_file_artifact(Path(stored_path), "uploaded_audio"))
         timings.ingest_ms = int((time.monotonic() - t) * 1000)
 
         # ── Stage 2: Preprocess ───────────────────────────────────────────────
         t = time.monotonic()
         clean_path = preprocess_audio(stored_path)
+        raw_path = Path(stored_path).parent / "audio_raw.wav"
+        if raw_path.exists():
+            summary.meeting_artifacts.append(_file_artifact(raw_path, "raw_audio_wav"))
+        summary.meeting_artifacts.append(_file_artifact(Path(clean_path), "clean_audio"))
         timings.preprocess_ms = int((time.monotonic() - t) * 1000)
 
         # ── Stage 3: STT + Diarization ────────────────────────────────────────
         t = time.monotonic()
-        turns, duration_ms = transcribe_and_diarize(clean_path)
+        turns, duration_ms = transcribe_and_diarize(
+            clean_path,
+            artifact_sink=summary.meeting_artifacts,
+        )
         timings.stt_ms = int((time.monotonic() - t) * 1000)
 
         summary.duration_ms = duration_ms
@@ -91,9 +119,18 @@ def run_pipeline(
 
         # ── Stage 4: LLM — Summarize + Extract ───────────────────────────────
         t = time.monotonic()
-        summary_text = summarize_meeting(turns, meeting_date, duration_ms)
+        summary_text = summarize_meeting(
+            turns,
+            meeting_date,
+            duration_ms,
+            artifact_sink=summary.meeting_artifacts,
+        )
         raw_tasks, total_tokens = extract_action_items(
-            turns, roster, meeting_date, meeting_id
+            turns,
+            roster,
+            meeting_date,
+            meeting_id,
+            artifact_sink=summary.meeting_artifacts,
         )
         timings.llm_ms = int((time.monotonic() - t) * 1000)
 

@@ -5,8 +5,8 @@ Reads all JSON files from data/eval/results/ and produces a self-contained
 HTML report with tables and charts (no external dependencies at runtime).
 
 Usage:
-    python train/eval_report.py
-    python train/eval_report.py --results-dir data/eval/results \
+    python -m meeting_agent.mlops.eval_report
+    python -m meeting_agent.mlops.eval_report --results-dir data/eval/results \
         --out docs/eval_report.html
 """
 

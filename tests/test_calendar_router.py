@@ -108,9 +108,13 @@ def _mock_db_session(corrections=None):
 def test_calendar_sync_creates_events(client):
     with patch("meeting_agent.db.repository.get_meeting", return_value=COMPLETED_MEETING), \
          patch("meeting_agent.api.calendar_router.refresh_if_expired", return_value=FAKE_TOKEN), \
+         patch("meeting_agent.api.calendar_router._get_existing_calendar_event", return_value=None), \
+         patch("meeting_agent.api.calendar_router._upsert_calendar_event", return_value={
+             "event_id": FAKE_EVENT["id"],
+             "html_link": FAKE_EVENT["htmlLink"],
+         }), \
          patch("meeting_agent.api.calendar_router.create_event_from_task", return_value=FAKE_EVENT), \
-         patch("meeting_agent.db.engine.get_session", return_value=_mock_db_session()), \
-         patch("meeting_agent.api.calendar_router._save_calendar_ids"):
+         patch("meeting_agent.db.engine.get_session", return_value=_mock_db_session()):
 
         resp = client.post(f"/meetings/{MEETING_ID}/calendar-sync?user_id={USER_ID}")
 
@@ -119,6 +123,26 @@ def test_calendar_sync_creates_events(client):
     assert body["events_created"] == 2
     assert len(body["events"]) == 2
     assert body["events"][0]["event_id"] == "gcal_event_001"
+
+
+def test_calendar_sync_skips_existing_events(client):
+    with patch("meeting_agent.db.repository.get_meeting", return_value=COMPLETED_MEETING), \
+         patch("meeting_agent.api.calendar_router.refresh_if_expired", return_value=FAKE_TOKEN), \
+         patch("meeting_agent.api.calendar_router._get_existing_calendar_event", return_value={
+             "event_id": "existing-event",
+             "html_link": "https://calendar.google.com/event?eid=existing-event",
+             "status": "created",
+         }), \
+         patch("meeting_agent.api.calendar_router.create_event_from_task") as mock_create, \
+         patch("meeting_agent.db.engine.get_session", return_value=_mock_db_session()):
+
+        resp = client.post(f"/meetings/{MEETING_ID}/calendar-sync?user_id={USER_ID}")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["events_created"] == 2
+    assert body["events"][0]["status"] == "already_synced"
+    mock_create.assert_not_called()
 
 
 def test_calendar_sync_no_token(client):
@@ -177,9 +201,13 @@ def test_calendar_sync_applies_corrections(client):
 
     with patch("meeting_agent.db.repository.get_meeting", return_value=COMPLETED_MEETING), \
          patch("meeting_agent.api.calendar_router.refresh_if_expired", return_value=FAKE_TOKEN), \
+         patch("meeting_agent.api.calendar_router._get_existing_calendar_event", return_value=None), \
+         patch("meeting_agent.api.calendar_router._upsert_calendar_event", return_value={
+             "event_id": FAKE_EVENT["id"],
+             "html_link": FAKE_EVENT["htmlLink"],
+         }), \
          patch("meeting_agent.api.calendar_router.create_event_from_task", side_effect=capture_event), \
-         patch("meeting_agent.db.engine.get_session", return_value=_mock_db_session([mock_correction])), \
-         patch("meeting_agent.api.calendar_router._save_calendar_ids"):
+         patch("meeting_agent.db.engine.get_session", return_value=_mock_db_session([mock_correction])):
 
         resp = client.post(f"/meetings/{MEETING_ID}/calendar-sync?user_id={USER_ID}")
 
@@ -200,9 +228,14 @@ def test_calendar_sync_partial_failure(client):
 
     with patch("meeting_agent.db.repository.get_meeting", return_value=COMPLETED_MEETING), \
          patch("meeting_agent.api.calendar_router.refresh_if_expired", return_value=FAKE_TOKEN), \
+         patch("meeting_agent.api.calendar_router._get_existing_calendar_event", return_value=None), \
+         patch("meeting_agent.api.calendar_router._upsert_calendar_event", return_value={
+             "event_id": FAKE_EVENT["id"],
+             "html_link": FAKE_EVENT["htmlLink"],
+         }), \
+         patch("meeting_agent.api.calendar_router._mark_calendar_event_failed"), \
          patch("meeting_agent.api.calendar_router.create_event_from_task", side_effect=flaky_create), \
-         patch("meeting_agent.db.engine.get_session", return_value=_mock_db_session()), \
-         patch("meeting_agent.api.calendar_router._save_calendar_ids"):
+         patch("meeting_agent.db.engine.get_session", return_value=_mock_db_session()):
 
         resp = client.post(f"/meetings/{MEETING_ID}/calendar-sync?user_id={USER_ID}")
 

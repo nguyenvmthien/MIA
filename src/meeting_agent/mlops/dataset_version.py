@@ -9,16 +9,16 @@ Creates/updates data/training/.dataset_manifest.json with:
 Used by finetune.py to log dataset_version and dataset_hash to MLflow.
 
 Usage:
-    python train/dataset_version.py                         # version current files
-    python train/dataset_version.py --check                 # verify files unchanged
-    python train/dataset_version.py --files a.jsonl b.jsonl # version specific files
+    python -m meeting_agent.mlops.dataset_version                         # version current files
+    python -m meeting_agent.mlops.dataset_version --check                 # verify files unchanged
+    python -m meeting_agent.mlops.dataset_version --files a.jsonl b.jsonl # version specific files
 """
 
 import argparse
 import hashlib
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -87,7 +87,7 @@ def version_files(files: list[str]) -> dict:
 
     manifest = {
         "version": _next_version(existing),
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "files": file_entries,
         "combined_hash": combined,
         "total_lines": sum(e["lines"] for e in file_entries.values()),

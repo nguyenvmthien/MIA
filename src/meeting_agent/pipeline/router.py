@@ -222,18 +222,16 @@ def routed_chat(
     # A/B model override
     effective_model = model
     ab_experiment_id: str | None = None
+    ab_assignment: dict | None = None
     if meeting_id:
         try:
-            import sys
-            from pathlib import Path as _Path
-            sys.path.insert(0, str(_Path(__file__).parent.parent.parent.parent / "train"))
-            from ab_test import get_model_for_meeting
-            from ab_test import load_state as _ab_load_state
-            effective_model = get_model_for_meeting(meeting_id)
+            from meeting_agent.mlops.ab_test import get_assignment_for_meeting
+
+            ab_assignment = get_assignment_for_meeting(meeting_id, default_model=model)
+            effective_model = ab_assignment["model"]
             if effective_model != model:
                 log.info("A/B override: meeting=%s model=%s→%s", meeting_id, model, effective_model)
-            _ab_state = _ab_load_state()
-            ab_experiment_id = _ab_state.get("experiment_id") if _ab_state.get("active") else None
+            ab_experiment_id = ab_assignment.get("experiment_id")
         except Exception as e:
             log.debug("A/B test lookup failed (non-fatal): %s", e)
 
@@ -254,7 +252,8 @@ def routed_chat(
     # Log A/B result metrics
     if meeting_id and ab_experiment_id:
         try:
-            from ab_test import log_result as _ab_log
+            from meeting_agent.mlops.ab_test import log_result as _ab_log
+
             latency_ms = time.monotonic() * 1000 - start_ms
             eval_count = result.get("eval_count") or 0
             prompt_count = result.get("prompt_eval_count") or 0
@@ -265,6 +264,7 @@ def routed_chat(
                 metrics={
                     "llm_latency_ms": round(latency_ms, 1),
                     "total_tokens": eval_count + prompt_count,
+                    "variant": ab_assignment.get("variant") if ab_assignment else None,
                 },
             )
         except Exception as e:

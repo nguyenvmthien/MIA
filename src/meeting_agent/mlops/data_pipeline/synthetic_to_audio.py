@@ -4,7 +4,7 @@ This script reads `data/training/synthetic.jsonl` and creates one audio file per
 It uses macOS `say` to synthesize each transcript turn and `ffmpeg` to merge turns.
 
 Example:
-    python3 data_pipeline/synthetic_to_audio.py \
+    python -m meeting_agent.mlops.data_pipeline.synthetic_to_audio \
       --input data/training/synthetic.jsonl \
       --out-dir data/audio/synthetic \
       --limit 20

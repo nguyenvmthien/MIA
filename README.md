@@ -87,18 +87,10 @@ Audio file
 │   │   ├── metrics.py             Prometheus counters & histograms
 │   │   └── anomaly.py             Rolling-window statistical anomaly detector
 │   ├── api/main.py                FastAPI (submit / poll / feedback / metrics)
+│   ├── mlops/                     Training, evaluation, retraining, drift, A/B
+│   │   └── data_pipeline/         Collection, synthetic data, validation, export
 │   └── cli.py                     `meeting-agent` CLI
-├── train/
-│   ├── finetune.py                QLoRA fine-tuning (Unsloth + MLflow + Optuna)
-│   ├── dataset.py                 Dataset loading & instruction formatting
-│   ├── evaluate.py                Precision / Recall / F1 eval harness
-│   ├── distill.py                 Knowledge distillation (3B→1.5B) + LoRA pruning
-│   └── retrain.py                 Automated retraining scheduler (CLI + Celery Beat)
-├── data_pipeline/
-│   ├── collect.py                 Audio dir → JSONL training data
-│   ├── validate.py                Bias, leakage, schema, duplicate checks
-│   └── synthetic.py               LLM-generated synthetic meeting data
-├── streamlit_app.py               Streamlit web UI
+├── web/                           Next.js web UI
 ├── tests/                         Unit tests (43 passing)
 ├── docs/                          Architecture & design documents
 ├── docker/                        Prometheus config, Grafana provisioning
@@ -365,13 +357,13 @@ curl -X DELETE http://localhost:8000/meetings/abc-123
 
 ```bash
 # Generate 50 synthetic meeting samples using the local LLM
-python data_pipeline/synthetic.py --count 50 --out data/training/synthetic.jsonl
+python3 -m meeting_agent.mlops.data_pipeline.synthetic --count 50 --out data/training/synthetic.jsonl
 ```
 
 #### 2. Validate the dataset
 
 ```bash
-python data_pipeline/validate.py \
+python3 -m meeting_agent.mlops.data_pipeline.validate \
   --train data/training/synthetic.jsonl \
   --val   data/training/val.jsonl
 ```
@@ -383,13 +375,13 @@ Checks: schema conformance, speaker balance, train/val leakage, duplicates.
 ```bash
 pip install -e ".[train]"
 
-python train/finetune.py \
+python3 -m meeting_agent.mlops.finetune \
   --data data/training/synthetic.jsonl \
   --output models/qwen-meeting-v1 \
   --epochs 3
 
 # With Optuna hyperparameter search:
-python train/finetune.py --data data/training/synthetic.jsonl --search
+python3 -m meeting_agent.mlops.finetune --data data/training/synthetic.jsonl --search
 ```
 
 MLflow UI to track experiments:
@@ -419,7 +411,7 @@ ollama create meeting-agent-v1 -f Modelfile
 #### Collect from audio directory
 
 ```bash
-python data_pipeline/collect.py audio \
+python3 -m meeting_agent.mlops.data_pipeline.collect audio \
   --audio-dir data/raw/audio \
   --roster examples/roster.json \
   --out data/training/collected.jsonl
@@ -432,7 +424,7 @@ python data_pipeline/collect.py audio \
 cat data/transcripts/_feedback.jsonl
 
 # Include them alongside other training data:
-python train/finetune.py \
+python3 -m meeting_agent.mlops.finetune \
   --data data/training/synthetic.jsonl data/training/collected.jsonl \
   --output models/qwen-meeting-v2
 ```
@@ -448,7 +440,7 @@ Useful when deploying on CPU-only or memory-constrained hardware. Cuts inference
 ```bash
 pip install -e ".[train]"
 
-python train/distill.py distill \
+python3 -m meeting_agent.mlops.distill distill \
   --teacher models/qwen-meeting-v1/adapter \
   --student-base unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit \
   --data data/training/synthetic.jsonl \
@@ -461,7 +453,7 @@ python train/distill.py distill \
 Zero out the lowest-magnitude 30% of LoRA weights — reduces adapter file size with minimal accuracy impact.
 
 ```bash
-python train/distill.py prune \
+python3 -m meeting_agent.mlops.distill prune \
   --adapter models/qwen-meeting-v1/adapter \
   --output  models/qwen-meeting-pruned \
   --sparsity 0.3
@@ -498,14 +490,14 @@ When `OLLAMA_ENDPOINTS` is not set, falls back to the single `OLLAMA_BASE_URL` t
 #### Check if retraining is needed
 
 ```bash
-python train/retrain.py --check
+python3 -m meeting_agent.mlops.retrain --check
 # → "Should retrain: False — only 12 new corrections (need 50)"
 ```
 
 #### Trigger manually
 
 ```bash
-python train/retrain.py --force       # via CLI
+python3 -m meeting_agent.mlops.retrain --force       # via CLI
 curl -X POST "http://localhost:8000/admin/retrain?force=true"  # via API
 ```
 
@@ -519,7 +511,7 @@ celery -A meeting_agent.pipeline.worker_task.celery_app beat --loglevel=info
 Checks the feedback store every 24 hours. When corrections exceed `RETRAIN_MIN_CORRECTIONS` (default 50), automatically:
 1. Exports corrections as training examples
 2. Validates the dataset
-3. Runs `train/finetune.py`
+3. Runs `src/meeting_agent/mlops/finetune.py`
 4. Logs the new model to MLflow
 
 View retraining history:
@@ -540,7 +532,7 @@ RETRAIN_OUTPUT_DIR=models/qwen-meeting-latest
 
 ```bash
 # Run precision/recall/F1 evaluation on a labeled gold set
-python train/evaluate.py \
+python3 -m meeting_agent.mlops.evaluate \
   --gold data/eval/gold.jsonl \
   --out  results/eval.json
 ```
@@ -641,14 +633,14 @@ Prometheus metrics are at `GET /metrics`. Import Grafana dashboard:
 | Requirement | Status | Implementation |
 |---|---|---|
 | Model selection | ✅ | WhisperX large-v3 + Qwen2.5-3B Q4_K_M |
-| Fine-tuning (QLoRA) | ✅ | `train/finetune.py` — Unsloth + PEFT |
-| Model versioning | ✅ | MLflow `log_model` in `train/finetune.py` |
-| Data collection | ✅ | `data_pipeline/collect.py` |
-| Data validation | ✅ | `data_pipeline/validate.py` — bias/leakage/schema |
-| Synthetic data | ✅ | `data_pipeline/synthetic.py` |
+| Fine-tuning (QLoRA) | ✅ | `src/meeting_agent/mlops/finetune.py` — Unsloth + PEFT |
+| Model versioning | ✅ | MLflow `log_model` in `src/meeting_agent/mlops/finetune.py` |
+| Data collection | ✅ | `src/meeting_agent/mlops/data_pipeline/collect.py` |
+| Data validation | ✅ | `src/meeting_agent/mlops/data_pipeline/validate.py` — bias/leakage/schema |
+| Synthetic data | ✅ | `src/meeting_agent/mlops/data_pipeline/synthetic.py` |
 | Inference optimization | ✅ | GGUF Q4_K_M, token chunking, Redis cache |
-| Model distillation | ✅ | `train/distill.py` — KL-divergence KD (3B→1.5B) |
-| Model pruning | ✅ | `train/distill.py prune` — magnitude-based LoRA sparsity |
+| Model distillation | ✅ | `src/meeting_agent/mlops/distill.py` — KL-divergence KD (3B→1.5B) |
+| Model pruning | ✅ | `python3 -m meeting_agent.mlops.distill prune` — magnitude-based LoRA sparsity |
 | Distributed inference | ✅ | `pipeline/router.py` — multi-Ollama load balancer |
 | FAISS RAG | ✅ | `pipeline/rag.py` — speaker profile retrieval |
 | Prometheus + Grafana | ✅ | `monitoring/metrics.py`, docker-compose |
@@ -664,10 +656,10 @@ Prometheus metrics are at `GET /metrics`. Import Grafana dashboard:
 | GDPR compliance | ✅ | `DELETE /meetings/{id}` |
 | Source provenance | ✅ | `source_turn_ids` on every `ExtractedTask` |
 | CI/CD | ✅ | `.github/workflows/ci.yml` |
-| AutoML (Optuna) | ✅ | `train/finetune.py --search` |
+| AutoML (Optuna) | ✅ | `python3 -m meeting_agent.mlops.finetune --search` |
 | Hyperparameter search | ✅ | Optuna over rank, lr, batch_size |
-| Automated retraining | ✅ | `train/retrain.py` — threshold check + Celery Beat (24h) |
-| Evaluation harness | ✅ | `train/evaluate.py` — P/R/F1 |
+| Automated retraining | ✅ | `src/meeting_agent/mlops/retrain.py` — threshold check + Celery Beat (24h) |
+| Evaluation harness | ✅ | `src/meeting_agent/mlops/evaluate.py` — P/R/F1 |
 
 ---
 
