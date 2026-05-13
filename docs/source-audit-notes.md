@@ -1,6 +1,6 @@
 # Source Audit And Remediation Plan
 
-Date: 2026-05-12
+Date: 2026-05-13
 
 Scope:
 - Backend API, pipeline, persistence, frontend contracts, MLOps scripts, CI, and repo hygiene.
@@ -17,6 +17,9 @@ The project has a solid end-to-end shape, but several parts should be fixed befo
 - MLOps data contracts are inconsistent across export, train, evaluation, and retraining.
 - CI does not currently cover frontend build, dataset compatibility, migrations, or hygiene checks.
 - Local/generated/PII-like artifacts are tracked or present in the repo workspace.
+- Grafana previously mixed restart-sensitive runtime counters with long-lived business totals, which made several panels look empty or misleading after container rebuilds.
+- Stale `pending` meeting rows can make the UI look stuck if the DB stub exists but the Celery task no longer exists in Redis.
+- Multi-speaker review depends on diarization being enabled and on the installed WhisperX diarization API; otherwise completed meetings can show only `SPEAKER_UNKNOWN`.
 
 Recommended implementation order:
 
@@ -26,6 +29,7 @@ Recommended implementation order:
 4. Fix upload validation, prompt sanitization, and metrics double-counting.
 5. Unify MLOps dataset schemas and retraining/evaluation gates.
 6. Expand CI and clean repo hygiene.
+7. Split observability into runtime metrics and DB-backed business metrics.
 
 ## Severity Legend
 
@@ -412,6 +416,88 @@ Fix:
 Acceptance criteria:
 - Test suite runs without UTC deprecation warnings.
 
+### P2-5 Grafana Runtime Counters Do Not Survive Rebuilds
+
+Problem:
+- Several dashboard totals were based on Prometheus process counters such as `meeting_jobs_total` and `meeting_tasks_extracted_total`.
+- These counters reset when API/worker containers restart, so Grafana can show zero or no data even though Postgres already contains completed meetings, tasks, feedback, and model metadata.
+
+Fix:
+- Keep Prometheus runtime counters for rate/latency panels.
+- Add DB-backed gauges for persisted business totals:
+  - `meeting_db_meetings_total{status}`
+  - `meeting_db_tasks_total{bucket}`
+  - `meeting_db_feedback_total{type}`
+  - `meeting_db_model_meetings_total{model_version}`
+- Update Grafana stat/bar panels to use DB-backed gauges where the panel represents current persisted totals.
+
+Acceptance criteria:
+- After API/Grafana/Prometheus restart, dashboard still shows persisted totals from Postgres.
+- Runtime latency/rate panels remain zero until new work happens, which is expected.
+
+Status:
+- Done. `/metrics` refreshes DB-backed gauges before Prometheus scrape.
+- Grafana dashboard was simplified into four sections: System Health, Meeting Output Quality, Performance, and Feedback & Training Data.
+
+### P2-6 Worker Metrics Were Not Scraped
+
+Problem:
+- API `/metrics` was scraped, but Celery worker process metrics were not exposed as a Prometheus target.
+- Worker-only counters/histograms could be invisible after separating API and worker processes.
+
+Fix:
+- Add a lightweight worker metrics HTTP endpoint on `worker:9100`.
+- Configure Prometheus scrape job `meeting-agent-worker`.
+- Use `PROMETHEUS_MULTIPROC_DIR` for Celery prefork compatibility.
+
+Acceptance criteria:
+- Prometheus `up{job="meeting-agent-worker"}` is `1`.
+- Worker metrics endpoint survives normal worker startup.
+
+Status:
+- Done. Prometheus currently reports `up=1` for `meeting-agent-api` and `meeting-agent-worker`.
+
+### P2-7 Stale Pending Meetings Can Look Like A Hung System
+
+Problem:
+- A meeting stub is inserted into Postgres before Celery processing starts.
+- If the process is restarted or the task is lost after stub creation, the meeting can stay `pending` while Redis queue is empty.
+- The frontend keeps polling the meeting ID, making the system appear stuck.
+
+Fix:
+- Add configurable `pending_meeting_timeout_minutes`.
+- Mark stale `pending` meetings as `failed` during API startup, `/metrics` refresh, and individual meeting polling.
+- Return an explicit failure message telling the user to resubmit the file.
+
+Acceptance criteria:
+- Redis queue can be empty without old DB `pending` rows causing infinite UI polling.
+- Stale pending rows are reflected as failed in DB and Grafana.
+
+Status:
+- Done. Cleanup converted stale pending meetings to failed; current DB status is `completed=42`, `failed=11`, `pending=0`.
+
+### P2-8 Diarization Can Silently Degrade Speaker Review If Disabled
+
+Problem:
+- `ENABLE_DIARIZATION=false` lets the pipeline complete, but all transcript turns fall back to `SPEAKER_UNKNOWN`.
+- The UI then appears to have only one speaker for a multi-speaker audio file.
+- The installed WhisperX version exposes `DiarizationPipeline` through `whisperx.diarize` and expects `token=...`, not `whisperx.DiarizationPipeline(use_auth_token=...)`.
+
+Fix:
+- Enable diarization in local runtime config when speaker attribution is required.
+- Use `whisperx.diarize.DiarizationPipeline(token=settings.hf_token, device=...)`.
+- Pass the already-loaded waveform to diarization to avoid relying on torchcodec path decoding.
+- Persist `diarization_raw` artifacts for audit.
+- Fall back to majority word speaker labels when segment-level speaker is absent.
+
+Acceptance criteria:
+- Reprocessing a multi-speaker meeting creates more than one `speaker_id` in `transcript_turns`.
+- Completed meetings include a `diarization_raw` artifact when diarization is enabled.
+- UI review shows per-turn speaker labels and does not force one global speaker for the whole audio.
+
+Status:
+- Done for the verified local stack. Reprocessed meeting `6acdd795-84a3-47bd-a081-400a97385097` completed with `SPEAKER_00=10` turns and `SPEAKER_01=13` turns, plus `diarization_raw`.
+
 ## P3 Improvements
 
 - Add architecture documentation for auth, persistence, MLOps data contracts, and model promotion.
@@ -546,6 +632,14 @@ Phase 5: CI and hygiene
 - Add generated-file/secret hygiene job. Done: `scripts/check_repo_hygiene.py` is wired into CI.
 - Remove tracked generated/local files. Done for tracked worker runtime data, local key/pgpass, and Python cache files via `git rm --cached`; local copies remain ignored.
 
+Phase 6: Observability and operations
+- Expose worker Prometheus metrics. Done via worker metrics endpoint on port 9100 and Prometheus scrape job `meeting-agent-worker`.
+- Replace misleading duplicated Grafana panels. Done: dashboard now has four clear sections and no duplicated correction/false-positive panels.
+- Add DB-backed dashboard totals. Done for meetings by status, tasks by bucket, feedback by type, and completed meetings by model version.
+- Refresh business gauges on `/metrics`. Done: `/metrics` now updates correction rate, false-positive rate, training samples, DB totals, and model totals from Postgres before scrape.
+- Recover stale pending meetings. Done: startup, `/metrics`, and polling paths mark old pending rows as failed after `pending_meeting_timeout_minutes`.
+- Verify monitoring stack. Done: API, worker, Prometheus, and Grafana health checks pass.
+
 ## Verification So Far
 
 - `PYTHONPATH=src pytest tests/ -q` passed: 142 tests.
@@ -556,10 +650,20 @@ Phase 5: CI and hygiene
 - `PYTHONPATH=src python3 -m meeting_agent.mlops.finetune --help` passed.
 - `PYTHONPATH=src python3 -m meeting_agent.mlops.data_pipeline.validate --help` passed.
 - `PYTHONPATH=src python3 -m meeting_agent.mlops.retrain --check` passed.
+- `docker compose --profile mlops config` passed after adding GPU trainer, Celery Beat, and MLflow profile services.
+- `PYTHONPATH=src pytest tests/test_retrain_promotion.py tests/test_deploy_promoted_model.py tests/test_export.py -q` passed: 12 tests.
 - `npm run lint` and `npm run build` passed in `web/`; build required running outside the sandbox because Turbopack needs process/port permissions.
 - `docker compose exec -T api alembic upgrade head` passed against the running Postgres stack.
 - `docker compose build api worker` passed after MLOps package refactor.
+- `docker compose up -d --build api worker prometheus grafana` passed after observability changes.
 - Docker smoke endpoints passed: API `/health` returned `{"status":"ok"}` and web on port 3001 returned the app shell.
+- Grafana `/api/health` returned database `ok`, version `13.0.1`.
+- Prometheus `up` query returned `1` for `prometheus`, `meeting-agent-api`, and `meeting-agent-worker`.
+- Redis Celery queue length was `0` after cleanup.
+- Postgres meeting status check after cleanup returned `completed=42`, `failed=11`, with no `pending` rows.
+- Prometheus DB-backed gauge check returned `meeting_db_meetings_total{status="completed"} 42`, `failed 11`, `pending 0`.
+- `/metrics` currently reports persisted totals: `meeting_db_tasks_total{bucket="action"} 77`, `human_review 21`, `meeting_db_feedback_total{type="correction"} 23`, `false_positive 1`, `missing 1`, and `meeting_db_model_meetings_total{model_version="qwen2.5:3b"} 30`.
+- Reprocessed meeting `6acdd795-84a3-47bd-a081-400a97385097` with diarization enabled; DB contains two speaker labels across 23 transcript turns and a persisted `diarization_raw` artifact.
 - Python 3.13 `datetime.utcnow()` warnings were removed from the app-side tested code paths.
 - Remaining warnings are from FAISS/SWIG import internals during one orchestrator sanitization test.
 - `train/` and `data_pipeline/` are no longer root-level runtime code directories.
@@ -569,9 +673,16 @@ Phase 5: CI and hygiene
 Completed production-readiness additions:
 - Backend auth/ownership foundation, sanitized token paths, DB-backed workers, DB-backed calendar events, normalized transcript rows, auditable meeting artifacts, prompt sanitization, upload validation, metric counting fix, and frontend job resume.
 - MLOps schema contracts, validation gates, DB-backed feedback export, drift records, explicit A/B enablement, promotion manifest, and controlled Ollama deploy command.
+- GPU-ready MLOps runtime is available through the `mlops` compose profile: `beat` schedules retrain checks, `trainer` consumes the isolated `mlops` queue, and `mlflow` tracks runs/artifacts.
 - Root-level MLOps code was consolidated into `src/meeting_agent/mlops/`; `train/` and `data_pipeline/` are no longer runtime code roots.
 - CI/hygiene coverage for ruff, backend tests, web lint/build, migration smoke, dataset compatibility, generated-file/secret hygiene, and Docker builds.
 - Artifact retention cleanup for local raw audio and raw PII-bearing payloads.
+- LLMOps monitoring dashboard now separates:
+  - runtime health/rate/latency metrics from Prometheus counters
+  - persisted business totals from DB-backed Prometheus gauges
+  - feedback/training readiness metrics from Postgres
+- Stale pending meeting recovery is enabled so the UI does not poll orphaned jobs forever.
+- Multi-speaker review flow is active: transcript turns are persisted per speaker, UI shows speaker mapping/evidence, and diarization is enabled in the local runtime.
 
 Remaining production hardening:
 1. Replace local-dev compatibility paths with fully authenticated frontend/backend proxy flow before production.
@@ -590,3 +701,18 @@ Current artifact note:
 
 Current serving note:
 - Promotion still does not silently switch production serving. A promoted model now has an explicit deploy path that creates the Ollama tag and writes a backed-up serving env file when `APPLY=1` is provided.
+
+Current fine-tuning note:
+- Auto-retrain is active when the `mlops` compose profile is running. Celery Beat checks every 24 hours and routes retrain work to the `mlops` queue once new corrections reach `RETRAIN_MIN_CORRECTIONS=50`.
+- The normal meeting worker consumes only the default `celery` queue, so GPU fine-tuning does not block audio processing.
+- Fine-tuning still requires a CUDA-capable host and the `trainer` service built from `Dockerfile.train`.
+
+Current monitoring note:
+- Grafana panels that represent current totals should use `meeting_db_*` gauges, not restart-sensitive counters.
+- Runtime panels such as stage latency, LLM calls, cache/RAG rate, HTTP request rate, and pipeline errors will show zero until new jobs or user actions happen after restart.
+- If the UI looks stuck, first check:
+  - `docker compose ps`
+  - API `/health`
+  - Prometheus `up`
+  - Redis queue length
+  - `select status, count(*) from meetings group by status;`

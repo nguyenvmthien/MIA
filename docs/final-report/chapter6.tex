@@ -1,102 +1,22 @@
-\chapter{Thách thức và Hạn chế}
+\chapter{Thách thức và hạn chế}
 \label{chap:challenge}
 
-\section{Thách thức Kỹ thuật}
+\section{Diarization và speaker identity}
 
-\subsection{Diarization với Nhiều Người Nói}
+Diarization chỉ tạo nhãn speaker ẩn danh, không tự biết người thật là ai. Vì vậy hệ thống cần bước human review để map \texttt{SPEAKER\_00}, \texttt{SPEAKER\_01} sang participant thật. Đây không phải lỗi UI mà là giới hạn tự nhiên của diarization khi không có voice enrollment.
 
-Pyannote hoạt động tốt với 2--5 người nói. Trong các cuộc họp lớn ($>$10 người) hoặc có chồng tiếng (overlapping speech), DER tăng đáng kể. Hệ thống hiện không có cơ chế phát hiện overlap speech, có thể dẫn đến sai speaker assignment.
+\section{Hiệu năng CPU}
 
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}
-\begin{axis}[
-  width=9cm, height=5cm,
-  xlabel={Số người nói},
-  ylabel={Diarization Error Rate (\%)},
-  xmin=1, xmax=15,
-  ymin=0, ymax=40,
-  grid=both, grid style={dashed,gray!30},
-  mark size=3pt,
-  tick label style={font=\small},
-]
-  \addplot[thick, primary, mark=*] coordinates
-    {(2,5) (3,8) (4,12) (5,15) (7,22) (10,30) (15,38)};
-  \node[font=\scriptsize, text=gray, anchor=west] at (axis cs:5,16)
-    {Estimated DER trend};
-\end{axis}
-\end{tikzpicture}
-\caption{Ước lượng Diarization Error Rate (DER) theo số người nói (dựa trên literature).}
-\label{fig:der_trend}
-\end{figure}
+WhisperX, Pyannote và LLM inference đều nặng nếu chạy CPU. Demo local có thể xử lý chậm, đặc biệt ở lần đầu khi model cần tải về. Fine-tuning gần như bắt buộc cần GPU/CUDA nếu muốn chạy thực tế với QLoRA.
 
-\subsection{LLM Instruction Following}
+\section{Fine-tuning chưa được chạy end-to-end trên GPU}
 
-Qwen2.5-3B đôi khi không tuân thủ chính xác format JSON, đặc biệt khi:
-\begin{itemize}
-  \item Transcript phức tạp với nhiều action items lồng nhau.
-  \item Người nói không chỉ định rõ deadline (LLM có xu hướng "đoán" ngày).
-  \item Tiếng Anh mixed với từ kỹ thuật hoặc tên riêng phức tạp.
-\end{itemize}
+Luồng fine-tune đã được chuẩn bị về code, Dockerfile, dependencies, queue và trigger. Tuy nhiên môi trường hiện tại chưa có GPU để xác nhận một run fine-tune đầy đủ. Do đó báo cáo chỉ claim hệ thống \emph{GPU-ready}, không claim đã có model fine-tuned tốt hơn baseline.
 
-Guardrail engine xử lý các trường hợp này bằng cách strip markdown fences và tìm JSON array bằng regex, nhưng trong trường hợp output hoàn toàn không parse được thì chunk đó bị bỏ qua (\texttt{continue}).
+\section{Deployment model được kiểm soát thủ công}
 
-\subsection{Context Window và Chunking}
+Sau khi model candidate đạt điều kiện promotion, serving switch sang Ollama tag mới vẫn là thao tác manual/auditable. Đây là lựa chọn an toàn cho project: tránh trường hợp model mới tự động thay thế model đang phục vụ khi chưa có người kiểm tra.
 
-Transcript dài phải được chia thành chunks 2000 tokens. Mỗi chunk xử lý độc lập, nên action items có thể bị cắt giữa hai chunk. RAG giảm thiểu nhưng không giải quyết hoàn toàn vấn đề này.
+\section{Giới hạn dữ liệu đánh giá}
 
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-  chunk/.style={rectangle, draw=primary!60, fill=stagecolor1,
-                text width=3.5cm, align=center, minimum height=1cm, font=\small},
-  problem/.style={rectangle, draw=red!60, fill=red!10, rounded corners=3pt,
-                  text width=3cm, align=center, font=\scriptsize},
-  arr/.style={-{Stealth}, thick, gray},
-]
-  \node[chunk] (c1) {Chunk 1\\turns 1--15};
-  \node[chunk, right=1.5cm of c1] (c2) {Chunk 2\\turns 16--30};
-  \node[chunk, right=1.5cm of c2] (c3) {Chunk 3\\turns 31--45};
-
-  \node[problem, below=1cm of c1] (p1) {Action item\\hoàn chỉnh};
-  \node[problem, below=1cm of c2] (p2) {\textcolor{red!70}{Action item bị\\cắt đôi!}};
-  \node[problem, below=1cm of c3] (p3) {Phần tiếp theo\\mất context};
-
-  \draw[arr] (c1) -- (p1);
-  \draw[arr, red!60] (c2) -- (p2);
-  \draw[arr, red!60] (c3) -- (p3);
-
-  % Boundary indicator
-  \draw[red!60, dashed, thick] ([xshift=0.8cm]c1.east) -- ([xshift=0.8cm, yshift=-3cm]c1.east)
-    node[below, font=\scriptsize, text=red!70] {chunk boundary};
-\end{tikzpicture}
-\caption{Vấn đề action item bị cắt khi chunking transcript.}
-\label{fig:chunking_problem}
-\end{figure}
-
-\section{Hạn chế Hệ thống}
-
-\subsection{Bộ Dữ liệu Đánh giá Nhỏ}
-
-Smoke test chỉ có 5 mẫu, chưa đủ để kết luận thống kê về performance. Để có kết quả đáng tin cậy, cần ít nhất 100--500 mẫu annotate từ cuộc họp thực tế.
-
-\subsection{Chỉ Hỗ trợ Tiếng Anh}
-
-Cấu hình hiện tại \texttt{WHISPER\_LANGUAGE=en} và prompt template được thiết kế cho tiếng Anh. Để hỗ trợ tiếng Việt cần:
-\begin{itemize}
-  \item Đổi \texttt{WHISPER\_LANGUAGE=vi} và sử dụng Whisper \texttt{large-v3} (hỗ trợ tốt hơn).
-  \item Dịch/viết lại prompt template sang tiếng Việt.
-  \item Thu thập dữ liệu training tiếng Việt và fine-tune.
-\end{itemize}
-
-\subsection{Worker Registry Không Persistent}
-
-\texttt{data/workers.json} lưu local file. Trong môi trường multi-instance hoặc Kubernetes, các pods không share state này. Cần chuyển sang PostgreSQL hoặc Redis cho production.
-
-\subsection{Không có Authentication}
-
-API hiện không có authentication/authorization. Bất kỳ client nào có địa chỉ server đều có thể submit meetings hoặc xem kết quả. Cần OAuth2/JWT cho production deployment.
-
-\subsection{Fine-tuning Yêu cầu GPU}
-
-Vòng lặp tự động fine-tuning (\texttt{train/finetune.py}) yêu cầu GPU với $\geq$8GB VRAM và cài đặt \texttt{pip install -e ".[train]"} với Unsloth. Trong môi trường CPU-only, chỉ có thể chạy inference, không thể fine-tune.
+Smoke test chỉ có 5 samples và 13 action items. Bộ này đủ để bắt lỗi schema và regression đơn giản, nhưng chưa đủ để kết luận chất lượng tổng quát. Cần mở rộng tập đánh giá theo nhiều domain, ngôn ngữ, độ dài meeting và số speaker.

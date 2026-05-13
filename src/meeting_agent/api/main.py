@@ -513,7 +513,7 @@ async def trigger_retrain(
 
     The job runs asynchronously via Celery.
     """
-    task = check_retrain_task.apply_async(kwargs={"force": force})
+    task = check_retrain_task.apply_async(kwargs={"force": force}, queue="mlops")
     return {"task_id": task.id, "status": "queued", "force": force}
 
 

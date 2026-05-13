@@ -2,11 +2,8 @@
 \addcontentsline{toc}{chapter}{Tóm tắt}
 \markboth{Tóm tắt}{Tóm tắt}
 
-Báo cáo này trình bày thiết kế, triển khai và đánh giá \textbf{Meeting AI Agent} --- một hệ thống end-to-end tự động xử lý âm thanh cuộc họp và trích xuất danh sách công việc (action items) có cấu trúc, bao gồm người phụ trách, hạn chót và mức độ ưu tiên.
+Báo cáo này trình bày phiên bản hiện tại của \textbf{Meeting AI Agent}: hệ thống xử lý audio cuộc họp, tạo transcript có diarization, trích xuất action items bằng LLM, cho phép người dùng hiệu chỉnh kết quả và đưa các hiệu chỉnh đó vào vòng lặp LLMOps. Kiến trúc triển khai gồm Next.js frontend, FastAPI backend, Celery worker, Redis broker/cache, PostgreSQL làm nguồn dữ liệu chính, Ollama phục vụ Qwen2.5-3B, cùng Prometheus/Grafana cho quan sát vận hành.
 
-Hệ thống kết hợp ba lớp công nghệ chính: (1)~nhận dạng giọng nói và người nói bằng \textbf{WhisperX}~\cite{bain2022whisperx} và \textbf{Pyannote}~\cite{bredin2023pyannote}; (2)~trích xuất thông tin bằng mô hình ngôn ngữ lớn \textbf{Qwen2.5-3B}~\cite{qwen2025} chạy cục bộ qua Ollama với few-shot chain-of-thought prompting; (3)~pipeline \textbf{LLMOps} đầy đủ gồm guardrails đa lớp, Redis prompt cache, FAISS speaker RAG, Prometheus monitoring và vòng lặp tự động fine-tuning QLoRA~\cite{dettmers2023qlora}.
+Pipeline chính bao gồm ingest audio, chuẩn hoá âm thanh, WhisperX ASR, speaker diarization bằng WhisperX/Pyannote, lưu transcript theo từng lượt nói, gọi LLM với prompt có guardrails, chuẩn hoá assignee theo roster, human feedback, đồng bộ lịch và lưu artifact để audit. Phần MLOps hiện đã có export dữ liệu feedback từ database sang JSONL, kiểm tra schema, drift tracking, promotion manifest, Dockerfile train, Celery queue riêng cho trainer và profile Docker Compose \texttt{mlops}. Fine-tuning được thiết kế để chạy khi có GPU và đủ dữ liệu correction; trong môi trường hiện tại chưa claim đã fine-tune thành công model mới.
 
-Kết quả đánh giá trên bộ smoke test cho thấy hệ thống đạt \textbf{precision trung bình 0.767}, \textbf{recall 0.700} và \textbf{F1 0.727}, vượt ngưỡng CI 0.70. Tỷ lệ lỗi schema bằng 0, chứng tỏ guardrail engine hoạt động hiệu quả. Hệ thống được triển khai hoàn toàn on-premise qua Docker Compose, đảm bảo privacy dữ liệu doanh nghiệp và không phụ thuộc cloud AI services.
-
-\bigskip
-\noindent\textbf{Từ khóa:} LLM, action item extraction, speaker diarization, LLMOps, fine-tuning, guardrails, on-premise AI.
+Kết quả đánh giá hiện tại trên bộ smoke test \texttt{data/eval/gold\_smoke.jsonl} gồm 5 mẫu và 13 action items cho model nền Qwen2.5-3B: precision 0.767, recall 0.700, F1 0.727 và schema failure rate 0.0\%. Các số liệu này là baseline trước fine-tuning, chưa đạt ngưỡng mục tiêu production nhưng đủ để chứng minh pipeline end-to-end, khả năng đo lường và vòng lặp cải tiến.

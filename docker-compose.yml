@@ -93,7 +93,8 @@ services:
       sh -c "rm -rf /tmp/prometheus_multiproc &&
              mkdir -p /tmp/prometheus_multiproc &&
              celery -A meeting_agent.pipeline.worker_task.celery_app worker
-             --loglevel=info --concurrency=${CELERY_WORKER_CONCURRENCY:-2}"
+             --loglevel=info --concurrency=${CELERY_WORKER_CONCURRENCY:-2}
+             -Q celery"
     env_file: .env
     environment:
       <<: *db-env
@@ -106,6 +107,67 @@ services:
         condition: service_healthy
       ollama:
         condition: service_healthy
+
+  # ── Celery Beat scheduler for automated MLOps checks ───────────────────────
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    command: celery -A meeting_agent.pipeline.worker_task.celery_app beat --loglevel=info
+    profiles: ["mlops"]
+    env_file: .env
+    environment:
+      <<: *db-env
+      RETRAIN_MIN_CORRECTIONS: ${RETRAIN_MIN_CORRECTIONS:-50}
+      RETRAIN_DATA_PATHS: ${RETRAIN_DATA_PATHS:-data/training/synthetic.jsonl,data/training/collected.jsonl}
+      RETRAIN_OUTPUT_DIR: ${RETRAIN_OUTPUT_DIR:-models/qwen-meeting-latest}
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow:5000}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ── GPU trainer: consumes the mlops queue only ──────────────────────────────
+  trainer:
+    build:
+      context: .
+      dockerfile: Dockerfile.train
+    command: celery -A meeting_agent.pipeline.worker_task.celery_app worker --loglevel=info --concurrency=1 -Q mlops
+    profiles: ["mlops"]
+    gpus: all
+    env_file: .env
+    environment:
+      <<: *db-env
+      RETRAIN_MIN_CORRECTIONS: ${RETRAIN_MIN_CORRECTIONS:-50}
+      RETRAIN_DATA_PATHS: ${RETRAIN_DATA_PATHS:-data/training/synthetic.jsonl,data/training/collected.jsonl}
+      RETRAIN_OUTPUT_DIR: ${RETRAIN_OUTPUT_DIR:-models/qwen-meeting-latest}
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow:5000}
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
+
+  # ── MLflow tracking server for training runs ───────────────────────────────
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.17.2
+    profiles: ["mlops"]
+    command: >
+      mlflow server
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --default-artifact-root /mlflow/artifacts
+      --host 0.0.0.0
+      --port 5000
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow_data:/mlflow
 
   # ── Next.js Web UI ────────────────────────────────────────────────────────
   web:
@@ -180,3 +242,4 @@ volumes:
   prometheus_data:
   grafana_data:
   pgadmin_data:
+  mlflow_data:

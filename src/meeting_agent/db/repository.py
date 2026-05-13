@@ -414,6 +414,20 @@ def resolve_participant(
         old_display_name = p.display_name  # e.g. "SPEAKER_00" or whatever pipeline set
         p.worker_id = worker_id
         p.display_name = display_name
+        session.query(TranscriptTurnRow).filter_by(
+            meeting_id=meeting_id,
+            speaker_id=speaker_id,
+        ).update(
+            {"speaker_name": display_name, "worker_id": worker_id},
+            synchronize_session=False,
+        )
+        meeting = meeting_query.first()
+        if meeting and meeting.transcript_turns:
+            for turn in meeting.transcript_turns:
+                if turn.get("speaker_id") == speaker_id:
+                    turn["speaker_name"] = display_name
+                    turn["worker_id"] = worker_id
+            meeting.transcript_turns = list(meeting.transcript_turns)
         # Update tasks referencing this speaker by speaker_id OR the old display_name
         identifiers = {speaker_id}
         if old_display_name:

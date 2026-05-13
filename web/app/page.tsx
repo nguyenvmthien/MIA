@@ -6,6 +6,7 @@ import {
   Upload, Users, CheckCircle2, Circle, Calendar,
   LogOut, Loader2, ChevronDown, ChevronUp, AlertCircle, Mic,
   Sparkles, ArrowRight, UserPlus, X, History, UserCheck,
+  MessageSquareText, Clock3,
 } from "lucide-react"
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -17,13 +18,19 @@ type Worker = { worker_id: string; name: string; role?: string; email?: string; 
 type Task = {
   task_id: string; description: string; assignee?: string; assignee_id?: string
   due_date?: string; priority?: string; extraction_confidence?: number
+  status?: string; notes?: string; source_turn_ids?: string[]; review_bucket?: "action" | "human_review" | "unresolved"
   selected?: boolean; edited_description?: string; edited_assignee?: string; edited_due_date?: string
 }
 type ParticipantDetail = { speaker_id: string; display_name: string; worker_id: string | null }
+type TranscriptTurn = {
+  turn_id: string; speaker_id: string; speaker_name?: string; worker_id?: string | null
+  start_ms?: number; end_ms?: number; text: string
+}
 type MeetingResult = {
   meeting_id: string; status?: string; job_status?: string
   summary_text?: string; participants?: string[]
   participants_detail?: ParticipantDetail[]
+  transcript_turns?: TranscriptTurn[]
   action_items: Task[]; human_review_items: Task[]; unresolved_items: Task[]
   run_metrics?: { total_tokens_used: number; tasks_extracted: number; stage_timings: Record<string, number> }
 }
@@ -478,11 +485,13 @@ function ProcessingStep({ meetingId, onDone }: { meetingId: string; onDone: (r: 
 function InlineSpeakerResolver({
   meetingId,
   participants,
+  transcriptTurns,
   workers,
   onResolved,
 }: {
   meetingId: string
   participants: ParticipantDetail[]
+  transcriptTurns: TranscriptTurn[]
   workers: Worker[]
   onResolved: () => void
 }) {
@@ -491,6 +500,8 @@ function InlineSpeakerResolver({
   const [saving, setSaving] = useState<string | null>(null)
 
   if (unresolved.length === 0) return null
+  const sampleTurnsFor = (speakerId: string) =>
+    transcriptTurns.filter(turn => turn.speaker_id === speakerId).slice(0, 3)
 
   const resolve = async (speakerId: string) => {
     const workerId = selections[speakerId]
@@ -513,36 +524,193 @@ function InlineSpeakerResolver({
     <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
       <div className="flex items-center gap-2 text-amber-700 text-xs font-semibold">
         <UserCheck size={14} />
-        {unresolved.length} speaker{unresolved.length > 1 ? "s" : ""} not matched — assign to roster
+        {unresolved.length} detected speaker{unresolved.length > 1 ? "s" : ""} not matched to roster
       </div>
       {unresolved.map(p => (
-        <div key={p.speaker_id} className="flex items-center gap-2">
-          <span className="text-xs text-slate-700 font-mono bg-slate-100 border border-slate-200 px-2 py-1 rounded-md w-28 truncate">
-            {p.display_name}
-          </span>
-          <span className="text-slate-400 text-xs">→</span>
-          <select
-            value={selections[p.speaker_id] ?? ""}
-            onChange={e => setSelections(prev => ({ ...prev, [p.speaker_id]: e.target.value }))}
-            className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-sky-500"
-          >
-            <option value="">Select worker...</option>
-            {workers.map(w => (
-              <option key={w.worker_id} value={w.worker_id}>
-                {w.name}{w.role ? ` (${w.role})` : ""}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={() => resolve(p.speaker_id)}
-            disabled={!selections[p.speaker_id] || saving === p.speaker_id}
-            className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-40 rounded-lg text-xs font-medium text-white transition-colors flex items-center gap-1 flex-shrink-0"
-          >
-            {saving === p.speaker_id ? <Loader2 size={11} className="animate-spin" /> : <UserCheck size={11} />}
-            Assign
-          </button>
+        <div key={p.speaker_id} className="rounded-lg bg-white border border-amber-200 p-3 space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+            <div className="sm:w-32 flex-shrink-0">
+              <span className="inline-flex text-xs text-slate-700 font-mono bg-slate-100 border border-slate-200 px-2 py-1 rounded-md max-w-full truncate">
+                {p.display_name}
+              </span>
+            </div>
+            <div className="flex-1 min-w-0 space-y-2">
+              {sampleTurnsFor(p.speaker_id).length > 0 ? (
+                <div className="space-y-1">
+                  {sampleTurnsFor(p.speaker_id).map(turn => (
+                    <p key={turn.turn_id} className="text-[11px] text-slate-600 leading-relaxed">
+                      <span className="font-mono text-slate-500">{formatTime(turn.start_ms)}</span>
+                      <span className="text-slate-400"> · </span>
+                      <span>{turn.text}</span>
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500">No transcript sample available for this speaker.</p>
+              )}
+              <div className="flex items-center gap-2">
+                <select
+                  value={selections[p.speaker_id] ?? ""}
+                  onChange={e => setSelections(prev => ({ ...prev, [p.speaker_id]: e.target.value }))}
+                  className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-sky-500"
+                >
+                  <option value="">Select matching worker...</option>
+                  {workers.map(w => (
+                    <option key={w.worker_id} value={w.worker_id}>
+                      {w.name}{w.role ? ` (${w.role})` : ""}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => resolve(p.speaker_id)}
+                  disabled={!selections[p.speaker_id] || saving === p.speaker_id}
+                  className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-40 rounded-lg text-xs font-medium text-white transition-colors flex items-center gap-1 flex-shrink-0"
+                >
+                  {saving === p.speaker_id ? <Loader2 size={11} className="animate-spin" /> : <UserCheck size={11} />}
+                  Assign
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       ))}
+    </div>
+  )
+}
+
+function formatTime(ms?: number) {
+  if (ms === undefined || Number.isNaN(ms)) return "--:--"
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`
+}
+
+function SpeakerEvidencePanel({
+  participants,
+  transcriptTurns,
+}: {
+  participants: ParticipantDetail[]
+  transcriptTurns: TranscriptTurn[]
+}) {
+  if (participants.length === 0) return null
+  const turnCounts = new Map<string, number>()
+  transcriptTurns.forEach(turn => turnCounts.set(turn.speaker_id, (turnCounts.get(turn.speaker_id) ?? 0) + 1))
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm shadow-sky-900/5">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2">
+          <Users size={14} className="text-sky-600" />
+          <h3 className="text-xs font-semibold text-slate-700 uppercase tracking-wider">Detected speakers</h3>
+        </div>
+        <span className="text-[11px] text-slate-500">{participants.length} speaker{participants.length !== 1 ? "s" : ""}</span>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        {participants.map(p => (
+          <div
+            key={p.speaker_id}
+            className={`rounded-lg border px-3 py-2.5 text-xs ${
+              p.worker_id
+                ? "border-emerald-200 bg-emerald-50"
+                : "border-amber-200 bg-amber-50"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="font-mono text-slate-700 truncate">{p.speaker_id}</p>
+                <p className={p.worker_id ? "text-emerald-700 truncate" : "text-amber-700 truncate"}>
+                  {p.worker_id ? p.display_name : "Unmatched"}
+                </p>
+              </div>
+              <span className="text-[11px] text-slate-500 flex-shrink-0">{turnCounts.get(p.speaker_id) ?? 0} turns</span>
+            </div>
+            <div className="mt-2 space-y-1">
+              {transcriptTurns.filter(turn => turn.speaker_id === p.speaker_id).slice(0, 2).map(turn => (
+                <p key={turn.turn_id} className="text-[11px] leading-relaxed text-slate-600">
+                  <span className="font-mono text-slate-500">{formatTime(turn.start_ms)}</span>
+                  <span className="text-slate-400"> · </span>
+                  {turn.text}
+                </p>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function TranscriptPanel({ turns }: { turns: TranscriptTurn[] }) {
+  const [open, setOpen] = useState(false)
+  const [speakerFilter, setSpeakerFilter] = useState("all")
+  if (turns.length === 0) return null
+
+  const speakers = Array.from(new Set(turns.map(turn => turn.speaker_id)))
+  const visibleTurns = speakerFilter === "all"
+    ? turns
+    : turns.filter(turn => turn.speaker_id === speakerFilter)
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm shadow-sky-900/5">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors"
+      >
+        <span className="flex items-center gap-2 text-xs font-semibold text-slate-700 uppercase tracking-wider">
+          <MessageSquareText size={14} className="text-sky-600" />
+          Transcript
+          <span className="text-[11px] font-normal normal-case tracking-normal text-slate-500">
+            {turns.length} turns
+          </span>
+        </span>
+        {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+      </button>
+      {open && (
+        <div className="border-t border-slate-200">
+          <div className="flex items-center gap-2 px-4 py-3 bg-slate-50 border-b border-slate-200 overflow-x-auto">
+            <button
+              type="button"
+              onClick={() => setSpeakerFilter("all")}
+              className={`px-2.5 py-1 rounded-md text-[11px] border whitespace-nowrap ${
+                speakerFilter === "all"
+                  ? "bg-sky-600 border-sky-600 text-white"
+                  : "bg-white border-slate-200 text-slate-600 hover:border-sky-300"
+              }`}
+            >
+              All speakers
+            </button>
+            {speakers.map(speaker => (
+              <button
+                key={speaker}
+                type="button"
+                onClick={() => setSpeakerFilter(speaker)}
+                className={`px-2.5 py-1 rounded-md text-[11px] border whitespace-nowrap font-mono ${
+                  speakerFilter === speaker
+                    ? "bg-sky-600 border-sky-600 text-white"
+                    : "bg-white border-slate-200 text-slate-600 hover:border-sky-300"
+                }`}
+              >
+                {speaker}
+              </button>
+            ))}
+          </div>
+          <div className="max-h-96 overflow-y-auto divide-y divide-slate-100">
+            {visibleTurns.map(turn => (
+              <div key={turn.turn_id} className="px-4 py-3 grid grid-cols-[88px_1fr] gap-3">
+                <div className="space-y-1">
+                  <p className="font-mono text-[11px] text-slate-600 truncate">{turn.speaker_name || turn.speaker_id}</p>
+                  <p className="inline-flex items-center gap-1 text-[11px] text-slate-400">
+                    <Clock3 size={10} />
+                    {formatTime(turn.start_ms)}
+                  </p>
+                </div>
+                <p className="text-sm text-slate-700 leading-relaxed min-w-0">{turn.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -562,10 +730,15 @@ function ReviewStep({
       .filter(p => !p.worker_id)
       .flatMap(p => [p.speaker_id, p.display_name])
   )
+  const initialTasks = [
+    ...(result.action_items ?? []).map(t => ({ ...t, review_bucket: "action" as const })),
+    ...(result.human_review_items ?? []).map(t => ({ ...t, review_bucket: "human_review" as const })),
+    ...(result.unresolved_items ?? []).map(t => ({ ...t, review_bucket: "unresolved" as const })),
+  ]
   const [tasks, setTasks] = useState<Task[]>(
-    result.action_items.map(t => ({
+    initialTasks.map(t => ({
       ...t,
-      selected: !t.assignee || !unresolvedLabels.has(t.assignee),
+      selected: t.review_bucket === "action" && (!t.assignee || !unresolvedLabels.has(t.assignee)),
       edited_description: t.description,
       edited_assignee: t.assignee ?? "",
       edited_due_date: t.due_date ?? ""
@@ -586,14 +759,19 @@ function ReviewStep({
       const data = await r.json()
       setParticipants(data.participants_detail ?? [])
       // Sync updated assignees from backend; auto-select tasks that just got resolved
-      if (data.action_items) {
+      if (data.action_items || data.human_review_items || data.unresolved_items) {
         const nowResolvedLabels = new Set(
           ((data.participants_detail ?? []) as ParticipantDetail[])
             .filter(p => p.worker_id)
             .flatMap(p => [p.speaker_id, p.display_name])
         )
+        const freshTasks = [
+          ...((data.action_items ?? []) as Task[]).map(t => ({ ...t, review_bucket: "action" as const })),
+          ...((data.human_review_items ?? []) as Task[]).map(t => ({ ...t, review_bucket: "human_review" as const })),
+          ...((data.unresolved_items ?? []) as Task[]).map(t => ({ ...t, review_bucket: "unresolved" as const })),
+        ]
         setTasks(prev => prev.map(t => {
-          const fresh = (data.action_items as Task[]).find(f => f.task_id === t.task_id)
+          const fresh = freshTasks.find(f => f.task_id === t.task_id)
           if (!fresh) return t
           const userEdited = t.edited_assignee !== (t.assignee ?? "")
           const justResolved = fresh.assignee && nowResolvedLabels.has(fresh.assignee)
@@ -629,18 +807,32 @@ function ReviewStep({
 
   const confidenceColor = (c: number) =>
     c >= 0.8 ? "text-emerald-400" : c >= 0.6 ? "text-amber-400" : "text-red-400"
+  const participantBySpeaker = new Map(participants.map(p => [p.speaker_id, p]))
+  const transcriptTurns = (result.transcript_turns ?? []).map(turn => {
+    const participant = participantBySpeaker.get(turn.speaker_id)
+    return participant ? { ...turn, speaker_name: participant.display_name, worker_id: participant.worker_id } : turn
+  })
+  const turnById = new Map(transcriptTurns.map(t => [t.turn_id, t]))
+  const sourceTurnsFor = (task: Task) =>
+    (task.source_turn_ids ?? [])
+      .map(id => turnById.get(id))
+      .filter((turn): turn is TranscriptTurn => Boolean(turn))
+      .slice(0, 2)
 
   return (
     <div className="space-y-5">
       {/* Speaker resolution */}
+      <SpeakerEvidencePanel participants={participants} transcriptTurns={transcriptTurns} />
       {participants.some(p => !p.worker_id) && (
         <InlineSpeakerResolver
           meetingId={result.meeting_id}
           participants={participants}
+          transcriptTurns={transcriptTurns}
           workers={workers}
           onResolved={refreshParticipants}
         />
       )}
+      <TranscriptPanel turns={transcriptTurns} />
 
       {/* Summary */}
       {result.summary_text && (
@@ -692,17 +884,54 @@ function ReviewStep({
                       : <Circle size={18} className="text-slate-400" />}
                   </button>
                   <div className="flex-1 space-y-2.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {task.review_bucket !== "action" && (
+                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${
+                          task.review_bucket === "unresolved"
+                            ? "bg-amber-50 text-amber-700 border-amber-200"
+                            : "bg-violet-50 text-violet-700 border-violet-200"
+                        }`}>
+                          {task.review_bucket === "unresolved" ? "Needs assignee" : "Needs review"}
+                        </span>
+                      )}
+                      {task.notes && (
+                        <span className="text-[11px] text-slate-500 truncate max-w-full">{task.notes}</span>
+                      )}
+                    </div>
                     <input
                       value={task.edited_description ?? ""}
                       onChange={e => update(task.task_id, "edited_description", e.target.value)}
                       className="w-full bg-transparent text-sm text-slate-900 font-medium focus:outline-none hover:bg-slate-50 focus:bg-slate-50 rounded-md px-1.5 py-0.5 -ml-1.5 transition-colors"
                     />
+                    {sourceTurnsFor(task).length > 0 && (
+                      <div className="space-y-1 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
+                        {sourceTurnsFor(task).map(turn => (
+                          <p key={turn.turn_id} className="text-[11px] text-slate-600 leading-relaxed">
+                            <span className="font-mono text-slate-500">{turn.speaker_name || turn.speaker_id}</span>
+                            <span className="text-slate-400">: </span>
+                            <span>{turn.text}</span>
+                          </p>
+                        ))}
+                      </div>
+                    )}
                     <div className="flex flex-wrap items-center gap-2">
-                      <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-md px-2 py-1">
-                        <span className="text-slate-500 text-[11px]">👤</span>
-                        <input value={task.edited_assignee ?? ""} onChange={e => update(task.task_id, "edited_assignee", e.target.value)}
-                          placeholder="Assignee"
-                          className="bg-transparent text-xs text-slate-600 focus:outline-none focus:text-slate-900 w-20 transition-colors" />
+                      <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-md px-2 py-1 min-w-0">
+                        <span className="text-slate-500 text-[11px]">Assignee</span>
+                        <select
+                          value={task.edited_assignee ?? ""}
+                          onChange={e => update(task.task_id, "edited_assignee", e.target.value)}
+                          className="bg-transparent text-xs text-slate-700 focus:outline-none focus:text-slate-900 max-w-40"
+                        >
+                          <option value="">Unassigned</option>
+                          {task.edited_assignee && !workers.some(w => w.name === task.edited_assignee) && (
+                            <option value={task.edited_assignee}>{task.edited_assignee}</option>
+                          )}
+                          {workers.map(w => (
+                            <option key={w.worker_id} value={w.name}>
+                              {w.name}{w.role ? ` (${w.role})` : ""}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-md px-2 py-1">
                         <span className="text-slate-500 text-[11px]">📅</span>
@@ -980,6 +1209,7 @@ export default function Home() {
     localStorage.removeItem(ACTIVE_MEETING_KEY)
     setStep("upload"); setMeetingId(""); setResult(null); setEvents([])
   }
+  const wideStep = step === "review"
 
   if (status === "loading") {
     return (
@@ -1073,8 +1303,8 @@ export default function Home() {
       </header>
 
       {/* Main */}
-      <main className="flex-1 flex justify-center px-4 py-10">
-        <div className="w-full max-w-lg">
+      <main className="flex-1 flex justify-center px-3 py-6 sm:px-6 lg:px-8 lg:py-10">
+        <div className={`w-full ${wideStep ? "max-w-7xl" : "max-w-lg"}`}>
           <StepBar current={step} />
 
           {resumeLoading && (
@@ -1091,7 +1321,9 @@ export default function Home() {
             </div>
           )}
 
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-2xl shadow-sky-900/5">
+          <div className={`bg-white border border-slate-200 rounded-2xl shadow-2xl shadow-sky-900/5 ${
+            wideStep ? "p-3 sm:p-5 lg:p-6" : "p-6"
+          }`}>
             {step === "upload" && <UploadStep onSubmit={handleSubmit} />}
             {step === "processing" && meetingId && (
               <ProcessingStep meetingId={meetingId} onDone={r => { setResult(r); setStep("review") }} />

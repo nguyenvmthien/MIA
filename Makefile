@@ -1,4 +1,4 @@
-.PHONY: help up down dev prod migrate logs test lint build worker-rebuild hygiene dataset-smoke web-lint web-build mlops-smoke backfill-transcripts cleanup-artifacts deploy-promoted-model
+.PHONY: help up down dev prod migrate logs test lint build worker-rebuild hygiene dataset-smoke web-lint web-build mlops-smoke mlops-up mlops-logs train-image retrain-check retrain-force backfill-transcripts cleanup-artifacts deploy-promoted-model
 
 COMPOSE      = docker compose -f docker-compose.yml
 COMPOSE_PROD = $(COMPOSE) -f docker-compose.prod.yml
@@ -83,6 +83,21 @@ web-build: ## Build the Next.js app
 	cd web && npm run build
 
 mlops-smoke: hygiene dataset-smoke ## Run local MLOps smoke checks
+
+mlops-up: ## Start GPU-ready MLOps services: beat, trainer, MLflow
+	$(COMPOSE) --profile mlops up -d --build beat trainer mlflow
+
+mlops-logs: ## Tail MLOps scheduler/trainer logs
+	$(COMPOSE) --profile mlops logs -f beat trainer mlflow
+
+train-image: ## Build GPU training image with QLoRA dependencies
+	$(COMPOSE) --profile mlops build trainer
+
+retrain-check: ## Check whether retraining threshold is met
+	$(PYTHONPATH) python3 -m meeting_agent.mlops.retrain --check
+
+retrain-force: ## Force retrain through local Python environment
+	$(PYTHONPATH) python3 -m meeting_agent.mlops.retrain --force
 
 backfill-transcripts: ## Backfill normalized transcript_turns from legacy JSONB (APPLY=1 to write)
 	$(PYTHONPATH) python3 scripts/backfill_transcript_turns.py $(if $(APPLY),--apply,)

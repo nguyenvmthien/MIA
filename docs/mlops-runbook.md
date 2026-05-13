@@ -1,0 +1,102 @@
+# MLOps Fine-Tuning Runbook
+
+This runbook describes the GPU-ready retraining path.
+
+## What Runs Automatically
+
+When the `mlops` compose profile is enabled:
+
+- `beat` runs Celery Beat and checks retraining every 24 hours.
+- `trainer` consumes only the `mlops` queue and runs retraining/fine-tuning jobs.
+- `mlflow` stores training runs, metrics, model registry metadata, and artifacts.
+
+The normal audio worker consumes only the default `celery` queue, so training cannot block meeting processing.
+
+## Trigger Condition
+
+Auto-retraining starts when:
+
+- new human corrections since the previous retrain are `>= RETRAIN_MIN_CORRECTIONS`
+- default threshold: `50`
+- training data files pass validation
+- DB-backed feedback export produces real examples
+
+If the threshold is not reached, the scheduled check exits without training.
+
+## Start GPU-Ready MLOps Services
+
+```bash
+make mlops-up
+```
+
+Equivalent:
+
+```bash
+docker compose --profile mlops up -d --build beat trainer mlflow
+```
+
+Follow logs:
+
+```bash
+make mlops-logs
+```
+
+## Manual Checks
+
+Check threshold without training:
+
+```bash
+make retrain-check
+```
+
+Force a retrain through the local Python environment:
+
+```bash
+make retrain-force
+```
+
+Force through the running API:
+
+```bash
+curl -X POST "http://localhost:8000/admin/retrain?force=true"
+```
+
+The API-triggered job is routed to the `mlops` queue and requires the `trainer` service to be running.
+
+## Fine-Tune Runtime Requirements
+
+The training image is `Dockerfile.train`.
+
+It installs:
+
+- PyTorch CUDA runtime
+- QLoRA dependencies from `.[train]`
+- Unsloth
+- TRL
+- PEFT
+- bitsandbytes
+- MLflow
+- Optuna
+
+Recommended runtime:
+
+- NVIDIA GPU
+- CUDA-compatible Docker host
+- at least 8 GB VRAM for the configured Qwen2.5-3B QLoRA path
+
+## Promotion And Serving
+
+After training succeeds, the retrain pipeline:
+
+1. Runs the configured evaluation gate when `data/eval/gold_smoke.jsonl` exists.
+2. Promotes the MLflow model only if the gate passes.
+3. Writes `data/training/.promotion_manifest.json`.
+4. Does not silently switch production serving.
+
+Deploy the promoted model explicitly:
+
+```bash
+make deploy-promoted-model APPLY=1
+```
+
+This creates the Ollama tag from the promotion manifest and writes a reversible serving env update.

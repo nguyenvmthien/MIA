@@ -1,122 +1,20 @@
-\chapter{Tổng quan Tài liệu}
+\chapter{Tổng quan tài liệu}
 \label{chap:litreview}
 
-\section{Các Hệ thống Xử lý Cuộc họp Hiện có}
+\section{Speech-to-text và diarization}
 
-Nhu cầu tự động hóa ghi chép cuộc họp đã được thương mại hóa bởi nhiều sản phẩm, nhưng mỗi giải pháp có những hạn chế nhất định (Bảng~\ref{tab:comparison}).
+Whisper~\cite{radford2022whisper} chứng minh hiệu quả của mô hình ASR huấn luyện trên dữ liệu lớn. WhisperX~\cite{bain2022whisperx} mở rộng Whisper với alignment theo word-level timestamp và tích hợp tốt hơn với diarization. Đây là lý do dự án dùng WhisperX làm lớp ASR chính thay vì chỉ dùng transcript dạng plain text.
 
-\begin{table}[H]
-\centering
-\caption{So sánh Meeting AI Agent với các giải pháp thương mại.}
-\label{tab:comparison}
-\begin{tabularx}{\textwidth}{lXXXXX}
-\toprule
-\textbf{Tiêu chí} & \textbf{Otter.ai} & \textbf{Fireflies} & \textbf{MS Copilot} & \textbf{Meeting AI Agent} \\
-\midrule
-On-premise       & \texttimes & \texttimes & \texttimes & \checkmark \\
-Privacy dữ liệu  & Thấp & Thấp & Trung bình & Cao (local) \\
-Custom roster    & \texttimes & Hạn chế & \texttimes & \checkmark \\
-Fine-tuning      & \texttimes & \texttimes & \texttimes & \checkmark \\
-Open source      & \texttimes & \texttimes & \texttimes & \checkmark \\
-Chi phí          & Subscription & Subscription & M365 license & Miễn phí \\
-\bottomrule
-\end{tabularx}
-\end{table}
+Speaker diarization được xử lý bằng Pyannote~\cite{bredin2023pyannote}. Với audio cuộc họp có nhiều người nói, diarization là điều kiện quan trọng để UI hiển thị bằng chứng theo speaker và giúp người dùng xác nhận ai nói nội dung nào. Hệ thống không giả định một file audio chỉ có một người nói.
 
-\section{Nền tảng Kỹ thuật}
+\section{LLM cục bộ và structured extraction}
 
-\subsection{Nhận dạng Giọng nói — WhisperX}
+Qwen2.5~\cite{qwen2025} được chọn vì có chất lượng instruction-following tốt trong kích thước nhỏ, phù hợp chạy cục bộ qua Ollama. Thay vì yêu cầu model sinh văn bản tự do, pipeline ép output về JSON schema và kiểm tra lại bằng guardrails. Cách tiếp cận này giảm lỗi định dạng và giúp backend có thể lưu action items vào database một cách nhất quán.
 
-Whisper~\cite{radford2022whisper} của OpenAI là mô hình ASR đa ngôn ngữ được huấn luyện trên 680.000 giờ âm thanh có giám sát yếu (weakly supervised). WhisperX~\cite{bain2022whisperx} mở rộng Whisper với hai đóng góp chính: (1)~batch inference nhanh hơn 70× và (2)~căn chỉnh từng từ với timestamp chính xác, điều kiện tiên quyết cho speaker diarization. Hình~\ref{fig:whisperx_pipeline} mô tả pipeline xử lý âm thanh.
+\section{RAG, guardrails và hallucination}
 
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-  box/.style={rectangle, rounded corners=5pt, draw=primary, fill=stagecolor1,
-              text width=2.8cm, align=center, minimum height=1.1cm, font=\small},
-  arr/.style={-{Stealth[scale=1.1]}, thick, primary},
-  note/.style={font=\scriptsize, text=darkgray, align=center, text width=2.4cm},
-]
-  \node[box] (load)  {Load Audio\\16kHz mono};
-  \node[box, right=1.5cm of load] (asr) {WhisperX\\ASR};
-  \node[box, right=1.5cm of asr] (align) {Word-level\\Alignment};
-  \node[box, right=1.5cm of align] (diar) {Pyannote\\Diarization};
-  \node[box, right=1.5cm of diar] (assign) {Speaker\\Assignment};
+FAISS~\cite{johnson2019faiss} thường được dùng để truy hồi ngữ cảnh liên quan. Trong dự án, RAG/context enrichment hỗ trợ LLM xử lý transcript dài và đưa thêm evidence turn khi cần. Guardrails được dùng để giới hạn prompt injection, PII leakage, lỗi schema và hallucination, phù hợp với các rủi ro đã được khảo sát trong nghiên cứu về hallucination~\cite{ji2023hallucination}.
 
-  \draw[arr] (load) -- (asr);
-  \draw[arr] (asr) -- (align);
-  \draw[arr] (align) -- (diar);
-  \draw[arr] (diar) -- (assign);
+\section{LLMOps}
 
-  \node[note, below=0.5cm of load]  {ffmpeg\\preprocess};
-  \node[note, below=0.5cm of asr]   {segments +\\timestamps};
-  \node[note, below=0.5cm of align] {word-level\\timestamps};
-  \node[note, below=0.5cm of diar]  {SPEAKER\_00,\\SPEAKER\_01,\ldots};
-  \node[note, below=0.5cm of assign]{TranscriptTurn\\list};
-\end{tikzpicture}
-\caption{Pipeline xử lý âm thanh với WhisperX và Pyannote.}
-\label{fig:whisperx_pipeline}
-\end{figure}
-
-\subsection{Nhận dạng Người nói — Pyannote}
-
-Pyannote.audio~\cite{bredin2023pyannote} sử dụng kiến trúc transformer để giải bài toán speaker diarization theo ba bước: segmentation (phát hiện điểm chuyển giọng), embedding (biểu diễn giọng nói thành vector) và clustering (gom nhóm các segment cùng speaker). Model \texttt{speaker-diarization-3.1} đạt Diarization Error Rate (DER) thấp trên nhiều benchmark công khai.
-
-\subsection{Mô hình Ngôn ngữ Lớn — Qwen2.5-3B}
-
-Qwen2.5~\cite{qwen2025} là họ mô hình ngôn ngữ của Alibaba Cloud. Phiên bản 3B tham số được chọn vì:
-\begin{itemize}
-  \item Có thể chạy trên CPU với quantization INT8, không cần GPU đắt tiền.
-  \item Instruction following tốt cho few-shot prompting.
-  \item Hỗ trợ context window 32K tokens, phù hợp với transcript cuộc họp dài.
-  \item Có thể fine-tune với QLoRA trên consumer GPU.
-\end{itemize}
-
-\subsection{FAISS — Tìm kiếm Vector Hiệu quả}
-
-FAISS~\cite{johnson2019faiss} (Facebook AI Similarity Search) cho phép tìm kiếm k-nearest-neighbors trong không gian vector chiều cao với độ phức tạp dưới tuyến tính. Dự án sử dụng \texttt{IndexFlatIP} (inner product) kết hợp L2 normalization để thực hiện cosine similarity search cho speaker RAG.
-
-\section{Tại sao cần LLMOps trong Hệ thống NLP}
-
-\textcite{shankar2022mlops} chỉ ra rằng phần lớn thời gian trong dự án ML thực tế dành cho engineering infrastructure hơn là model development. Với LLM, vấn đề này càng rõ ràng hơn do các đặc thù:
-
-\begin{itemize}[leftmargin=*]
-  \item \textbf{Output non-determinism:} LLM có thể sinh ra JSON sai format, thiếu field, hoặc có text thừa — đòi hỏi schema guardrails.
-  \item \textbf{Hallucination:} Mô hình có thể tạo ra tên người hoặc deadline không tồn tại trong transcript~\cite{ji2023hallucination}.
-  \item \textbf{Prompt sensitivity:} Thay đổi nhỏ trong prompt có thể làm thay đổi lớn kết quả — cần versioning và A/B testing.
-  \item \textbf{Chi phí inference:} Mỗi LLM call tốn thời gian đáng kể, cần caching và batching.
-  \item \textbf{Data drift:} Domain-specific language thay đổi theo thời gian — cần feedback loop và fine-tuning.
-\end{itemize}
-
-Hình~\ref{fig:llmops_need} tóm tắt mối quan hệ giữa các thách thức và giải pháp LLMOps tương ứng.
-
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-  challenge/.style={rectangle, rounded corners=4pt, draw=red!60, fill=red!8,
-                    text width=3.5cm, align=center, font=\small, minimum height=1cm},
-  solution/.style={rectangle, rounded corners=4pt, draw=accent, fill=stagecolor2,
-                   text width=3.5cm, align=center, font=\small, minimum height=1cm},
-  arr/.style={-{Stealth}, thick, gray},
-]
-  \node[challenge] (c1) {Sai format\\output};
-  \node[challenge, below=0.6cm of c1] (c2) {Hallucination};
-  \node[challenge, below=0.6cm of c2] (c3) {Chi phí cao};
-  \node[challenge, below=0.6cm of c3] (c4) {Data drift};
-  \node[challenge, below=0.6cm of c4] (c5) {Jailbreak / PII};
-
-  \node[solution, right=3cm of c1] (s1) {Schema\\Guardrails};
-  \node[solution, right=3cm of c2] (s2) {Hallucination\\Detection};
-  \node[solution, right=3cm of c3] (s3) {Redis Prompt\\Cache};
-  \node[solution, right=3cm of c4] (s4) {Feedback Loop\\+ Fine-tuning};
-  \node[solution, right=3cm of c5] (s5) {Input Guardrails\\+ PII Masking};
-
-  \foreach \c/\s in {c1/s1, c2/s2, c3/s3, c4/s4, c5/s5}
-    \draw[arr] (\c) -- (\s);
-
-  \node[above=0.3cm of c1, font=\small\bfseries, text=red!70] {Thách thức};
-  \node[above=0.3cm of s1, font=\small\bfseries, text=accent] {Giải pháp LLMOps};
-\end{tikzpicture}
-\caption{Mapping giữa thách thức LLM trong production và giải pháp LLMOps.}
-\label{fig:llmops_need}
-\end{figure}
+MLOps/LLMOps nhấn mạnh việc đưa model vào vòng đời vận hành có đo lường, versioning, feedback và kiểm soát deployment~\cite{shankar2022mlops}. Với LLM, vấn đề không chỉ là training mà còn là chất lượng prompt, drift, dữ liệu correction, regression evaluation và khả năng rollback. Vì vậy dự án tách rõ ba bước: thu thập feedback, fine-tune/evaluate, và promotion/deploy có audit.

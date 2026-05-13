@@ -1,0 +1,24 @@
+FROM pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    build-essential \
+    git \
+    libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Keep dependency installation cached unless packaging metadata changes.
+COPY pyproject.toml README.md ./
+RUN mkdir -p src/meeting_agent && touch src/meeting_agent/__init__.py
+RUN pip install --no-cache-dir -e ".[train]" \
+    && pip install --no-cache-dir cryptography
+
+COPY src/ ./src/
+RUN pip install --no-cache-dir -e . --no-deps
+
+RUN mkdir -p data/training data/eval data/models models

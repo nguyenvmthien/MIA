@@ -3,6 +3,7 @@
 import json
 import time
 import uuid
+import warnings
 from pathlib import Path
 
 from meeting_agent.config import settings
@@ -12,6 +13,17 @@ from meeting_agent.schemas.transcript import TranscriptTurn
 
 class STTError(Exception):
     pass
+
+
+def _word_majority_speaker(words: list[dict]) -> str | None:
+    counts: dict[str, int] = {}
+    for word in words:
+        speaker = word.get("speaker")
+        if speaker:
+            counts[str(speaker)] = counts.get(str(speaker), 0) + 1
+    if not counts:
+        return None
+    return max(counts.items(), key=lambda item: item[1])[0]
 
 
 def transcribe_and_diarize(
@@ -27,6 +39,7 @@ def transcribe_and_diarize(
     """
     try:
         import whisperx  # type: ignore
+        from whisperx.diarize import DiarizationPipeline  # type: ignore
     except ImportError as e:
         raise STTError("whisperx not installed. Run: pip install whisperx") from e
 
@@ -73,17 +86,35 @@ def transcribe_and_diarize(
                 "Or set ENABLE_DIARIZATION=false for non-diarized testing."
             )
 
-        from pyannote.audio import Pipeline as PyannotePipeline
-
-        diarize_pipeline = PyannotePipeline.from_pretrained(
-            "pyannote/speaker-diarization-3.1",
-            token=settings.hf_token,
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="torchcodec is not installed correctly.*",
+                category=UserWarning,
+            )
+            diarize_pipeline = DiarizationPipeline(
+                token=settings.hf_token,
+                device=settings.whisper_device,
+            )
+            # Pass the already-loaded waveform instead of a path so pyannote
+            # does not need torchcodec for audio decoding inside the container.
+            diarize_segments = diarize_pipeline(audio)
+        if artifact_sink is not None:
+            artifact_sink.append({
+                "artifact_type": "diarization_raw",
+                "payload": {
+                    "segments": json.loads(diarize_segments.to_json(orient="records")),
+                },
+                "metadata": {
+                    "model": "pyannote/speaker-diarization-3.1",
+                    "audio_path": str(audio_path),
+                },
+            })
+        result = whisperx.assign_word_speakers(
+            diarize_segments,
+            result,
+            fill_nearest=True,
         )
-        if diarize_pipeline is None:
-            raise STTError("Failed to load pyannote speaker-diarization-3.1")
-        diarize_pipeline.to(__import__("torch").device(settings.whisper_device))
-        diarize_segments = diarize_pipeline(str(audio_path))
-        result = whisperx.assign_word_speakers(diarize_segments, result)
 
         diarize_ms = int((time.monotonic() - t1) * 1000)
         STAGE_LATENCY.labels(stage="diarize").observe(diarize_ms / 1000)
@@ -102,8 +133,8 @@ def transcribe_and_diarize(
     # ── Build TranscriptTurn list ─────────────────────────────────────────────
     turns: list[TranscriptTurn] = []
     for seg in result["segments"]:
-        speaker_id = seg.get("speaker", "SPEAKER_UNKNOWN")
         words = seg.get("words", [])
+        speaker_id = seg.get("speaker") or _word_majority_speaker(words) or "SPEAKER_UNKNOWN"
         confidences = [w.get("score", 1.0) for w in words if "score" in w]
         avg_conf = float(sum(confidences) / len(confidences)) if confidences else 1.0
 
