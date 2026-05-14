@@ -3,18 +3,18 @@
 
 \section{Mở rộng dữ liệu}
 
-Ưu tiên tiếp theo là thu thập thêm feedback thật từ UI, mở rộng gold set và thêm dữ liệu tiếng Việt/đa ngôn ngữ. Khi số correction đạt ngưỡng, có thể chạy fine-tuning trên GPU và so sánh với baseline hiện tại.
+Ưu tiên tiếp theo là thu thập thêm feedback thật từ UI, mở rộng gold set và bổ sung dữ liệu tiếng Việt/đa ngôn ngữ. Khi số correction đạt ngưỡng và có chất lượng ổn định, có thể chạy fine-tuning trên GPU rồi so sánh với baseline hiện tại bằng cùng một bộ đánh giá.
 
 \section{Nâng cấp evaluation}
 
-Hiện tại evaluation dựa trên matching action item ở mức mô tả. Hướng phát triển là thêm semantic matching, đánh giá riêng assignee/deadline/priority, đo hallucination rate và báo cáo confidence calibration.
+Hiện tại evaluation dựa trên matching action item ở mức mô tả. Hướng phát triển là thêm semantic matching, đánh giá riêng assignee/deadline/priority, đo hallucination rate và theo dõi confidence calibration nếu model hoặc pipeline có trả về điểm tin cậy.
 
-\section{Production hardening}
+\section{Nâng cao vận hành}
 
-Nếu triển khai thật, hệ thống cần:
+Các cải tiến vận hành không làm thay đổi pipeline cốt lõi nhưng giúp hệ thống bền vững hơn khi dữ liệu và tải xử lý tăng:
 
 \begin{itemize}[leftmargin=*]
-  \item HTTPS/reverse proxy và secret manager.
+  \item Chuẩn hoá HTTPS/reverse proxy và secret manager.
   \item Backup/restore PostgreSQL và object storage cho artifacts.
   \item Role-based access control chi tiết hơn.
   \item Alert rules cho queue backlog, worker failure, API latency và GPU memory.
@@ -23,4 +23,4 @@ Nếu triển khai thật, hệ thống cần:
 
 \section{Tự động hoá release có kiểm soát}
 
-Serving switch hiện là manual. Trong tương lai có thể thêm release policy bán tự động: model promoted được deploy vào canary, so sánh A/B trong một khoảng thời gian, sau đó mới chuyển traffic chính nếu không có regression.
+Serving switch hiện là manual. Trong tương lai có thể thêm release policy bán tự động: model promoted được đưa vào canary, so sánh A/B trong một khoảng thời gian, sau đó mới chuyển traffic chính nếu không có regression.

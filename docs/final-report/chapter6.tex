@@ -3,19 +3,19 @@
 
 \section{Diarization và speaker identity}
 
-Diarization chỉ tạo nhãn speaker ẩn danh, không tự biết người thật là ai. Vì vậy hệ thống cần bước human review để map \texttt{SPEAKER\_00}, \texttt{SPEAKER\_01} sang participant thật. Đây không phải lỗi UI mà là giới hạn tự nhiên của diarization khi không có voice enrollment.
+Diarization chỉ tạo nhãn speaker ẩn danh, không tự xác định danh tính thật của người nói. Vì vậy hệ thống cần bước human review để map \texttt{SPEAKER\_00}, \texttt{SPEAKER\_01} sang participant thật. Đây là giới hạn tự nhiên của diarization khi không có voice enrollment hoặc dữ liệu giọng nói tham chiếu.
 
 \section{Hiệu năng CPU}
 
-WhisperX, Pyannote và LLM inference đều nặng nếu chạy CPU. Demo local có thể xử lý chậm, đặc biệt ở lần đầu khi model cần tải về. Fine-tuning gần như bắt buộc cần GPU/CUDA nếu muốn chạy thực tế với QLoRA.
+WhisperX, Pyannote và LLM inference đều tốn tài nguyên nếu chạy CPU. Môi trường local có thể xử lý chậm, đặc biệt ở lần đầu khi model cần tải về hoặc khởi tạo. Fine-tuning bằng QLoRA gần như cần GPU/CUDA nếu muốn có thời gian chạy hợp lý.
 
-\section{Fine-tuning chưa được chạy end-to-end trên GPU}
+\section{Fine-tuning phụ thuộc dữ liệu và GPU}
 
-Luồng fine-tune đã được chuẩn bị về code, Dockerfile, dependencies, queue và trigger. Tuy nhiên môi trường hiện tại chưa có GPU để xác nhận một run fine-tune đầy đủ. Do đó báo cáo chỉ claim hệ thống \emph{GPU-ready}, không claim đã có model fine-tuned tốt hơn baseline.
+Luồng fine-tune đã được chuẩn bị về code, Dockerfile, dependencies, queue và trigger. Tuy nhiên chất lượng fine-tuning phụ thuộc vào hai điều kiện: đủ dữ liệu correction chất lượng tốt và môi trường GPU phù hợp. Vì vậy báo cáo hiện tại xem fine-tuning là bước mở rộng của vòng lặp cải tiến, không dùng nó làm bằng chứng chính cho chất lượng baseline.
 
-\section{Deployment model được kiểm soát thủ công}
+\section{Thay đổi model được kiểm soát thủ công}
 
-Sau khi model candidate đạt điều kiện promotion, serving switch sang Ollama tag mới vẫn là thao tác manual/auditable. Đây là lựa chọn an toàn cho project: tránh trường hợp model mới tự động thay thế model đang phục vụ khi chưa có người kiểm tra.
+Sau khi model candidate đạt điều kiện promotion, việc chuyển sang Ollama tag mới vẫn là thao tác manual/auditable. Cách làm này giúp mọi thay đổi model đều có dấu vết đánh giá, tránh trường hợp model mới thay thế baseline khi chưa được kiểm tra.
 
 \section{Giới hạn dữ liệu đánh giá}
 

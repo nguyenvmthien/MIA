@@ -1,8 +1,8 @@
 \chapter{Kết luận}
 \label{chap:conclusion}
 
-Dự án đã xây dựng được một hệ thống Meeting AI Agent end-to-end: upload audio, ASR, diarization, transcript theo lượt nói, trích xuất action items bằng LLM, human feedback, lưu trữ DB, monitoring và MLOps flow chuẩn bị cho fine-tuning. Các thay đổi gần đây đã đưa hệ thống gần hơn với báo cáo LLMOps thực tế: feedback không còn là file rời rạc mà được lưu DB, trainer có queue riêng, retrain trigger có ngưỡng dữ liệu, promotion/deploy có audit và UI review phản ánh đúng bài toán multi-speaker.
+Dự án đã xây dựng được một hệ thống Meeting AI Agent end-to-end: upload audio, ASR, diarization, transcript theo lượt nói, trích xuất action items bằng LLM, human feedback, lưu trữ DB, monitoring và luồng LLMOps chuẩn bị cho fine-tuning. Các thay đổi gần đây giúp hệ thống có khả năng truy vết tốt hơn: feedback không còn là file rời rạc mà được lưu DB, trainer có queue riêng, retrain trigger có ngưỡng dữ liệu, promotion có audit và UI review phản ánh đúng bài toán multi-speaker.
 
-Kết quả baseline Qwen2.5-3B đạt precision 0.767, recall 0.700 và schema failure 0.0\% trên smoke test nhỏ. Điều này cho thấy pipeline đã hoạt động ổn định về mặt kỹ thuật, nhưng chất lượng extraction vẫn cần cải thiện bằng dữ liệu thật và fine-tuning khi có GPU.
+Kết quả baseline Qwen2.5-3B đạt precision 0.767, recall 0.700 và schema failure 0.0\% trên smoke test nhỏ. Điều này cho thấy pipeline đã ổn định về định dạng và luồng xử lý, nhưng chất lượng extraction vẫn cần cải thiện bằng dữ liệu feedback thật, mở rộng tập đánh giá và fine-tuning khi có đủ điều kiện.
 
-Nhìn chung, dự án đáp ứng mục tiêu của một báo cáo Applied LLM/LLMOps: có bài toán NLP rõ ràng, pipeline LLM thực thi được, observability, human feedback, evaluation, retraining gate và quy trình deployment có kiểm soát. Các phần còn lại thuộc nhóm nâng cấp production và mở rộng dữ liệu, không phải thiếu hụt nền tảng của project hiện tại.
+Nhìn chung, dự án đáp ứng mục tiêu của một báo cáo Applied LLM/LLMOps: có bài toán NLP rõ ràng, pipeline LLM thực thi được, observability, human feedback, evaluation, retraining gate và quy trình thay đổi model có kiểm soát. Các phần tiếp theo nên tập trung vào chất lượng dữ liệu, đánh giá sâu hơn và nâng cao vận hành, thay vì xem chúng là thiếu hụt nền tảng của hệ thống hiện tại.

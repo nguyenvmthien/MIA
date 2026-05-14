@@ -2,32 +2,32 @@
 
 \section{Bối cảnh}
 
-Sau mỗi cuộc họp, thông tin quan trọng thường bị phân tán trong ghi chú thủ công, tin nhắn follow-up hoặc trí nhớ của từng người. Điều này làm action items dễ bị bỏ sót, deadline không rõ ràng và người phụ trách bị gán sai. Dự án \textbf{Meeting AI Agent} được xây dựng để chuyển audio cuộc họp thành dữ liệu có cấu trúc: transcript theo lượt nói, danh sách công việc, người phụ trách, hạn chót, mức ưu tiên và bằng chứng transcript liên quan.
+Sau mỗi cuộc họp, thông tin quan trọng thường bị phân tán trong ghi chú thủ công, tin nhắn follow-up hoặc trí nhớ của từng người tham gia. Cách xử lý này làm action items dễ bị bỏ sót, deadline không rõ ràng và người phụ trách có thể bị gán sai. Dự án \textbf{Meeting AI Agent} được xây dựng nhằm chuyển audio cuộc họp thành dữ liệu có cấu trúc: transcript theo lượt nói, danh sách công việc, người phụ trách, hạn chót, mức ưu tiên và bằng chứng transcript liên quan.
 
-Điểm trọng tâm của dự án không chỉ là gọi một LLM để tóm tắt. Hệ thống được thiết kế theo hướng LLMOps: có lưu vết dữ liệu, kiểm tra schema, human feedback, monitoring, đánh giá định kỳ, retraining gate và quy trình promotion/deployment có kiểm soát.
+Trọng tâm của dự án không chỉ là gọi một LLM để tóm tắt nội dung. Hệ thống được thiết kế như một pipeline xử lý thông tin có thể truy vết: audio được chuẩn hoá, transcript được lưu theo lượt nói, kết quả LLM được kiểm tra bằng schema, người dùng có thể hiệu chỉnh và các hiệu chỉnh được lưu lại cho đánh giá hoặc huấn luyện tiếp theo. Cách tiếp cận này phù hợp với bài toán Applied LLM, nơi chất lượng hệ thống phụ thuộc đồng thời vào mô hình, dữ liệu, prompt, kiểm chứng kết quả và vòng lặp phản hồi.
 
 \section{Bài toán NLP}
 
-Dự án kết hợp ba nhóm bài toán:
+Dự án kết hợp ba nhóm bài toán chính:
 
 \begin{itemize}[leftmargin=*]
   \item \textbf{ASR}: chuyển audio thành transcript bằng WhisperX.
   \item \textbf{Speaker diarization}: tách và gán nhãn các lượt nói bằng WhisperX/Pyannote. Speaker mặc định là các nhãn ẩn danh như \texttt{SPEAKER\_00}; người dùng có thể map sang tên thật khi review.
-  \item \textbf{Information extraction}: dùng Qwen2.5-3B qua Ollama để trích xuất action items theo schema JSON, sau đó chuẩn hoá assignee theo roster.
+  \item \textbf{Information extraction}: dùng Qwen2.5-3B qua Ollama để trích xuất action items theo JSON schema, sau đó chuẩn hoá assignee theo roster của cuộc họp.
 \end{itemize}
 
 \section{Mục tiêu hệ thống}
 
-Các mục tiêu chính của hệ thống:
+Các mục tiêu chính của hệ thống được xác định như sau:
 
 \begin{enumerate}[leftmargin=*]
   \item Xử lý audio cuộc họp end-to-end qua giao diện web.
   \item Lưu transcript, speaker turns, tasks, feedback và artifacts vào database để audit.
   \item Cho phép human-in-the-loop sửa speaker mapping và task assignment dựa trên bằng chứng transcript.
-  \item Cung cấp dashboard Prometheus/Grafana cho trạng thái pipeline, worker, task, feedback và MLOps.
-  \item Chuẩn bị luồng fine-tuning có thể chạy khi có GPU và đủ số lượng correction.
+  \item Cung cấp dashboard Prometheus/Grafana cho trạng thái pipeline, worker, task và feedback.
+  \item Chuẩn bị dữ liệu và quy trình đánh giá để có thể mở rộng sang fine-tuning khi đủ correction.
 \end{enumerate}
 
-\section{Phạm vi hiện tại}
+\section{Phạm vi và đóng góp}
 
-Phiên bản hiện tại phù hợp cho demo môn học và môi trường phát triển nội bộ. Hệ thống đã có nền tảng LLMOps đầy đủ ở mức project: DB-backed feedback, export training data, retrain trigger, evaluation, drift record, promotion manifest và manual deploy sang Ollama tag. Tuy nhiên, dự án chưa claim là production SaaS hoàn chỉnh; nếu triển khai thật cần bổ sung hardening về HTTPS, secret manager, backup, phân quyền chi tiết và vận hành GPU thực tế.
+Phiên bản hiện tại đã triển khai được pipeline end-to-end và có thể vận hành trong môi trường Docker Compose của dự án. Báo cáo tập trung vào đóng góp kỹ thuật cốt lõi: kiến trúc xử lý audio--LLM, cơ chế lưu vết dữ liệu trong database, giao diện human feedback, đánh giá baseline và nền tảng LLMOps cho vòng lặp cải tiến. Các nội dung như mở rộng quy mô, chính sách retention dài hạn, canary release hoặc quản trị hạ tầng nhiều tenant được xem là phần nâng cao, không phải điều kiện để hệ thống hiện tại hoạt động.

@@ -1,20 +1,20 @@
-\chapter{Tổng quan tài liệu}
+\chapter{Cơ sở lý thuyết và công nghệ liên quan}
 \label{chap:litreview}
 
 \section{Speech-to-text và diarization}
 
-Whisper~\cite{radford2022whisper} chứng minh hiệu quả của mô hình ASR huấn luyện trên dữ liệu lớn. WhisperX~\cite{bain2022whisperx} mở rộng Whisper với alignment theo word-level timestamp và tích hợp tốt hơn với diarization. Đây là lý do dự án dùng WhisperX làm lớp ASR chính thay vì chỉ dùng transcript dạng plain text.
+Whisper~\cite{radford2022whisper} chứng minh hiệu quả của mô hình ASR được huấn luyện trên dữ liệu âm thanh quy mô lớn. WhisperX~\cite{bain2022whisperx} mở rộng Whisper bằng alignment theo word-level timestamp và tích hợp tốt hơn với diarization. Đối với bài toán cuộc họp, timestamp và lượt nói là thông tin quan trọng vì chúng cho phép hệ thống liên kết một action item với đoạn hội thoại nguồn, thay vì chỉ lưu một bản transcript dạng plain text.
 
 Speaker diarization được xử lý bằng Pyannote~\cite{bredin2023pyannote}. Với audio cuộc họp có nhiều người nói, diarization là điều kiện quan trọng để UI hiển thị bằng chứng theo speaker và giúp người dùng xác nhận ai nói nội dung nào. Hệ thống không giả định một file audio chỉ có một người nói.
 
 \section{LLM cục bộ và structured extraction}
 
-Qwen2.5~\cite{qwen2025} được chọn vì có chất lượng instruction-following tốt trong kích thước nhỏ, phù hợp chạy cục bộ qua Ollama. Thay vì yêu cầu model sinh văn bản tự do, pipeline ép output về JSON schema và kiểm tra lại bằng guardrails. Cách tiếp cận này giảm lỗi định dạng và giúp backend có thể lưu action items vào database một cách nhất quán.
+Qwen2.5~\cite{qwen2025} được chọn vì có chất lượng instruction-following tốt trong kích thước nhỏ, phù hợp chạy cục bộ qua Ollama. Thay vì yêu cầu model sinh văn bản tự do, pipeline yêu cầu output theo JSON schema và kiểm tra lại bằng guardrails. Cách tiếp cận này giảm lỗi định dạng, giúp backend lưu action items vào database nhất quán và tạo điều kiện thuận lợi cho việc đánh giá định lượng.
 
 \section{RAG, guardrails và hallucination}
 
-FAISS~\cite{johnson2019faiss} thường được dùng để truy hồi ngữ cảnh liên quan. Trong dự án, RAG/context enrichment hỗ trợ LLM xử lý transcript dài và đưa thêm evidence turn khi cần. Guardrails được dùng để giới hạn prompt injection, PII leakage, lỗi schema và hallucination, phù hợp với các rủi ro đã được khảo sát trong nghiên cứu về hallucination~\cite{ji2023hallucination}.
+FAISS~\cite{johnson2019faiss} thường được dùng để truy hồi ngữ cảnh liên quan. Trong dự án, RAG/context enrichment hỗ trợ LLM xử lý transcript dài và đưa thêm evidence turn khi cần. Guardrails được dùng để giảm rủi ro prompt injection, PII leakage, lỗi schema và hallucination, phù hợp với các rủi ro đã được khảo sát trong nghiên cứu về hallucination~\cite{ji2023hallucination}.
 
 \section{LLMOps}
 
-MLOps/LLMOps nhấn mạnh việc đưa model vào vòng đời vận hành có đo lường, versioning, feedback và kiểm soát deployment~\cite{shankar2022mlops}. Với LLM, vấn đề không chỉ là training mà còn là chất lượng prompt, drift, dữ liệu correction, regression evaluation và khả năng rollback. Vì vậy dự án tách rõ ba bước: thu thập feedback, fine-tune/evaluate, và promotion/deploy có audit.
+MLOps/LLMOps nhấn mạnh việc đưa model vào vòng đời có đo lường, versioning, feedback và kiểm soát thay đổi~\cite{shankar2022mlops}. Với LLM, vấn đề không chỉ là training mà còn là chất lượng prompt, drift, dữ liệu correction, regression evaluation và khả năng so sánh giữa các phiên bản. Vì vậy dự án tách rõ ba bước: thu thập feedback, đánh giá/fine-tune khi đủ điều kiện, và promotion có audit.

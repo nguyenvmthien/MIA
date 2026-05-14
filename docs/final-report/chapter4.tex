@@ -3,21 +3,55 @@
 
 \section{Kiến trúc runtime}
 
-Các thành phần chính:
+Hệ thống được tách thành các thành phần có trách nhiệm rõ ràng: frontend nhận thao tác người dùng, API điều phối request và truy cập dữ liệu, worker xử lý các tác vụ tốn thời gian, còn các dịch vụ nền đảm nhiệm hàng đợi, lưu trữ, inference và quan sát trạng thái. Hình~\ref{fig:runtime-architecture} mô tả kiến trúc runtime hiện tại.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  component/.style={draw=primary, fill=light, rounded corners=4pt, minimum width=2.8cm, minimum height=0.9cm, align=center, font=\scriptsize},
+  service/.style={draw=accent, fill=stagecolor2, rounded corners=4pt, minimum width=2.8cm, minimum height=0.9cm, align=center, font=\scriptsize},
+  monitor/.style={draw=secondary, fill=stagecolor3, rounded corners=4pt, minimum width=2.8cm, minimum height=0.9cm, align=center, font=\scriptsize},
+  arrow/.style={-Latex, thick, color=darkgray},
+  dashedarrow/.style={-Latex, thick, dashed, color=darkgray}
+]
+  \node[component] (web) {Next.js\\frontend};
+  \node[component, right=1.0cm of web] (api) {FastAPI\\backend};
+  \node[service, below=0.9cm of api] (pg) {PostgreSQL};
+  \node[service, right=1.0cm of api] (redis) {Redis\\broker + cache};
+  \node[component, right=1.0cm of redis] (worker) {Celery\\worker};
+  \node[service, below=0.9cm of worker] (ollama) {Ollama\\Qwen2.5};
+  \node[monitor, below=0.9cm of web] (grafana) {Prometheus\\Grafana};
+
+  \draw[arrow] (web) -- node[above,font=\scriptsize]{HTTP} (api);
+  \draw[arrow] (api) -- (pg);
+  \draw[arrow] (api) -- (redis);
+  \draw[arrow] (redis) -- (worker);
+  \draw[arrow] (worker) -- (pg);
+  \draw[arrow] (worker) -- (ollama);
+  \draw[dashedarrow] (api) -- (grafana);
+  \draw[dashedarrow] (worker.west) -- ++(-0.4,0) |- (grafana.east);
+\end{tikzpicture}
+}
+\caption{Kiến trúc runtime của Meeting AI Agent}
+\label{fig:runtime-architecture}
+\end{figure}
+
+Các thành phần chính gồm:
 
 \begin{itemize}[leftmargin=*]
   \item \textbf{Frontend}: thư mục \texttt{web/}, xây bằng Next.js. UI hỗ trợ upload audio, theo dõi trạng thái job, review transcript, speaker mapping, task feedback và roster/history.
   \item \textbf{API}: \texttt{src/meeting\_agent/api/main.py}, cung cấp REST endpoints cho meeting, transcript, feedback, metrics, retrain và deploy.
-  \item \textbf{Worker}: Celery worker trong \texttt{src/meeting\_agent/pipeline/worker\_task.py}, xử lý pipeline audio và routing queue.
+  \item \textbf{Worker}: Celery worker xử lý pipeline audio và routing queue.
   \item \textbf{Storage}: PostgreSQL lưu meeting, participants, transcript turns, tasks, artifacts, feedback corrections, calendar events và worker registry.
   \item \textbf{Queue/cache}: Redis dùng cho Celery broker và cache một số bước inference.
   \item \textbf{LLM serving}: Ollama phục vụ Qwen2.5-3B và embedding model nếu được cấu hình.
-  \item \textbf{Monitoring}: Prometheus và Grafana.
+  \item \textbf{Monitoring}: Prometheus và Grafana để theo dõi API, worker, pipeline và feedback.
 \end{itemize}
 
 \section{Database-backed workflow}
 
-Các phần trước đây dễ mất trạng thái nay đã được đưa vào database:
+Database đóng vai trò là nguồn dữ liệu trung tâm của hệ thống. Các trạng thái quan trọng được lưu trong PostgreSQL thay vì chỉ nằm trong file artifact cục bộ:
 
 \begin{itemize}[leftmargin=*]
   \item Transcript turns thay vì chỉ nằm trong file artifact.
@@ -28,7 +62,60 @@ Các phần trước đây dễ mất trạng thái nay đã được đưa vào
   \item Raw artifacts như diarization output và model/prompt metadata.
 \end{itemize}
 
-Thiết kế này giúp hệ thống dễ audit hơn và là nền tảng cho feedback export/fine-tuning.
+Thiết kế này giúp hệ thống dễ truy vết hơn và là nền tảng cho feedback export/fine-tuning. Khi một task được người dùng sửa, hệ thống vẫn có thể truy ngược về transcript turn, meeting, model metadata và correction tương ứng.
+
+\section{Mô hình dữ liệu}
+
+Mô hình dữ liệu được thiết kế xoay quanh thực thể \texttt{Meeting}. Một meeting là đơn vị xử lý chính, được tạo ngay khi người dùng upload audio và được cập nhật dần qua các trạng thái \texttt{pending}, \texttt{processing}, \texttt{completed} hoặc \texttt{failed}. Các bảng con lưu transcript, task, participant, feedback, artifact và calendar event đều tham chiếu về \texttt{meeting\_id}. Cách tổ chức này giúp truy vấn theo meeting đơn giản, đồng thời hỗ trợ audit toàn bộ vòng đời xử lý của một audio.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  entity/.style={draw=primary, fill=light, rounded corners=3pt, text width=2.7cm, minimum height=1.0cm, align=left, font=\scriptsize},
+  arrow/.style={-Latex, thick, color=darkgray}
+]
+  \node[entity] (meeting) {\textbf{meetings}\\status\\summary\\metrics};
+  \node[entity, right=0.9cm of meeting] (turns) {\textbf{transcript\_turns}\\speaker\\time\\text};
+  \node[entity, below=0.8cm of turns] (tasks) {\textbf{tasks}\\assignee\\due date\\source turns};
+  \node[entity, below=0.8cm of meeting] (feedback) {\textbf{feedback}\\original\\corrected};
+  \node[entity, left=0.9cm of meeting] (participants) {\textbf{participants}\\speaker\\display name};
+  \node[entity, below=0.8cm of participants] (workers) {\textbf{workers}\\worker\_id\\name, email\\aliases, skills};
+  \node[entity, right=0.9cm of tasks] (artifacts) {\textbf{meeting\_artifacts}\\artifact\_type\\payload\\checksum};
+  \node[entity, below=0.8cm of tasks] (calendar) {\textbf{calendar\_events}\\task\_id\\provider event\\sync status};
+
+  \draw[arrow] (meeting) -- (turns);
+  \draw[arrow] (meeting) -- (tasks);
+  \draw[arrow] (meeting) -- (feedback);
+  \draw[arrow] (meeting) -- (participants);
+  \draw[arrow] (workers) -- (participants);
+  \draw[arrow] (tasks) -- (calendar);
+  \draw[arrow] (meeting) -- (artifacts);
+  \draw[arrow, dashed] (tasks) -- node[above,font=\scriptsize]{source\_turn\_ids} (turns);
+\end{tikzpicture}
+}
+\caption{Mô hình dữ liệu chính của Meeting AI Agent}
+\label{fig:data-model}
+\end{figure}
+
+\small
+\begin{tabularx}{\textwidth}{p{3.0cm}X X}
+\toprule
+\textbf{Bảng} & \textbf{Vai trò} & \textbf{Trường đáng chú ý} \\
+\midrule
+\texttt{meetings} & Bản ghi gốc của một lần upload và xử lý audio. & \texttt{status}, \texttt{duration\_ms}, \texttt{summary\_text}, \texttt{run\_metrics}, \texttt{model\_version}. \\
+\texttt{transcript\_turns} & Transcript đã chuẩn hoá theo lượt nói, dùng cho UI, prompt và training export. & \texttt{turn\_id}, \texttt{speaker\_id}, \texttt{speaker\_name}, \texttt{start\_ms}, \texttt{end\_ms}, \texttt{asr\_confidence}. \\
+\texttt{tasks} & Action items sau khi qua LLM, guardrails và assignment. & \texttt{description}, \texttt{assignee\_id}, \texttt{due\_date}, \texttt{priority}, \texttt{status}, \texttt{bucket}, \texttt{source\_turn\_ids}. \\
+\texttt{feedback\_corrections} & Hiệu chỉnh của người dùng, là dữ liệu chính cho vòng LLMOps. & Cặp trường gốc/sửa như description, assignee, due date; kèm cờ false positive và missing. \\
+\texttt{meeting\_participants} & Mapping giữa speaker diarization và participant trong meeting. & \texttt{speaker\_id}, \texttt{display\_name}, \texttt{worker\_id}. \\
+\texttt{workers} & Roster người tham gia/người có thể được gán task. & \texttt{worker\_id}, \texttt{name}, \texttt{aliases}, \texttt{skills}. \\
+\texttt{meeting\_artifacts} & Lưu artifact thô hoặc dẫn xuất để audit. & \texttt{artifact\_type}, \texttt{payload}, \texttt{checksum}, \texttt{artifact\_metadata}. \\
+\texttt{calendar\_events} & Theo dõi việc đồng bộ action item sang calendar provider. & \texttt{provider}, \texttt{provider\_event\_id}, \texttt{status}, \texttt{last\_error}. \\
+\bottomrule
+\end{tabularx}
+\normalsize
+
+Điểm quan trọng trong mô hình này là \texttt{tasks.source\_turn\_ids}. Thay vì chỉ lưu mô tả task, mỗi action item giữ danh sách turn nguồn. Nhờ đó UI có thể hiển thị bằng chứng, feedback có thể chỉ ra task nào sai, và evaluation/training export có thể gắn correction với ngữ cảnh hội thoại ban đầu.
 
 \section{Human feedback UI}
 
@@ -42,9 +129,36 @@ Bước Human Feedback đã được điều chỉnh theo đúng bản chất mu
   \item Layout review responsive hơn, không bị co lại thành một cụm nhỏ ở giữa màn hình.
 \end{itemize}
 
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  box/.style={draw=primary, fill=light, rounded corners=3pt, minimum width=2.6cm, minimum height=0.8cm, align=center, font=\scriptsize},
+  store/.style={draw=accent, fill=stagecolor2, rounded corners=3pt, minimum width=2.6cm, minimum height=0.8cm, align=center, font=\scriptsize},
+  arrow/.style={-Latex, thick}
+]
+  \node[store] (turns) {Transcript turns};
+  \node[box, right=0.8cm of turns] (speaker) {Speaker mapping};
+  \node[box, right=0.8cm of speaker] (task) {Task review};
+  \node[store, below=0.9cm of task] (correction) {Feedback correction};
+  \node[store, left=0.8cm of correction] (eval) {Evaluation/export};
+  \node[box, left=0.8cm of eval] (improve) {Prompt/model\\improvement};
+
+  \draw[arrow] (turns) -- (speaker);
+  \draw[arrow] (speaker) -- (task);
+  \draw[arrow] (task) -- (correction);
+  \draw[arrow] (correction) -- (eval);
+  \draw[arrow] (eval) -- (improve);
+  \draw[arrow, dashed] (improve) -- ++(-0.5,0) |- (turns);
+\end{tikzpicture}
+}
+\caption{Luồng human feedback từ transcript evidence đến dữ liệu cải tiến}
+\label{fig:human-feedback-loop}
+\end{figure}
+
 \section{MLOps services}
 
-Profile \texttt{mlops} trong Docker Compose bổ sung:
+Profile \texttt{mlops} trong Docker Compose bổ sung các thành phần dành cho đánh giá và huấn luyện mở rộng:
 
 \begin{itemize}[leftmargin=*]
   \item \texttt{beat}: Celery Beat schedule cho retrain check và drift check.
@@ -53,7 +167,7 @@ Profile \texttt{mlops} trong Docker Compose bổ sung:
   \item \texttt{Dockerfile.train}: image tách riêng dependency GPU/training khỏi runtime API.
 \end{itemize}
 
-Các lệnh vận hành chính:
+Các lệnh chính khi cần chạy nhánh MLOps:
 
 \begin{lstlisting}[language=bash,caption={Lệnh vận hành MLOps}]
 make mlops-up
@@ -65,7 +179,8 @@ make deploy-promoted-model APPLY=1
 
 \section{API chính}
 
-\begin{longtable}{lll}
+\small
+\begin{tabularx}{\textwidth}{p{4.0cm}X p{3.3cm}}
 \toprule
 \textbf{Endpoint} & \textbf{Mục đích} & \textbf{Ghi chú} \\
 \midrule
@@ -74,7 +189,8 @@ make deploy-promoted-model APPLY=1
 \texttt{GET /meetings/\{id\}/transcript} & Lấy transcript turns & Dùng cho review \\
 \texttt{POST /meetings/\{id\}/feedback} & Gửi correction & Lưu DB \\
 \texttt{POST /admin/retrain} & Trigger retrain & Đưa vào queue \texttt{mlops} \\
-\texttt{POST /admin/deploy-promoted-model} & Deploy model promoted & Cần thao tác có chủ đích \\
+\texttt{POST /admin/deploy-promoted-model} & Chuyển sang model promoted & Cần thao tác có chủ đích \\
 \texttt{GET /metrics} & Prometheus metrics & Monitoring \\
 \bottomrule
-\end{longtable}
+\end{tabularx}
+\normalsize

@@ -3,9 +3,9 @@
 
 \section{Bộ dữ liệu đánh giá}
 
-Đánh giá hiện tại dùng \texttt{data/eval/gold\_smoke.jsonl}, gồm 5 mẫu meeting được annotate thủ công với tổng cộng 13 action items. Đây là bộ smoke test nhỏ để kiểm tra regression và schema, không phải benchmark lớn đại diện cho mọi loại cuộc họp.
+Đánh giá hiện tại dùng \texttt{data/eval/gold\_smoke.jsonl}, gồm 5 mẫu meeting được annotate thủ công với tổng cộng 13 action items. Bộ dữ liệu này được dùng như một smoke test có nhãn để kiểm tra regression, schema và chất lượng trích xuất ở mức baseline. Do kích thước còn nhỏ, kết quả chưa được diễn giải như một benchmark đại diện cho mọi loại cuộc họp.
 
-Model được đánh giá là Qwen2.5-3B base chạy qua Ollama, chưa fine-tune. Vì vậy kết quả bên dưới là baseline trước khi áp dụng dữ liệu feedback thật.
+Model được đánh giá là Qwen2.5-3B base chạy qua Ollama, chưa fine-tune. Vì vậy kết quả bên dưới là baseline trước khi sử dụng dữ liệu feedback thật để cải thiện mô hình hoặc prompt.
 
 \section{Kết quả định lượng}
 
@@ -27,6 +27,7 @@ Schema failure rate & 0.0\% & $\leq$ 5.0\% \\
 \begin{table}[H]
 \centering
 \caption{Kết quả theo từng sample}
+\small
 \begin{tabular}{ccccc}
 \toprule
 \textbf{Sample} & \textbf{Gold} & \textbf{Precision} & \textbf{Recall} & \textbf{F1} \\
@@ -38,13 +39,48 @@ Schema failure rate & 0.0\% & $\leq$ 5.0\% \\
 4 & 3 & 1.00 & 0.67 & 0.80 \\
 \bottomrule
 \end{tabular}
+\normalsize
 \end{table}
 
 Kết quả cho thấy schema đã ổn định, nhưng recall còn thấp so với mục tiêu. Điều này phù hợp với trạng thái hiện tại: hệ thống đã có pipeline và đo lường, còn chất lượng model cần cải thiện bằng dữ liệu feedback/fine-tuning.
 
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  ybar,
+  bar width=18pt,
+  width=0.9\textwidth,
+  height=5.2cm,
+  ymin=0,
+  ymax=1.05,
+  ylabel={Score},
+  symbolic x coords={Precision,Recall,F1},
+  xtick=data,
+  nodes near coords,
+  nodes near coords align={vertical},
+  every node near coord/.append style={font=\small},
+  ymajorgrids=true,
+  grid style={lightgray}
+]
+\addplot+[fill=primary] coordinates {(Precision,0.767) (Recall,0.700) (F1,0.727)};
+\end{axis}
+\end{tikzpicture}
+\caption{Kết quả baseline của Qwen2.5-3B trên smoke test có nhãn}
+\label{fig:baseline-metrics}
+\end{figure}
+
+\section{Cách tính metric}
+
+Evaluation harness đo chất lượng extraction ở mức action item. Mỗi sample gồm transcript turns, roster và danh sách action items gold. Hệ thống chạy lại hàm extraction, chuyển kết quả Pydantic sang JSON, sau đó so sánh từng predicted task với gold task.
+
+Matching mô tả task dùng BM25 trên trường \texttt{description}; nếu điểm BM25 không vượt ngưỡng, code fallback sang Jaccard overlap để tránh bỏ sót các câu ngắn có từ vựng trùng rõ ràng. Với mỗi predicted task, nếu match với một gold task chưa được dùng, hệ thống tính là true positive; predicted task không match là false positive; gold task không được match là false negative. Precision, recall và F1 được tính từ các giá trị này. Assignee accuracy chỉ được tính trên các true positive có cả assignee dự đoán và assignee gold.
+
+Schema failure rate đo số sample mà pipeline không trả được output hợp lệ, ví dụ lỗi parse JSON hoặc lỗi guardrail nghiêm trọng làm extraction thất bại. Hallucination trong evaluation được ước lượng bằng overlap giữa từ nội dung trong task description và transcript; nếu overlap thấp hơn ngưỡng, predicted task bị xem là không có bằng chứng đủ mạnh trong transcript. Các metric này chưa thay thế đánh giá thủ công, nhưng đủ để phát hiện regression khi thay prompt, model hoặc dữ liệu training.
+
 \section{Kiểm thử vận hành}
 
-Các kiểm tra đã được dùng trong quá trình hoàn thiện:
+Các kiểm tra đã được dùng để xác nhận hành vi hệ thống:
 
 \begin{itemize}[leftmargin=*]
   \item Ruff check cho mã Python.
@@ -56,6 +92,6 @@ Các kiểm tra đã được dùng trong quá trình hoàn thiện:
 
 \section{Đánh giá định tính}
 
-UI Human Feedback sau chỉnh sửa giúp người dùng hiểu multi-speaker hơn: transcript và speaker evidence được đặt cạnh speaker mapping, task evidence hiển thị đoạn hội thoại nguồn. Điều này giảm rủi ro gán nhầm người phụ trách khi audio có nhiều speaker.
+UI Human Feedback sau chỉnh sửa giúp người dùng hiểu ngữ cảnh multi-speaker rõ hơn: transcript và speaker evidence được đặt cạnh speaker mapping, task evidence hiển thị đoạn hội thoại nguồn. Điều này giảm rủi ro gán nhầm người phụ trách khi audio có nhiều speaker.
 
-Grafana/Prometheus đã phản ánh tốt hơn trạng thái worker, meeting pipeline và số liệu MLOps. Một số panel vẫn mang tính vận hành cơ bản; nếu dùng production cần mở rộng thêm latency percentile, queue age, GPU utilization, error budget và alert rules.
+Grafana/Prometheus phản ánh trạng thái worker, meeting pipeline và số liệu feedback. Các panel hiện tại đủ để quan sát pipeline trong phạm vi dự án; những chỉ số vận hành nâng cao như latency percentile, queue age hoặc GPU utilization có thể bổ sung khi mở rộng tải hoặc bổ sung GPU training.

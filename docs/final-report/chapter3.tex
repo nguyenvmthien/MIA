@@ -3,28 +3,75 @@
 
 \section{Pipeline xử lý}
 
-Pipeline hiện tại có dạng:
+Pipeline xử lý được thiết kế theo dạng nhiều bước, trong đó mỗi bước tạo ra một artifact hoặc bản ghi có thể kiểm tra lại. Hình~\ref{fig:processing-pipeline} mô tả luồng xử lý chính từ lúc người dùng upload audio đến khi hệ thống tạo action items và ghi nhận feedback.
 
-\begin{lstlisting}[language=bash,caption={Luồng xử lý chính}]
-Audio upload
-  -> ingest + validation
-  -> preprocess to 16 kHz mono WAV
-  -> WhisperX ASR
-  -> WhisperX/Pyannote diarization
-  -> transcript_turns in PostgreSQL
-  -> LLM extraction with guardrails
-  -> roster-based assignment
-  -> human review + feedback
-  -> calendar sync and MLOps export
-\end{lstlisting}
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  node distance=0.45cm,
+  step/.style={draw=primary, fill=light, rounded corners=3pt, text width=5.8cm, minimum height=0.62cm, align=center, font=\scriptsize},
+  datastore/.style={draw=accent, fill=stagecolor2, rounded corners=3pt, text width=5.8cm, minimum height=0.62cm, align=center, font=\scriptsize},
+  arrow/.style={-Latex, thick, color=darkgray}
+]
+  \node[step] (upload) {Upload audio};
+  \node[step, below=of upload] (pre) {Ingest và preprocess 16 kHz};
+  \node[step, below=of pre] (asr) {WhisperX ASR và diarization};
+  \node[datastore, below=of asr] (turns) {Lưu transcript turns};
+  \node[step, below=of turns] (llm) {LLM extraction và assignment};
+  \node[datastore, below=of llm] (tasks) {Lưu tasks kèm evidence};
+  \node[step, below=of tasks] (review) {Human review};
+  \node[datastore, below=of review] (feedback) {Corrections cho evaluation/training};
 
-Backend lưu trạng thái cuộc họp và kết quả trung gian vào PostgreSQL. Điều này quan trọng vì worker có thể restart mà không mất toàn bộ tiến độ, frontend có thể resume job, và dữ liệu feedback có thể được xuất lại cho training.
+  \draw[arrow] (pre) -- (asr);
+  \draw[arrow] (upload) -- (pre);
+  \draw[arrow] (asr) -- (turns);
+  \draw[arrow] (turns) -- (llm);
+  \draw[arrow] (llm) -- (tasks);
+  \draw[arrow] (tasks) -- (review);
+  \draw[arrow] (review) -- (feedback);
+\end{tikzpicture}
+\caption{Pipeline xử lý audio cuộc họp và vòng phản hồi của người dùng}
+\label{fig:processing-pipeline}
+\end{figure}
+
+Backend lưu trạng thái cuộc họp và kết quả trung gian vào PostgreSQL. Thiết kế này giúp worker có thể restart mà không mất toàn bộ tiến độ, frontend có thể resume job, và dữ liệu feedback có thể được xuất lại cho đánh giá hoặc huấn luyện.
 
 \section{ASR và diarization}
 
-Module \texttt{src/meeting\_agent/pipeline/stt.py} chịu trách nhiệm gọi WhisperX và diarization. Kết quả diarization được lưu dạng raw artifact và được dùng để gán speaker cho từng segment/turn. Hệ thống truyền waveform trực tiếp cho diarization để tránh phụ thuộc vào decode nội bộ khi thư viện audio runtime thiếu \texttt{torchcodec} đầy đủ.
+Module STT chịu trách nhiệm gọi WhisperX và diarization. Kết quả diarization được lưu dạng raw artifact và được dùng để gán speaker cho từng segment/turn. Hệ thống truyền waveform trực tiếp cho diarization để tránh phụ thuộc vào decode nội bộ khi thư viện audio runtime thiếu \texttt{torchcodec} đầy đủ.
 
 Trên UI, speaker ban đầu vẫn là nhãn kỹ thuật như \texttt{SPEAKER\_00}. Người dùng xem transcript evidence và gán speaker này cho participant phù hợp. Thiết kế này đúng với bản chất audio một cuộc họp có thể có nhiều speaker, không ép toàn bộ audio về một người nói duy nhất.
+
+Luồng WhisperX trong hệ thống gồm bốn bước tách biệt. Thứ nhất, audio đã được preprocess về WAV mono 16 kHz và được nạp vào pipeline. Thứ hai, model WhisperX chạy ASR để tạo các segment văn bản kèm timestamp thô. Thứ ba, alignment model căn chỉnh lại timestamp ở mức word-level, giúp hệ thống có căn cứ thời gian tốt hơn khi chia transcript theo lượt nói. Thứ tư, nếu bật diarization, Pyannote tạo các đoạn speaker; sau đó WhisperX gán speaker vào từng word/segment. Khi segment không có speaker trực tiếp, code lấy speaker xuất hiện nhiều nhất trong danh sách word làm fallback; nếu vẫn không có thì dùng \texttt{SPEAKER\_UNKNOWN}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  node distance=0.45cm,
+  step/.style={draw=primary, fill=light, rounded corners=3pt, text width=5.8cm, minimum height=0.62cm, align=center, font=\scriptsize},
+  artifact/.style={draw=accent, fill=stagecolor2, rounded corners=3pt, text width=5.8cm, minimum height=0.62cm, align=center, font=\scriptsize},
+  arrow/.style={-Latex, thick, color=darkgray}
+]
+  \node[step] (wav) {16 kHz mono WAV};
+  \node[step, below=of wav] (asr) {WhisperX transcribe};
+  \node[step, below=of asr] (align) {Word-level alignment};
+  \node[step, below=of align] (dia) {Pyannote diarization};
+  \node[step, below=of dia] (assign) {Assign word speakers};
+  \node[artifact, below=of assign] (turns) {TranscriptTurn: speaker, time, text};
+  \node[artifact, below=of turns] (raw) {Raw ASR/diarization artifacts};
+
+  \draw[arrow] (wav) -- (asr);
+  \draw[arrow] (asr) -- (align);
+  \draw[arrow] (align) -- (dia);
+  \draw[arrow] (dia) -- (assign);
+  \draw[arrow] (assign) -- (turns);
+  \draw[arrow] (turns) -- (raw);
+\end{tikzpicture}
+\caption{Luồng xử lý WhisperX và Pyannote để tạo transcript theo lượt nói}
+\label{fig:whisperx-flow}
+\end{figure}
+
+Đầu ra chuẩn hoá của bước này là danh sách \texttt{TranscriptTurn}, gồm \texttt{turn\_id}, \texttt{speaker\_id}, \texttt{start\_ms}, \texttt{end\_ms}, \texttt{text} và \texttt{asr\_confidence}. Đây là đơn vị dữ liệu trung tâm cho các bước sau: prompt LLM được dựng từ danh sách turn, action item lưu \texttt{source\_turn\_ids}, UI hiển thị evidence theo turn, và feedback có thể truy ngược về đoạn hội thoại nguồn.
 
 \section{Trích xuất action items}
 
@@ -32,25 +79,81 @@ LLM được gọi qua Ollama với model cấu hình mặc định Qwen2.5-3B. 
 
 Các task lưu trong database có thể kèm \texttt{source\_turn\_ids}. UI dùng các turn này để hiển thị bằng chứng cho người review, giúp việc sửa assignee hoặc mô tả task không chỉ dựa vào cảm tính.
 
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  node distance=0.45cm,
+  box/.style={draw=primary, fill=light, rounded corners=3pt, text width=5.8cm, minimum height=0.62cm, align=center, font=\scriptsize},
+  check/.style={draw=secondary, fill=stagecolor3, rounded corners=3pt, text width=5.8cm, minimum height=0.62cm, align=center, font=\scriptsize},
+  store/.style={draw=accent, fill=stagecolor2, rounded corners=3pt, text width=5.8cm, minimum height=0.62cm, align=center, font=\scriptsize},
+  arrow/.style={-Latex, thick}
+]
+  \node[box] (context) {Transcript turns + roster};
+  \node[box, below=of context] (prompt) {Prompt với schema instruction};
+  \node[box, below=of prompt] (model) {Qwen2.5-3B qua Ollama};
+  \node[check, below=of model] (guard) {JSON parse + Pydantic guardrails};
+  \node[check, below=of guard] (norm) {Assignee normalization};
+  \node[store, below=of norm] (db) {Tasks + source turn ids};
+
+  \draw[arrow] (context) -- (prompt);
+  \draw[arrow] (prompt) -- (model);
+  \draw[arrow] (model) -- (guard);
+  \draw[arrow] (guard) -- (norm);
+  \draw[arrow] (norm) -- (db);
+\end{tikzpicture}
+\caption{Luồng trích xuất action items có kiểm tra schema và chuẩn hoá assignee}
+\label{fig:action-extraction}
+\end{figure}
+
 \section{Dữ liệu và feedback}
 
 Nguồn dữ liệu hiện tại gồm:
 
 \begin{itemize}[leftmargin=*]
-  \item \texttt{data/eval/gold\_smoke.jsonl}: bộ đánh giá nhỏ gồm 5 mẫu meeting và 13 action items.
-  \item \texttt{data/training/synthetic.jsonl}: dữ liệu synthetic dùng làm bootstrap.
-  \item \texttt{data/training/collected.jsonl}: dữ liệu export/thu thập cho training.
-  \item \texttt{data/training/feedback\_corrections.jsonl}: artifact JSONL được export từ bảng feedback trong database.
+  \item Gold smoke set: bộ đánh giá nhỏ gồm 5 mẫu meeting và 13 action items.
+  \item Synthetic training set: dữ liệu synthetic dùng làm bootstrap.
+  \item Collected training set: dữ liệu export/thu thập cho training.
+  \item File feedback corrections JSONL: artifact được export từ bảng feedback trong database.
 \end{itemize}
 
 Database là nguồn dữ liệu chính cho feedback. JSONL không phải nơi hệ thống ghi trực tiếp mỗi lần người dùng sửa, mà là artifact training được export để dùng với HuggingFace/TRL/Unsloth.
 
-\section{Fine-tuning và promotion}
+\section{LLMOps: dữ liệu, đánh giá và promotion}
 
-Luồng MLOps fine-tuning nằm trong \texttt{src/meeting\_agent/mlops}. Khi số correction mới đạt ngưỡng \texttt{RETRAIN\_MIN\_CORRECTIONS} (hiện cấu hình 50), Celery Beat có thể trigger task kiểm tra retrain. Worker train chạy trên queue riêng \texttt{mlops}, tách khỏi worker xử lý meeting bình thường.
+Luồng LLMOps của dự án không chỉ là một câu lệnh fine-tune. Nó gồm các bước có đầu vào và đầu ra rõ ràng: thu thập correction từ người dùng, export correction thành JSONL huấn luyện, kiểm tra contract dữ liệu, chạy đánh giá trên gold set, ghi kết quả/promotion manifest và chỉ chuyển model serving khi kết quả được chấp nhận.
 
-Fine-tuning dùng QLoRA/LoRA~\cite{dettmers2023qlora,hu2021lora} qua dependency nhóm \texttt{train}. Dockerfile train và Docker Compose profile \texttt{mlops} đã được chuẩn bị để khi có GPU có thể chạy. Sau khi có model candidate, hệ thống evaluate, ghi promotion manifest và chỉ deploy sang Ollama khi operator chạy lệnh deploy có chủ đích. Đây là lựa chọn an toàn: promotion được audit, còn serving switch không tự động âm thầm thay model.
+Khi số correction mới đạt ngưỡng retrain (hiện cấu hình 50), Celery Beat hoặc REST API có thể trigger retrain check. Hàm retrain không tự tạo dữ liệu giả nếu DB không export được feedback; thay vào đó nó dừng với lý do rõ ràng. Dữ liệu training được kiểm tra bằng module validate trước khi chạy training. Fine-tuning dùng QLoRA/LoRA~\cite{dettmers2023qlora,hu2021lora} qua dependency nhóm train; worker train chạy trên queue riêng, tách khỏi worker xử lý meeting bình thường.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  node distance=0.45cm,
+  step/.style={draw=primary, fill=light, rounded corners=3pt, text width=5.8cm, minimum height=0.62cm, align=center, font=\scriptsize},
+  datastore/.style={draw=accent, fill=stagecolor2, rounded corners=3pt, text width=5.8cm, minimum height=0.62cm, align=center, font=\scriptsize},
+  gate/.style={draw=secondary, fill=stagecolor3, rounded corners=3pt, text width=5.8cm, minimum height=0.62cm, align=center, font=\scriptsize},
+  arrow/.style={-Latex, thick, color=darkgray}
+]
+  \node[datastore] (fb) {Feedback corrections};
+  \node[step, below=of fb] (export) {Export SFT JSONL};
+  \node[gate, below=of export] (validate) {Data contract validation};
+  \node[step, below=of validate] (train) {QLoRA/LoRA training};
+  \node[gate, below=of train] (eval) {Gold-set evaluation};
+  \node[datastore, below=of eval] (manifest) {Promotion manifest};
+  \node[step, below=of manifest] (serve) {Manual serving switch};
+
+  \draw[arrow] (fb) -- (export);
+  \draw[arrow] (export) -- (validate);
+  \draw[arrow] (validate) -- (train);
+  \draw[arrow] (train) -- (eval);
+  \draw[arrow] (eval) -- (manifest);
+  \draw[arrow] (manifest) -- (serve);
+\end{tikzpicture}
+\caption{Vòng LLMOps từ feedback đến đánh giá và promotion model}
+\label{fig:llmops-loop}
+\end{figure}
+
+Sau khi có model candidate, hệ thống chạy evaluation và ghi promotion manifest gồm model tag, output directory, checksum artifact, MLflow metadata nếu có, eval result và thông tin rollback. Việc chuyển model serving được giữ ở dạng thao tác có chủ đích để kết quả đánh giá luôn được kiểm tra trước khi thay đổi mô hình đang phục vụ.
 
 \section{Observability}
 
-Prometheus thu metrics từ API/worker, Grafana hiển thị trạng thái pipeline, task, worker, feedback, drift và MLOps. Các số liệu quan trọng được tính từ database khi cần để tránh mất trạng thái sau restart. Dashboard hiện phục vụ mục tiêu vận hành dự án và demo LLMOps, chưa phải bộ dashboard SRE đầy đủ cho production nhiều tenant.
+Prometheus thu metrics từ API/worker, Grafana hiển thị trạng thái pipeline, task, worker, feedback, drift và MLOps. Các số liệu quan trọng được tính từ database khi cần để tránh mất trạng thái sau restart. Dashboard hiện phục vụ mục tiêu quan sát hệ thống trong phạm vi dự án; các chỉ số SRE chuyên sâu có thể được bổ sung khi tải xử lý và yêu cầu vận hành tăng lên.
