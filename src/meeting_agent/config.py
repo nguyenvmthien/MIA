@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     max_audio_duration_hours: int = 4
     llm_max_retries: int = 3
     task_confidence_threshold: float = 0.6
-    pending_meeting_timeout_minutes: int = 10
+    pending_meeting_timeout_minutes: int = 60
 
 
 settings = Settings()

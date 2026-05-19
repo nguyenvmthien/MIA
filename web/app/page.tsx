@@ -8,9 +8,11 @@ import {
   Sparkles, ArrowRight, UserPlus, X, History, UserCheck,
   MessageSquareText, Clock3,
 } from "lucide-react"
+import { errorMessage, fetchJson, fetchWithTimeout } from "./lib/http"
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 const ACTIVE_MEETING_KEY = "mia.activeMeetingId"
+const ACTIVE_MEETING_TTL_MS = 2 * 60 * 60 * 1000
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -36,6 +38,92 @@ type MeetingResult = {
 }
 
 type Step = "upload" | "processing" | "review" | "done"
+
+type WorkersResponse = { workers?: Worker[] }
+
+function saveActiveMeetingId(meetingId: string) {
+  localStorage.setItem(ACTIVE_MEETING_KEY, JSON.stringify({ meetingId, savedAt: Date.now() }))
+}
+
+function readActiveMeetingId() {
+  const raw = localStorage.getItem(ACTIVE_MEETING_KEY)
+  if (!raw) return null
+
+  try {
+    const parsed = JSON.parse(raw) as { meetingId?: unknown; savedAt?: unknown }
+    if (typeof parsed.meetingId !== "string" || typeof parsed.savedAt !== "number") {
+      localStorage.removeItem(ACTIVE_MEETING_KEY)
+      return null
+    }
+    if (Date.now() - parsed.savedAt > ACTIVE_MEETING_TTL_MS) {
+      localStorage.removeItem(ACTIVE_MEETING_KEY)
+      return null
+    }
+    return parsed.meetingId
+  } catch {
+    localStorage.removeItem(ACTIVE_MEETING_KEY)
+    return null
+  }
+}
+
+function FullPageSpinner({ label = "Loading..." }: { label?: string }) {
+  const [slow, setSlow] = useState(false)
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSlow(true), 8_000)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-4 text-center">
+      <Loader2 size={28} className="animate-spin text-sky-500" />
+      <p className="text-sm text-slate-600">{label}</p>
+      {slow && (
+        <div className="max-w-sm rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-800">
+          This is taking longer than expected. Refresh the page, or check that the Next.js auth route is responding.
+        </div>
+      )}
+    </div>
+  )
+}
+
+function UserBadge({
+  image,
+  name,
+  email,
+}: {
+  image?: string | null
+  name?: string | null
+  email?: string | null
+}) {
+  const [imageFailed, setImageFailed] = useState(false)
+  const label = name || email || "User"
+  const initial = label.trim().charAt(0).toUpperCase() || "U"
+
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      {image && !imageFailed ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={image}
+          alt=""
+          referrerPolicy="no-referrer"
+          onError={() => setImageFailed(true)}
+          className="h-7 w-7 flex-shrink-0 rounded-full bg-slate-100 object-cover ring-2 ring-slate-200"
+        />
+      ) : (
+        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-sky-50 text-xs font-semibold text-sky-700 ring-2 ring-slate-200">
+          {initial}
+        </div>
+      )}
+      {email && (
+        <span className="hidden max-w-[220px] truncate text-xs text-slate-500 lg:block">
+          {email}
+        </span>
+      )}
+    </div>
+  )
+}
 
 // ── Step indicator ─────────────────────────────────────────────────────────────
 
@@ -93,7 +181,7 @@ function UploadStep({ onSubmit }: { onSubmit: (file: File, roster: Worker[]) => 
   const rosterRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    fetch(`${API}/workers`).then(r => r.json()).then(d => setWorkers(d.workers ?? [])).catch(() => null)
+    fetchJson<WorkersResponse>(`${API}/workers`).then(d => setWorkers(d.workers ?? [])).catch(() => null)
   }, [])
 
   useEffect(() => {
@@ -120,13 +208,16 @@ function UploadStep({ onSubmit }: { onSubmit: (file: File, roster: Worker[]) => 
   const addWorker = async () => {
     if (!newName.trim()) return
     const payload = { worker_id: "", name: newName.trim(), role: newRole || null, email: newEmail || null, aliases: [], skills: [] }
-    const r = await fetch(`${API}/workers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
-    if (r.ok) {
-      const w = await r.json()
+    try {
+      const w = await fetchJson<Worker>(`${API}/workers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
       setWorkers(prev => [...prev, w])
       setSelected(prev => [...prev, w.worker_id])
       setNewName(""); setNewRole(""); setNewEmail(""); setAddOpen(false)
-    }
+    } catch { /* non-fatal inline add */ }
   }
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -401,25 +492,53 @@ function UploadStep({ onSubmit }: { onSubmit: (file: File, roster: Worker[]) => 
 
 // ── Processing step ────────────────────────────────────────────────────────────
 
-function ProcessingStep({ meetingId, onDone }: { meetingId: string; onDone: (r: MeetingResult) => void }) {
+function ProcessingStep({
+  meetingId,
+  onDone,
+  onCancel,
+}: {
+  meetingId: string
+  onDone: (r: MeetingResult) => void
+  onCancel: () => void
+}) {
   const [status, setStatus] = useState("pending")
   const [error, setError] = useState("")
 
   useEffect(() => {
-    const interval = setInterval(async () => {
+    let cancelled = false
+    let finished = false
+
+    const poll = async () => {
+      if (finished) return
       try {
-        const r = await fetch(`${API}/meetings/${meetingId}`)
-        const data = await r.json()
+        const data = await fetchJson<MeetingResult & { error?: string }>(`${API}/meetings/${meetingId}`)
+        if (cancelled) return
         const s = data.status ?? data.job_status ?? "pending"
         setStatus(s)
-        if (s === "completed") { clearInterval(interval); onDone(data) }
-        if (s === "failed") { clearInterval(interval); setError(data.error ?? "Unknown error") }
-      } catch {
-        setError("Cannot reach backend")
-        clearInterval(interval)
+        if (s === "completed") {
+          finished = true
+          onDone(data)
+        }
+        if (s === "failed") {
+          finished = true
+          setError(data.error ?? "Meeting processing failed")
+        }
+      } catch (error) {
+        if (!cancelled) {
+          finished = true
+          setError(errorMessage(error, "Cannot reach backend"))
+        }
       }
+    }
+
+    void poll()
+    const interval = window.setInterval(() => {
+      void poll()
     }, 3000)
-    return () => clearInterval(interval)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
   }, [meetingId, onDone])
 
   const stages = [
@@ -472,6 +591,13 @@ function ProcessingStep({ meetingId, onDone }: { meetingId: string; onDone: (r: 
           </div>
 
           <p className="text-xs text-slate-500 font-mono">{meetingId}</p>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 transition-colors hover:border-sky-300 hover:bg-sky-50 hover:text-slate-900"
+          >
+            Start another upload
+          </button>
         </>
       )}
     </div>
@@ -509,7 +635,7 @@ function InlineSpeakerResolver({
     if (!worker) return
     setSaving(speakerId)
     try {
-      await fetch(`${API}/meetings/${meetingId}/participants/${encodeURIComponent(speakerId)}/resolve`, {
+      await fetchWithTimeout(`${API}/meetings/${meetingId}/participants/${encodeURIComponent(speakerId)}/resolve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ worker_id: workerId, display_name: worker.name }),
@@ -750,13 +876,12 @@ function ReviewStep({
   const [participants, setParticipants] = useState<ParticipantDetail[]>(result.participants_detail ?? [])
 
   useEffect(() => {
-    fetch(`${API}/workers`).then(r => r.json()).then(d => setWorkers(d.workers ?? [])).catch(() => null)
+    fetchJson<WorkersResponse>(`${API}/workers`).then(d => setWorkers(d.workers ?? [])).catch(() => null)
   }, [])
 
   const refreshParticipants = async () => {
     try {
-      const r = await fetch(`${API}/meetings/${result.meeting_id}`)
-      const data = await r.json()
+      const data = await fetchJson<MeetingResult>(`${API}/meetings/${result.meeting_id}`)
       setParticipants(data.participants_detail ?? [])
       // Sync updated assignees from backend; auto-select tasks that just got resolved
       if (data.action_items || data.human_review_items || data.unresolved_items) {
@@ -1038,18 +1163,17 @@ export default function Home() {
     setMeetingId(trimmed)
 
     try {
-      const r = await fetch(`${API}/meetings/${trimmed}`)
-      const data = await r.json()
+      const data = await fetchJson<MeetingResult & { error?: string; detail?: string }>(`${API}/meetings/${trimmed}`)
       const nextStatus = data.status ?? data.job_status ?? "pending"
 
-      if (!r.ok || nextStatus === "failed") {
+      if (nextStatus === "failed") {
         localStorage.removeItem(ACTIVE_MEETING_KEY)
         setStep("upload")
         setSubmitError(data.error ?? data.detail ?? "Meeting processing failed")
         return
       }
 
-      if (persist) localStorage.setItem(ACTIVE_MEETING_KEY, trimmed)
+      if (persist) saveActiveMeetingId(trimmed)
 
       if (nextStatus === "completed") {
         setResult(data)
@@ -1058,9 +1182,9 @@ export default function Home() {
         setResult(null)
         setStep("processing")
       }
-    } catch {
+    } catch (error) {
       setStep("upload")
-      setSubmitError("Cannot resume meeting because the backend is unreachable")
+      setSubmitError(errorMessage(error, "Cannot resume meeting because the backend is unreachable"))
     } finally {
       setResumeLoading(false)
     }
@@ -1070,7 +1194,7 @@ export default function Home() {
     if (status !== "authenticated") return
     const params = new URLSearchParams(window.location.search)
     const idFromUrl = params.get("meeting_id")
-    const idFromStorage = localStorage.getItem(ACTIVE_MEETING_KEY)
+    const idFromStorage = readActiveMeetingId()
     const idToResume = idFromUrl || idFromStorage
     if (idToResume) {
       const timer = window.setTimeout(() => {
@@ -1086,14 +1210,12 @@ export default function Home() {
     form.append("audio", file)
     form.append("roster_json", JSON.stringify({ workers: roster }))
     try {
-      const r = await fetch(`${API}/meetings`, { method: "POST", body: form })
-      if (!r.ok) throw new Error(await r.text())
-      const data = await r.json()
+      const data = await fetchJson<{ meeting_id: string }>(`${API}/meetings`, { method: "POST", body: form }, 60_000)
       setMeetingId(data.meeting_id)
-      localStorage.setItem(ACTIVE_MEETING_KEY, data.meeting_id)
+      saveActiveMeetingId(data.meeting_id)
       setStep("processing")
     } catch (e: unknown) {
-      setSubmitError(e instanceof Error ? e.message : "Submission failed")
+      setSubmitError(errorMessage(e, "Submission failed"))
     }
   }
 
@@ -1134,7 +1256,7 @@ export default function Home() {
 
     // Fire-and-forget — feedback is best-effort and must not block the UX
     if (corrections.length > 0) {
-      fetch(`${API}/meetings/${meetingId}/feedback`, {
+      fetchWithTimeout(`${API}/meetings/${meetingId}/feedback`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ corrections, reviewer: session?.user?.email ?? null }),
@@ -1145,12 +1267,11 @@ export default function Home() {
     const selectedTasks = allTasks.filter(t => t.selected)
     if (selectedTasks.length > 0 && session?.user?.email) {
       try {
-        const r = await fetch("/api/calendar-sync", {
+        const data = await fetchJson<{ events?: { task_description: string; html_link?: string; due_date?: string }[] }>("/api/calendar-sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ meetingId, taskIds: selectedTasks.map(t => t.task_id) }),
-        })
-        const data = await r.json()
+        }, 30_000)
         setEvents(data.events ?? [])
       } catch {
         setEvents([])
@@ -1194,7 +1315,7 @@ export default function Home() {
     }
 
     if (corrections.length > 0) {
-      await fetch(`${API}/meetings/${meetingId}/feedback`, {
+      await fetchWithTimeout(`${API}/meetings/${meetingId}/feedback`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ corrections, reviewer: session?.user?.email ?? null }),
@@ -1209,14 +1330,14 @@ export default function Home() {
     localStorage.removeItem(ACTIVE_MEETING_KEY)
     setStep("upload"); setMeetingId(""); setResult(null); setEvents([])
   }
+  const handleProcessingDone = useCallback((r: MeetingResult) => {
+    setResult(r)
+    setStep("review")
+  }, [])
   const wideStep = step === "review"
 
   if (status === "loading") {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 size={28} className="animate-spin text-sky-500" />
-      </div>
-    )
+    return <FullPageSpinner label="Checking sign-in..." />
   }
 
   if (!session) {
@@ -1271,33 +1392,33 @@ export default function Home() {
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
       {/* Header */}
-      <header className="border-b border-slate-200 px-6 py-3.5 flex items-center justify-between backdrop-blur-sm sticky top-0 bg-white/90 z-10">
-        <div className="flex items-center gap-2.5">
+      <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-3 py-3.5 backdrop-blur-sm sm:px-6">
+        <div className="flex min-w-0 items-center gap-2.5">
           <div className="w-7 h-7 rounded-lg bg-sky-50 border border-sky-200 flex items-center justify-center">
             <Mic size={13} className="text-sky-600" />
           </div>
-          <span className="font-semibold text-sm text-slate-900">Meeting AI Agent</span>
+          <span className="truncate text-sm font-semibold text-slate-900">Meeting AI Agent</span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-shrink-0 items-center gap-1 sm:gap-2">
           <a href="/history"
             className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 transition-colors px-2 py-1 rounded-lg hover:bg-slate-100">
             <History size={13} />
-            History
+            <span className="hidden sm:inline">History</span>
           </a>
           <a href="/roster"
             className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 transition-colors px-2 py-1 rounded-lg hover:bg-slate-100">
             <Users size={13} />
-            Roster
+            <span className="hidden sm:inline">Roster</span>
           </a>
-          {session.user?.image && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={session.user.image} alt="" className="w-7 h-7 rounded-full ring-2 ring-slate-200" />
-          )}
-          <span className="text-xs text-slate-500 hidden sm:block">{session.user?.email}</span>
+          <UserBadge
+            image={session.user?.image}
+            name={session.user?.name}
+            email={session.user?.email}
+          />
           <button onClick={() => signOut()}
             className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 transition-colors px-2 py-1 rounded-lg hover:bg-slate-100">
             <LogOut size={13} />
-            Sign out
+            <span className="hidden sm:inline">Sign out</span>
           </button>
         </div>
       </header>
@@ -1326,7 +1447,11 @@ export default function Home() {
           }`}>
             {step === "upload" && <UploadStep onSubmit={handleSubmit} />}
             {step === "processing" && meetingId && (
-              <ProcessingStep meetingId={meetingId} onDone={r => { setResult(r); setStep("review") }} />
+              <ProcessingStep
+                meetingId={meetingId}
+                onDone={handleProcessingDone}
+                onCancel={reset}
+              />
             )}
             {step === "review" && result && (
               <ReviewStep result={result} onConfirm={handleConfirm} onSkip={handleSkip} />

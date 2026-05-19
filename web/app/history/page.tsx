@@ -8,6 +8,7 @@ import {
   CheckCircle2, Clock, AlertCircle, Circle, Users, UserCheck,
   Calendar, FileAudio, X,
 } from "lucide-react"
+import { errorMessage, fetchJson, fetchWithTimeout } from "../lib/http"
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
@@ -55,6 +56,7 @@ type MeetingDetail = {
 }
 
 type Worker = { worker_id: string; name: string; role?: string | null }
+type MeetingsResponse = { meetings?: Partial<MeetingSummary>[] }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -71,6 +73,39 @@ function fmtDuration(ms: number | null) {
   const m = Math.floor(ms / 60000)
   const s = Math.floor((ms % 60000) / 1000)
   return m > 0 ? `${m}m ${s}s` : `${s}s`
+}
+
+function arrayOrEmpty<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : []
+}
+
+function normalizeMeetingSummary(raw: Partial<MeetingSummary>): MeetingSummary {
+  return {
+    meeting_id: raw.meeting_id ?? "",
+    status: raw.status ?? "unknown",
+    audio_filename: raw.audio_filename ?? null,
+    created_at: raw.created_at ?? null,
+    processed_at: raw.processed_at ?? null,
+    duration_ms: raw.duration_ms ?? null,
+    summary_text: raw.summary_text ?? null,
+    participants: arrayOrEmpty(raw.participants),
+    task_count: raw.task_count ?? 0,
+    unresolved_speaker_count: raw.unresolved_speaker_count ?? 0,
+    error: raw.error ?? null,
+  }
+}
+
+function normalizeMeetingDetail(raw: Partial<MeetingDetail>): MeetingDetail {
+  return {
+    meeting_id: raw.meeting_id ?? "",
+    status: raw.status ?? "unknown",
+    summary_text: raw.summary_text ?? null,
+    participants: arrayOrEmpty(raw.participants),
+    participants_detail: arrayOrEmpty(raw.participants_detail),
+    action_items: arrayOrEmpty(raw.action_items),
+    unresolved_items: arrayOrEmpty(raw.unresolved_items),
+    human_review_items: arrayOrEmpty(raw.human_review_items),
+  }
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -119,7 +154,7 @@ function SpeakerResolver({
     if (!worker) return
     setSaving(speakerId)
     try {
-      await fetch(`${API}/meetings/${meetingId}/participants/${encodeURIComponent(speakerId)}/resolve`, {
+      await fetchWithTimeout(`${API}/meetings/${meetingId}/participants/${encodeURIComponent(speakerId)}/resolve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ worker_id: workerId, display_name: worker.name }),
@@ -174,30 +209,36 @@ function MeetingCard({ meeting, workers }: { meeting: MeetingSummary; workers: W
   const [expanded, setExpanded] = useState(false)
   const [detail, setDetail] = useState<MeetingDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const [detailError, setDetailError] = useState<string | null>(null)
 
   const loadDetail = useCallback(async () => {
     if (detail) return
     setLoadingDetail(true)
+    setDetailError(null)
     try {
-      const r = await fetch(`${API}/meetings/${meeting.meeting_id}`)
-      const data = await r.json()
-      setDetail(data)
+      const data = await fetchJson<Partial<MeetingDetail>>(`${API}/meetings/${meeting.meeting_id}`)
+      setDetail(normalizeMeetingDetail(data))
+    } catch (error) {
+      setDetailError(errorMessage(error, "Failed to load meeting detail"))
     } finally {
       setLoadingDetail(false)
     }
   }, [meeting.meeting_id, detail])
 
   const toggleExpand = () => {
-    if (!expanded && meeting.status === "completed") loadDetail()
+    if (!expanded && meeting.status === "completed") void loadDetail()
     setExpanded(e => !e)
   }
 
   const refreshDetail = async () => {
     setDetail(null)
     setLoadingDetail(true)
+    setDetailError(null)
     try {
-      const r = await fetch(`${API}/meetings/${meeting.meeting_id}`)
-      setDetail(await r.json())
+      const data = await fetchJson<Partial<MeetingDetail>>(`${API}/meetings/${meeting.meeting_id}`)
+      setDetail(normalizeMeetingDetail(data))
+    } catch (error) {
+      setDetailError(errorMessage(error, "Failed to refresh meeting detail"))
     } finally {
       setLoadingDetail(false)
     }
@@ -292,6 +333,13 @@ function MeetingCard({ meeting, workers }: { meeting: MeetingSummary; workers: W
             </div>
           )}
 
+          {detailError && (
+            <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <AlertCircle size={13} className="mt-0.5 flex-shrink-0" />
+              <span>{detailError}</span>
+            </div>
+          )}
+
           {detail && (
             <>
               {/* Speaker resolver */}
@@ -379,12 +427,12 @@ export default function HistoryPage() {
   useEffect(() => {
     if (status !== "authenticated") return
     Promise.all([
-      fetch(`${API}/meetings`).then(r => r.json()),
-      fetch(`${API}/workers`).then(r => r.json()),
+      fetchJson<MeetingsResponse>(`${API}/meetings`),
+      fetchJson<{ workers?: Worker[] }>(`${API}/workers`),
     ]).then(([mData, wData]) => {
-      setMeetings(mData.meetings ?? [])
+      setMeetings(arrayOrEmpty(mData.meetings).map(normalizeMeetingSummary).filter(m => m.meeting_id))
       setWorkers(wData.workers ?? [])
-    }).catch(() => setError("Failed to load data")).finally(() => setLoading(false))
+    }).catch(error => setError(errorMessage(error, "Failed to load data"))).finally(() => setLoading(false))
   }, [status])
 
   if (status === "loading") {
