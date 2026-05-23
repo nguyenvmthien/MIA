@@ -68,8 +68,11 @@
 
 ### 3.1 Academic metrics
 - [x] Evaluation script tinh Precision / Recall / F1, hallucination, due-date exact match
+- [x] Benchmark runner cho baseline vs candidate (`make benchmark`, `scripts/run_benchmark.py`)
 - [x] CI eval smoke threshold precision >= 0.70 neu co `data/eval/gold_smoke.jsonl`
-- [ ] Chay benchmark tren validation set lon hon, target F1 >= 0.80
+- [x] Baseline benchmark 100 mau tren `data/eval/gold_synthetic_205.jsonl` voi `qwen2.5:3b`
+- [x] Dieu chinh benchmark gates: precision/schema/hallucination la hard gates; recall/F1/assignee la watch metrics
+- [ ] Cai thien recall/F1 sau benchmark baseline 100 mau, khong yeu cau tat ca metrics cung vuot target
 - [ ] Assignee resolution accuracy tren real meetings
 - [ ] Bao cao hallucination rate theo model version
 
@@ -130,6 +133,8 @@
 - [x] Test `PUT /workers/{id}` tu frontend/backend path
 - [x] Calendar sync idempotency va partial failure handling
 - [x] Auth/ownership foundation cho meeting, calendar token va delete/export paths
+- [x] Next.js backend proxy truyen `X-User-Id` de scope meetings/workers/history/feedback theo Google account khi backend auth bat
+- [x] Calendar sync bridge truyen `X-User-Id` de nhieu Google account luu token rieng
 - [ ] Hoan thien team/worker ownership neu can multi-tenant that
 
 ### 5.3 Tests

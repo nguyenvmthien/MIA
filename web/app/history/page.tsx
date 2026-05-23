@@ -10,7 +10,7 @@ import {
 } from "lucide-react"
 import { errorMessage, fetchJson, fetchWithTimeout } from "../lib/http"
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+const API = "/api/backend"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

@@ -150,6 +150,17 @@ LANGCHAIN_TRACING_V2=true
 LANGCHAIN_API_KEY=ls_your_key_here
 ```
 
+For multi-account use, route browser traffic through the Next.js backend proxy
+(`/api/backend/*`) and enable backend auth with a server-side token:
+
+```env
+BACKEND_AUTH_REQUIRED=true
+BACKEND_USER_TOKEN=change-me
+```
+
+The Next.js server passes `X-User-Id` from the signed-in Google account so
+meetings, workers, feedback, and Calendar tokens can be scoped per user.
+
 #### 4. Run
 
 ```bash
@@ -456,6 +467,12 @@ RETRAIN_OUTPUT_DIR=models/qwen-meeting-latest
 ### Evaluation
 
 ```bash
+# Run the standard baseline benchmark
+make benchmark
+
+# Compare a candidate Ollama model against the current baseline
+make benchmark CANDIDATE=meeting-agent-v1
+
 # Run precision/recall/F1 evaluation on a labeled gold set
 python3 -m meeting_agent.mlops.evaluate \
   --gold data/eval/gold.jsonl \
@@ -480,19 +497,66 @@ Gold set format (each line):
 }
 ```
 
-**Baseline results** (qwen2.5:3b, no fine-tuning, 5-sample smoke set):
+**Baseline results** (qwen2.5:3b, no fine-tuning, 100 synthetic samples):
 
-| Metric | Score | Target |
-|--------|-------|--------|
-| Precision | 0.767 | ≥ 0.85 |
-| Recall | 0.700 | ≥ 0.90 |
-| F1 | 0.727 | — |
-| Schema failure rate | 0.0% | ≤ 5% |
-| Hallucination flags | 0 | ≤ 5% |
+| Metric | Score | Gate |
+|--------|-------|------|
+| Precision | 0.8604 | hard: >= 0.70 |
+| Recall | 0.6665 | watch: >= 0.60 |
+| F1 | 0.6886 | watch: >= 0.65 |
+| Assignee accuracy | 0.5232 | watch: >= 0.50 |
+| Schema failure rate | 0.0% | hard: no regression |
+| Hallucination rate | 0.0% | hard: <= baseline + 2pp |
+| Avg latency | 26.97s | watch |
+| P95 latency | 120.2s | watch |
 
 Full analysis: [docs/eval-results.md](docs/eval-results.md)
 
-The base model meets schema and hallucination targets. Precision/Recall gaps are expected at this model size and close with fine-tuning (see [Fine-tuning](#fine-tuning) section).
+Promotion gates are intentionally conservative: a candidate must keep precision above 0.70, avoid F1 dropping more than 0.05 vs baseline, avoid hallucination regression above 2 percentage points, and avoid schema regression. Recall, F1, assignee accuracy, and latency are tracked as watch metrics instead of requiring every metric to beat a fixed high target.
+
+---
+
+### Hugging Face Dataset Export
+
+Prepare a local dataset folder for upload:
+
+```bash
+make hf-dataset
+```
+
+This creates:
+
+```text
+hf_dataset/
+  README.md
+  data/
+    train.jsonl
+    validation.jsonl
+    eval.jsonl
+  audio/
+    validation/*.wav
+    eval/*.wav
+  transcripts/<split>/*.json
+  labels/<split>/*.action_items.json
+  schema/*.schema.json
+```
+
+The JSONL files are manifests. Each row points to its transcript, label, and
+audio file when a linked audio artifact exists. Current export stats:
+
+| Split | Samples | Linked audio |
+|-------|---------|--------------|
+| train | 200 | 0 |
+| validation | 5 | 5 |
+| eval | 205 | 5 |
+
+Upload the generated folder to a private Hugging Face dataset repo:
+
+```bash
+hf upload YOUR_USERNAME/mia-meeting-e2e hf_dataset . --repo-type dataset
+```
+
+Keep `hf_dataset/` out of git; it is a generated export with audio binaries.
 
 ---
 

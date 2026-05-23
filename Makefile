@@ -1,4 +1,4 @@
-.PHONY: help up down dev prod migrate logs test lint build worker-rebuild hygiene dataset-smoke web-lint web-build mlops-smoke mlops-up mlops-logs train-image retrain-check retrain-force backfill-transcripts cleanup-artifacts deploy-promoted-model
+.PHONY: help up down dev prod migrate logs test lint build worker-rebuild hygiene dataset-smoke benchmark hf-dataset web-lint web-build mlops-smoke mlops-up mlops-logs train-image retrain-check retrain-force backfill-transcripts cleanup-artifacts deploy-promoted-model
 
 COMPOSE      = docker compose -f docker-compose.yml
 COMPOSE_PROD = $(COMPOSE) -f docker-compose.prod.yml
@@ -75,6 +75,14 @@ hygiene: ## Check for tracked generated files and local secrets
 
 dataset-smoke: ## Verify raw/SFT JSONL compatibility with training loader
 	$(PYTHONPATH) python3 scripts/dataset_compat_smoke.py
+
+benchmark: ## Run baseline benchmark (MODEL=qwen2.5:3b, CANDIDATE=meeting-agent-v1 optional)
+	$(PYTHONPATH) python3 scripts/run_benchmark.py \
+		--baseline-model $${MODEL:-qwen2.5:3b} \
+		$(if $(CANDIDATE),--candidate-model $(CANDIDATE),)
+
+hf-dataset: ## Prepare local Hugging Face dataset export under hf_dataset/
+	python3 scripts/prepare_hf_dataset.py
 
 web-lint: ## Run Next.js/ESLint checks
 	cd web && npm run lint

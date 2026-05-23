@@ -7,7 +7,7 @@ import {
   Plus, Trash2, Pencil, Check, X, Loader2, Users, ArrowLeft, ChevronDown, ChevronUp,
 } from "lucide-react"
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+const API = "/api/backend"
 
 interface Worker {
   worker_id: string

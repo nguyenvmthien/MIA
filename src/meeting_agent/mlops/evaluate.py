@@ -186,12 +186,63 @@ def evaluate_sample(
 
 # ── Core evaluation runner ────────────────────────────────────────────────────
 
-def run_evaluation(gold_path: str, model: str, mode: str = "few_shot") -> dict:
+def _aggregate_results(
+    *,
+    mode: str,
+    model: str,
+    gold_path: str,
+    all_metrics: list[dict],
+    schema_failures: int,
+    total_hallucinations: int,
+    latencies: list[int],
+) -> dict:
+    n = len(all_metrics)
+
+    def avg(key: str) -> float:
+        return sum(m[key] for m in all_metrics) / n if n else 0
+
+    assignee_accs = [
+        m["assignee_accuracy"] for m in all_metrics if m["assignee_accuracy"] is not None
+    ]
+
+    return {
+        "mode": mode,
+        "model": model,
+        "gold_file": gold_path,
+        "evaluated_at": datetime.now(timezone.utc).isoformat(),
+        "samples": n,
+        "avg_precision": round(avg("precision"), 4),
+        "avg_recall": round(avg("recall"), 4),
+        "avg_f1": round(avg("f1"), 4),
+        "assignee_accuracy": (
+            round(sum(assignee_accs) / len(assignee_accs), 4) if assignee_accs else None
+        ),
+        "hallucination_rate": round(
+            total_hallucinations / max(sum(m["n_predicted"] for m in all_metrics), 1),
+            4,
+        ),
+        "schema_failure_rate": round(schema_failures / n, 4) if n else 0,
+        "avg_latency_ms": round(sum(latencies) / max(n, 1)),
+        "p95_latency_ms": sorted(latencies)[int(n * 0.95)] if latencies else 0,
+        "ci_pass": avg("precision") >= 0.70,
+        "per_sample": all_metrics,
+    }
+
+
+def run_evaluation(
+    gold_path: str,
+    model: str,
+    mode: str = "few_shot",
+    limit: int | None = None,
+    checkpoint_path: str | None = None,
+) -> dict:
     from meeting_agent.pipeline.orchestrator import extract_action_items
     from meeting_agent.schemas.transcript import TranscriptTurn
     from meeting_agent.schemas.worker import WorkerRoster
 
     gold_samples = [json.loads(l) for l in Path(gold_path).read_text().splitlines() if l.strip()]
+    if limit is not None:
+        gold_samples = gold_samples[:limit]
 
     all_metrics = []
     schema_failures = 0
@@ -237,6 +288,21 @@ def run_evaluation(gold_path: str, model: str, mode: str = "few_shot") -> dict:
         m["latency_ms"] = latency_ms
         all_metrics.append(m)
         total_hallucinations += m["hallucinations"]
+        if checkpoint_path:
+            partial = _aggregate_results(
+                mode=mode,
+                model=model,
+                gold_path=gold_path,
+                all_metrics=all_metrics,
+                schema_failures=schema_failures,
+                total_hallucinations=total_hallucinations,
+                latencies=latencies,
+            )
+            partial["partial"] = True
+            partial["remaining_samples"] = len(gold_samples) - len(all_metrics)
+            checkpoint = Path(checkpoint_path)
+            checkpoint.parent.mkdir(parents=True, exist_ok=True)
+            checkpoint.write_text(json.dumps(partial, indent=2, ensure_ascii=False))
 
         log.info(
             "Sample %02d [%dms]: P=%.2f R=%.2f F1=%.2f | pred=%d gold=%d hall=%d",
@@ -244,30 +310,15 @@ def run_evaluation(gold_path: str, model: str, mode: str = "few_shot") -> dict:
             len(predicted), len(gold_tasks), m["hallucinations"],
         )
 
-    n = len(gold_samples)
-
-    def avg(key: str) -> float:
-        return sum(m[key] for m in all_metrics) / n if n else 0
-
-    assignee_accs = [m["assignee_accuracy"] for m in all_metrics if m["assignee_accuracy"] is not None]
-
-    results = {
-        "mode": mode,
-        "model": model,
-        "gold_file": gold_path,
-        "evaluated_at": datetime.now(timezone.utc).isoformat(),
-        "samples": n,
-        "avg_precision": round(avg("precision"), 4),
-        "avg_recall": round(avg("recall"), 4),
-        "avg_f1": round(avg("f1"), 4),
-        "assignee_accuracy": round(sum(assignee_accs) / len(assignee_accs), 4) if assignee_accs else None,
-        "hallucination_rate": round(total_hallucinations / max(sum(m["n_predicted"] for m in all_metrics), 1), 4),
-        "schema_failure_rate": round(schema_failures / n, 4) if n else 0,
-        "avg_latency_ms": round(sum(latencies) / max(n, 1)),
-        "p95_latency_ms": sorted(latencies)[int(n * 0.95)] if latencies else 0,
-        "ci_pass": avg("precision") >= 0.70,
-        "per_sample": all_metrics,
-    }
+    results = _aggregate_results(
+        mode=mode,
+        model=model,
+        gold_path=gold_path,
+        all_metrics=all_metrics,
+        schema_failures=schema_failures,
+        total_hallucinations=total_hallucinations,
+        latencies=latencies,
+    )
 
     _print_results(results)
     return results
@@ -343,12 +394,20 @@ if __name__ == "__main__":
     p.add_argument("--compare", action="store_true",
                    help="Compare zero_shot vs few_shot vs finetuned")
     p.add_argument("--out", default=None, help="Save results JSON to this path")
+    p.add_argument("--limit", type=int, default=None, help="Evaluate only the first N samples")
+    p.add_argument("--checkpoint", default=None, help="Write partial results after each sample")
     args = p.parse_args()
 
     if args.compare:
         run_compare(args.gold, args.model, args.out)
     else:
-        results = run_evaluation(args.gold, args.model, args.mode)
+        results = run_evaluation(
+            args.gold,
+            args.model,
+            args.mode,
+            limit=args.limit,
+            checkpoint_path=args.checkpoint,
+        )
         if args.out:
             out = Path(args.out)
             out.parent.mkdir(parents=True, exist_ok=True)

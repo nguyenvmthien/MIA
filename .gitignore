@@ -13,7 +13,7 @@ __pycache__/
 dist/
 build/
 .eggs/
-
+hf_dataset/
 # Virtual environments
 .venv/
 venv/
@@ -29,6 +29,7 @@ data/transcripts/
 data/models/
 data/training/
 data/eval/
+hf_dataset/
 
 # ML models & checkpoints
 models/
