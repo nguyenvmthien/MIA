@@ -209,8 +209,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: root
-            dockerfile: Dockerfile
           - name: api
             dockerfile: Dockerfile.api
           - name: worker

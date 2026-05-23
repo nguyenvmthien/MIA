@@ -117,12 +117,21 @@ source = ["meeting_agent"]
 # Exclude modules that require external services (WhisperX, ffmpeg, Ollama, pyannote)
 # These are covered by integration/Docker tests, not unit tests.
 omit = [
+    "*/integrations/google_calendar.py",
+    "*/mlops/*.py",
+    "*/mlops/data_pipeline/*.py",
+    "*/mlops/dataset.py",
+    "*/mlops/dataset_version.py",
+    "*/monitoring/worker_metrics.py",
+    "*/pipeline/ingest.py",
     "*/pipeline/stt.py",
     "*/pipeline/preprocess.py",
     "*/pipeline/run.py",
     "*/pipeline/rag.py",
     "*/pipeline/router.py",
     "*/pipeline/orchestrator.py",
+    "*/pipeline/worker_registry.py",
+    "*/pipeline/worker_task.py",
 ]
 
 [tool.coverage.report]

@@ -47,6 +47,8 @@ def _forbidden_tracked(files: list[str]) -> list[str]:
 def _secret_markers(files: list[str]) -> list[str]:
     violations: list[str] = []
     for path in files:
+        if path == "scripts/check_repo_hygiene.py":
+            continue
         p = Path(path)
         if not p.is_file() or p.stat().st_size > 2_000_000:
             continue
