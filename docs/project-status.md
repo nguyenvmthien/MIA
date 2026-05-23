@@ -10,7 +10,7 @@ This file is the single short status document for planning and cleanup context. 
 - `docs/mlops-runbook.md`: retraining, MLflow, promotion, and deploy operations.
 - `docs/monitoring-guide.md`: Prometheus, Grafana, LangSmith, and anomaly checks.
 - `docs/eval-results.md`: baseline evaluation results.
-- `docs/final-report/`: report source and generated PDF.
+- `docs/final-report/`: report LaTeX/Markdown source. Generated PDF is not kept in source control.
 
 ## Current State
 
@@ -37,6 +37,7 @@ Runtime stack:
 - Ollama
 - Prometheus and Grafana
 - Optional MLflow/MLOps profile
+- Hugging Face dataset export via `make hf-dataset`
 
 ## Active Constraints
 
@@ -62,10 +63,24 @@ feedback/data export
 Minimum promotion checks:
 
 - Precision remains at or above the accepted threshold.
-- F1 does not drop materially compared with the current model.
-- Hallucination rate does not increase.
+- Current hard precision threshold is `0.70`.
+- F1 does not drop by more than `0.05` compared with the current model.
+- Hallucination rate does not increase by more than `0.02`.
+- Schema failure rate does not regress.
 - Due-date extraction and assignee resolution do not regress on review samples.
 - Manual smoke review passes on a few real or representative meetings.
+
+Current benchmark baseline:
+
+- Gold set: `data/eval/gold_synthetic_205.jsonl`
+- Run size: 100 samples
+- Model: `qwen2.5:3b`
+- Precision: `0.8604`
+- Recall: `0.6665`
+- F1: `0.6886`
+- Assignee accuracy: `0.5232`
+- Hallucination rate: `0.0`
+- Schema failure rate: `0.0`
 
 ## Cleanup Notes
 

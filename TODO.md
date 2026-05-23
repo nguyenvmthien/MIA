@@ -1,7 +1,7 @@
 # Meeting Agent - TODO & MLOps Roadmap
 
 > Cap nhat: 2026-05-23. Full pipeline chay duoc (upload audio -> STT/diarization -> LLM extract -> DB -> feedback -> calendar sync).
-> Da xoa: Streamlit UI, CLI mode, streaming STT (WebSocket), nginx reverse proxy.
+> Da xoa legacy UI cu, CLI mode, streaming STT (WebSocket), nginx reverse proxy.
 > Stack hien tai: FastAPI (port 8000) + Next.js + Celery + Redis + PostgreSQL + Ollama + Prometheus/Grafana + MLflow profile.
 
 ---

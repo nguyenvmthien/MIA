@@ -22,7 +22,9 @@
 | **Avg latency** | **26.97s** | watch |
 | **P95 latency** | **120.2s** | watch |
 
-Raw JSON: `data/eval/results/benchmark_20260523_114748_qwen2-5-3b.json`
+The raw JSON report is generated locally under `data/eval/results/` when
+`make benchmark` runs. That directory is intentionally ignored because it
+contains generated benchmark artifacts and checkpoints.
 
 ---
 

@@ -73,7 +73,7 @@ async def google_callback(
     """
     Google OAuth2 callback — exchange code for tokens and persist encrypted.
 
-    On success redirects to the Streamlit UI at /?calendar=connected.
+    On success redirects to the web UI at /?calendar=connected.
     """
     if error:
         raise HTTPException(status_code=400, detail=f"Google OAuth error: {error}")
@@ -91,7 +91,11 @@ async def google_callback(
     save_token(user_id, token)
     log.info("Google Calendar connected for user %s", user_id)
 
-    ui_url = os.environ.get("STREAMLIT_URL", "http://localhost:8501")
+    ui_url = (
+        os.environ.get("FRONTEND_URL")
+        or os.environ.get("AUTH_URL")
+        or "http://localhost:3001"
+    )
     return RedirectResponse(f"{ui_url}/?calendar=connected&user_id={user_id}")
 
 

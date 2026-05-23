@@ -75,14 +75,14 @@ def _promotion_decision(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Benchmark current and candidate Ollama models")
-    parser.add_argument("--gold", default="data/eval/gold_smoke.jsonl")
+    parser.add_argument("--gold", default="data/eval/gold_synthetic_205.jsonl")
     parser.add_argument(
         "--baseline-model",
         default=os.environ.get("OLLAMA_LLM_MODEL", "qwen2.5:3b"),
     )
     parser.add_argument("--candidate-model", default=None)
     parser.add_argument("--out-dir", default="data/eval/results")
-    parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--min-precision", type=float, default=0.70)
     parser.add_argument("--max-f1-drop", type=float, default=0.05)
     parser.add_argument("--max-hallucination-delta", type=float, default=0.02)

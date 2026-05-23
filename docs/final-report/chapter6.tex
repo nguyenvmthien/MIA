@@ -19,4 +19,4 @@ Sau khi model candidate đạt điều kiện promotion, việc chuyển sang Ol
 
 \section{Giới hạn dữ liệu đánh giá}
 
-Smoke test chỉ có 5 samples và 13 action items. Bộ này đủ để bắt lỗi schema và regression đơn giản, nhưng chưa đủ để kết luận chất lượng tổng quát. Cần mở rộng tập đánh giá theo nhiều domain, ngôn ngữ, độ dài meeting và số speaker.
+Benchmark hiện tại đã mở rộng lên 100 mẫu synthetic từ \texttt{data/eval/gold\_synthetic\_205.jsonl}. Tập này tốt hơn smoke test 5 mẫu để theo dõi regression, nhưng vẫn chưa thay thế được benchmark trên meeting thật. Cần bổ sung dữ liệu đã scrub từ real meetings để kiểm tra assignee resolution, deadline extraction và hành vi end-to-end trên audio thật.

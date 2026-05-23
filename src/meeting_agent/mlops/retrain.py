@@ -303,7 +303,8 @@ def run_retrain(force: bool = False) -> dict:
     promoted = False
     promotion_result: dict = {}
     if success:
-        gold_path = os.environ.get("EVAL_GOLD_PATH", "data/eval/gold_smoke.jsonl")
+        gold_path = os.environ.get("EVAL_GOLD_PATH", "data/eval/gold_synthetic_205.jsonl")
+        eval_limit = os.environ.get("EVAL_LIMIT", "100")
         if Path(gold_path).exists():
             log.info("Running CI eval gate on %s ...", gold_path)
             eval_cmd = [
@@ -313,6 +314,8 @@ def run_retrain(force: bool = False) -> dict:
                 "--model", RETRAIN_OUTPUT_DIR,
                 "--out", "data/training/.ci_eval_result.json",
             ]
+            if eval_limit:
+                eval_cmd.extend(["--limit", eval_limit])
             eval_proc = subprocess.run(eval_cmd, capture_output=True, text=True)
             ci_passed = eval_proc.returncode == 0
 

@@ -3,6 +3,6 @@
 
 Dự án đã xây dựng được một hệ thống Meeting AI Agent end-to-end: upload audio, ASR, diarization, transcript theo lượt nói, trích xuất action items bằng LLM, human feedback, lưu trữ DB, monitoring và luồng LLMOps chuẩn bị cho fine-tuning. Các thay đổi gần đây giúp hệ thống có khả năng truy vết tốt hơn: feedback không còn là file rời rạc mà được lưu DB, trainer có queue riêng, retrain trigger có ngưỡng dữ liệu, promotion có audit và UI review phản ánh đúng bài toán multi-speaker.
 
-Kết quả baseline Qwen2.5-3B đạt precision 0.767, recall 0.700 và schema failure 0.0\% trên smoke test nhỏ. Điều này cho thấy pipeline đã ổn định về định dạng và luồng xử lý, nhưng chất lượng extraction vẫn cần cải thiện bằng dữ liệu feedback thật, mở rộng tập đánh giá và fine-tuning khi có đủ điều kiện.
+Kết quả baseline Qwen2.5-3B đạt precision 0.8604, recall 0.6665, F1 0.6886, assignee accuracy 0.5232, hallucination rate 0.0\% và schema failure 0.0\% trên benchmark 100 mẫu synthetic. Điều này cho thấy pipeline đã ổn định về định dạng và luồng xử lý, nhưng chất lượng extraction vẫn cần cải thiện bằng dữ liệu feedback thật, benchmark real-meeting và fine-tuning khi có đủ điều kiện.
 
 Nhìn chung, dự án đáp ứng mục tiêu của một báo cáo Applied LLM/LLMOps: có bài toán NLP rõ ràng, pipeline LLM thực thi được, observability, human feedback, evaluation, retraining gate và quy trình thay đổi model có kiểm soát. Các phần tiếp theo nên tập trung vào chất lượng dữ liệu, đánh giá sâu hơn và nâng cao vận hành, thay vì xem chúng là thiếu hụt nền tảng của hệ thống hiện tại.

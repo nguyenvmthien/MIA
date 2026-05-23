@@ -2,7 +2,7 @@
 ## Báo cáo cập nhật theo trạng thái source hiện tại
 
 **Môn học:** Applied Large Language Models  
-**Ngày cập nhật:** 13/05/2026
+**Ngày cập nhật:** 23/05/2026
 **Dự án:** Hệ thống xử lý audio cuộc họp, trích xuất action items và vận hành theo LLMOps
 
 ---
@@ -13,7 +13,7 @@ Meeting AI Agent là hệ thống end-to-end xử lý audio cuộc họp thành 
 
 Điểm quan trọng của phiên bản hiện tại là dữ liệu vận hành không còn chỉ nằm trong file rời rạc: meeting, participant, transcript turns, tasks, artifacts, feedback corrections, calendar events và worker registry được lưu qua database. Dữ liệu JSONL dùng cho training là artifact được export từ database, không phải nguồn truth chính.
 
-Kết quả baseline hiện tại trên `data/eval/gold_smoke.jsonl` gồm 5 samples và 13 action items: precision `0.767`, recall `0.700`, F1 `0.727`, schema failure rate `0.0%`. Đây là kết quả của model nền Qwen2.5-3B chưa fine-tune.
+Kết quả baseline hiện tại trên `data/eval/gold_synthetic_205.jsonl` với 100 mẫu được benchmark: precision `0.8604`, recall `0.6665`, F1 `0.6886`, assignee accuracy `0.5232`, hallucination rate `0.0%`, schema failure rate `0.0%`. Đây là kết quả của model nền Qwen2.5-3B chưa fine-tune, dùng làm baseline để so sánh candidate sau training.
 
 ---
 
@@ -85,7 +85,8 @@ LLM nhận transcript, roster và prompt yêu cầu output JSON. Backend kiểm 
 
 Nguồn dữ liệu hiện tại:
 
-- `data/eval/gold_smoke.jsonl`: 5 mẫu đánh giá, 13 action items.
+- `data/eval/gold_smoke.jsonl`: smoke test nhỏ cho CI regression nhanh.
+- `data/eval/gold_synthetic_205.jsonl`: benchmark baseline/candidate, hiện chạy mặc định 100 mẫu.
 - `data/training/synthetic.jsonl`: dữ liệu synthetic bootstrap.
 - `data/training/collected.jsonl`: dữ liệu collected/export.
 - `data/training/feedback_corrections.jsonl`: artifact export từ feedback trong database.
@@ -154,26 +155,18 @@ make deploy-promoted-model APPLY=1
 
 ### 5.1 Kết quả baseline
 
-| Metric | Kết quả | Mục tiêu |
+| Metric | Kết quả | Gate |
 |---|---:|---:|
-| Precision | 0.767 | >= 0.85 |
-| Recall | 0.700 | >= 0.90 |
-| F1 | 0.727 | - |
-| Schema failure rate | 0.0% | <= 5.0% |
-
-Kết quả theo sample:
-
-| Sample | Gold items | Precision | Recall | F1 |
-|---:|---:|---:|---:|---:|
-| 0 | 2 | 0.50 | 0.50 | 0.50 |
-| 1 | 3 | 0.67 | 0.67 | 0.67 |
-| 2 | 3 | 0.67 | 0.67 | 0.67 |
-| 3 | 2 | 1.00 | 1.00 | 1.00 |
-| 4 | 3 | 1.00 | 0.67 | 0.80 |
+| Precision | 0.8604 | hard: >= 0.70 |
+| Recall | 0.6665 | watch |
+| F1 | 0.6886 | no drop > 0.05 vs baseline |
+| Assignee accuracy | 0.5232 | watch |
+| Hallucination rate | 0.0% | hard: no >2pp regression |
+| Schema failure rate | 0.0% | hard: no regression |
 
 ### 5.2 Nhận xét
 
-Schema failure rate bằng 0 cho thấy structured output và validation đang ổn định. Recall còn thấp so với mục tiêu, nghĩa là model nền vẫn bỏ sót action items. Đây là lý do cần tiếp tục thu feedback thật và chạy fine-tuning khi có đủ dữ liệu/GPU.
+Schema failure rate và hallucination rate bằng 0 cho thấy structured output, validation và guardrails đang ổn định ở baseline hiện tại. Recall và assignee accuracy vẫn là watch metrics, nghĩa là model nền vẫn bỏ sót action items và chưa luôn gán đúng người phụ trách. Đây là lý do cần tiếp tục thu feedback thật và chạy fine-tuning khi có đủ dữ liệu/GPU.
 
 ### 5.3 Kiểm thử vận hành
 
@@ -192,7 +185,7 @@ Các kiểm tra đã dùng trong quá trình hoàn thiện:
 - Diarization không tự biết tên thật của speaker; cần human mapping hoặc voice enrollment.
 - CPU inference chậm với WhisperX/Pyannote/LLM.
 - Fine-tuning cần GPU; hiện mới GPU-ready, chưa claim đã chạy xong fine-tune.
-- Bộ đánh giá còn nhỏ.
+- Bộ đánh giá hiện tại là synthetic benchmark 100 mẫu; vẫn cần real-meeting benchmark đã scrub.
 - Raw artifact capture đã có, nhưng retention policy/cleanup cần hoàn thiện thêm nếu production.
 - Serving switch sau promotion là manual/auditable, không tự đổi model âm thầm.
 - Nếu triển khai production cần HTTPS, secret manager, backup, RBAC chi tiết và alerting nghiêm túc hơn.
@@ -238,6 +231,6 @@ Dockerfile.train
 Makefile
 docs/mlops-runbook.md
 docs/project-status.md
-data/eval/gold_smoke.jsonl
+data/eval/gold_synthetic_205.jsonl
 data/training/
 ```

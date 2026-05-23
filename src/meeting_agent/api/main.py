@@ -269,7 +269,11 @@ async def prometheus_middleware(request: Request, call_next):
 
 @app.get("/", include_in_schema=False)
 async def root():
-    return {"message": "Meeting AI Agent API", "docs": "/docs", "ui": "http://localhost:8501"}
+    return {
+        "message": "Meeting AI Agent API",
+        "docs": "/docs",
+        "ui": os.environ.get("FRONTEND_URL", "http://localhost:3001"),
+    }
 
 
 # ── Health ────────────────────────────────────────────────────────────────────

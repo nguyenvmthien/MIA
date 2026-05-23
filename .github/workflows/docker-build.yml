@@ -8,7 +8,7 @@ on:
       - "Dockerfile*"
       - "pyproject.toml"
       - "alembic/**"
-      - "streamlit_app.py"
+      - "web/**"
 
 env:
   REGISTRY: ghcr.io

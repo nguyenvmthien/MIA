@@ -110,7 +110,8 @@ Các task lưu trong database có thể kèm \texttt{source\_turn\_ids}. UI dùn
 Nguồn dữ liệu hiện tại gồm:
 
 \begin{itemize}[leftmargin=*]
-  \item Gold smoke set: bộ đánh giá nhỏ gồm 5 mẫu meeting và 13 action items.
+  \item Gold smoke set: bộ đánh giá nhỏ dùng cho CI regression nhanh.
+  \item Gold synthetic benchmark: bộ \texttt{data/eval/gold\_synthetic\_205.jsonl} dùng cho benchmark baseline/candidate, hiện chạy mặc định 100 mẫu.
   \item Synthetic training set: dữ liệu synthetic dùng làm bootstrap.
   \item Collected training set: dữ liệu export/thu thập cho training.
   \item File feedback corrections JSONL: artifact được export từ bảng feedback trong database.

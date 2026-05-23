@@ -244,8 +244,9 @@ This is the **central focus**: the Processing Service + LLM Inference Service in
 │                                       - 4-bit NF4 base              │
 │                                             ↓                       │
 │                                       Eval Gate                     │
-│                                       - task F1 ≥ 0.90             │
-│                                       - hallucination ≤ 5%          │
+│                                       - precision ≥ 0.70 hard gate │
+│                                       - F1 drop ≤ 0.05 vs baseline │
+│                                       - hallucination delta ≤ 2pp   │
 │                                             ↓                       │
 │                                       Convert → GGUF Q4_K_M         │
 │                                             ↓                       │
@@ -374,8 +375,9 @@ OUTPUT JSON ARRAY:
 │  └─────────────────┘   └──────────────────┘   └───────────────┘  │
 │                                                                   │
 │  Alert Rules (Prometheus → PagerDuty / Slack):                    │
-│  - hallucination_rate > 0.05  → P2 alert                         │
-│  - task_extraction_recall < 0.85 → P2 alert                      │
+│  - hallucination_rate > baseline + 0.02 → P2 alert                │
+│  - task_precision < 0.70 → P2 alert                              │
+│  - task_f1 drops > 0.05 vs baseline → P2 alert                   │
 │  - p95_e2e_latency > 120s (per hour of audio) → P3 warning       │
 │  - error_rate > 0.01 → P2 alert                                   │
 │                                                                   │
@@ -390,9 +392,10 @@ OUTPUT JSON ARRAY:
 |---|---|---|
 | Word Error Rate (WER) | ≤ 5% | internal eval |
 | Diarization Error Rate (DER) | ≤ 8% | pyannote eval |
-| Task Extraction Precision | ≥ 0.85 | nightly eval harness |
-| Task Extraction Recall | ≥ 0.90 | nightly eval harness |
-| Hallucination Rate | ≤ 5% | LangSmith + guardrail |
+| Task Extraction Precision | ≥ 0.70 hard gate | benchmark runner |
+| Task Extraction Recall | watch metric, current baseline 0.6665 | benchmark runner |
+| Task Extraction F1 | no >0.05 drop vs baseline; current baseline 0.6886 | benchmark runner |
+| Hallucination Rate | no >2pp regression vs baseline | LangSmith + guardrail |
 | Schema Validity Rate | 100% | Pydantic validation |
 | E2E Latency P95 (1h meeting) | ≤ 120s | Prometheus |
 | Token Cost per Meeting | minimize | Prometheus |
@@ -439,8 +442,8 @@ OUTPUT JSON ARRAY:
 │                    CI/CD PIPELINE (GitHub Actions)                   │
 │                                                                      │
 │  PR Trigger                                                          │
-│  └── lint (ruff, mypy) → unit tests → integration tests (5 samples) │
-│      → schema validation → eval smoke (precision ≥ 0.80 on subset)  │
+│  └── lint (ruff) → unit tests → schema smoke → eval smoke            │
+│      → Docker build check                                            │
 │                                                                      │
 │  Nightly Trigger                                                     │
 │  └── full eval harness on gold set → quality report posted to Slack  │

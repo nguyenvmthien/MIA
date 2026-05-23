@@ -1,4 +1,4 @@
-.PHONY: help up down dev prod migrate logs test lint build worker-rebuild hygiene dataset-smoke benchmark hf-dataset web-lint web-build mlops-smoke mlops-up mlops-logs train-image retrain-check retrain-force backfill-transcripts cleanup-artifacts deploy-promoted-model
+.PHONY: help up down dev restart-api restart-worker worker-rebuild logs deploy deploy-update migrate migrate-prod migrate-new db-shell test test-cov lint lint-fix hygiene dataset-smoke benchmark hf-dataset web-lint web-build mlops-smoke mlops-up mlops-logs train-image retrain-check retrain-force backfill-transcripts cleanup-artifacts deploy-promoted-model synthetic export-sft export-rlhf export-finetune
 
 COMPOSE      = docker compose -f docker-compose.yml
 COMPOSE_PROD = $(COMPOSE) -f docker-compose.prod.yml
@@ -76,9 +76,11 @@ hygiene: ## Check for tracked generated files and local secrets
 dataset-smoke: ## Verify raw/SFT JSONL compatibility with training loader
 	$(PYTHONPATH) python3 scripts/dataset_compat_smoke.py
 
-benchmark: ## Run baseline benchmark (MODEL=qwen2.5:3b, CANDIDATE=meeting-agent-v1 optional)
+benchmark: ## Run baseline benchmark (MODEL=qwen2.5:3b, GOLD=data/eval/gold_synthetic_205.jsonl, LIMIT=100)
 	$(PYTHONPATH) python3 scripts/run_benchmark.py \
+		--gold $${GOLD:-data/eval/gold_synthetic_205.jsonl} \
 		--baseline-model $${MODEL:-qwen2.5:3b} \
+		--limit $${LIMIT:-100} \
 		$(if $(CANDIDATE),--candidate-model $(CANDIDATE),)
 
 hf-dataset: ## Prepare local Hugging Face dataset export under hf_dataset/

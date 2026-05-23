@@ -22,7 +22,7 @@ Usage:
         --out data/eval/results/compare_20260429.json
 
     # Zero-shot only
-    python -m meeting_agent.mlops.evaluate --gold data/eval/gold_smoke.jsonl \
+    python -m meeting_agent.mlops.evaluate --gold data/eval/gold_synthetic_205.jsonl \
         --mode zero_shot --out data/eval/results/zero_shot.json
 """
 

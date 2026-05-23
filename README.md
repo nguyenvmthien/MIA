@@ -123,7 +123,7 @@ ollama pull nomic-embed-text
 
 ```bash
 git clone <repo>
-cd MEETING-AGENT
+cd MIA
 
 pip install -e ".[dev]"
 ```
@@ -307,7 +307,7 @@ python3 -m meeting_agent.mlops.data_pipeline.synthetic --count 50 --out data/tra
 ```bash
 python3 -m meeting_agent.mlops.data_pipeline.validate \
   --train data/training/synthetic.jsonl \
-  --val   data/training/val.jsonl
+  --val   data/training/synthetic_long.jsonl
 ```
 
 Checks: schema conformance, speaker balance, train/val leakage, duplicates.
@@ -352,9 +352,9 @@ make deploy-promoted-model APPLY=1
 #### Collect from audio directory
 
 ```bash
-python3 -m meeting_agent.mlops.data_pipeline.collect audio \
+python3 -m meeting_agent.mlops.data_pipeline.collect \
   --audio-dir data/raw/audio \
-  --roster examples/roster.json \
+  --roster data/roster_full.json \
   --out data/training/collected.jsonl
 ```
 
@@ -475,8 +475,9 @@ make benchmark CANDIDATE=meeting-agent-v1
 
 # Run precision/recall/F1 evaluation on a labeled gold set
 python3 -m meeting_agent.mlops.evaluate \
-  --gold data/eval/gold.jsonl \
-  --out  results/eval.json
+  --gold data/eval/gold_synthetic_205.jsonl \
+  --limit 100 \
+  --out  data/eval/results/eval.json
 ```
 
 Gold set format (each line):
@@ -553,7 +554,7 @@ audio file when a linked audio artifact exists. Current export stats:
 Upload the generated folder to a private Hugging Face dataset repo:
 
 ```bash
-hf upload YOUR_USERNAME/mia-meeting-e2e hf_dataset . --repo-type dataset
+hf upload minhthien/mia-meeting hf_dataset . --repo-type dataset
 ```
 
 Keep `hf_dataset/` out of git; it is a generated export with audio binaries.
@@ -663,4 +664,4 @@ Prometheus metrics are at `GET /metrics`. Import Grafana dashboard:
 | [docs/mlops-runbook.md](docs/mlops-runbook.md) | Retraining, MLflow, promotion, and deploy operations |
 | [docs/monitoring-guide.md](docs/monitoring-guide.md) | Observability setup and day-to-day checks |
 | [docs/eval-results.md](docs/eval-results.md) | Baseline model evaluation results |
-| [docs/final-report/](docs/final-report/) | Final report source and generated PDF |
+| [docs/final-report/](docs/final-report/) | Final report LaTeX/Markdown source |

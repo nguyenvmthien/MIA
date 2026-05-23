@@ -31,11 +31,12 @@ data/
 ├── transcripts/         ← Transcript/artifact files written by the runtime
 ├── training/            ← Dataset cho fine-tuning
 │   ├── synthetic.jsonl
+│   ├── synthetic_long.jsonl
 │   ├── collected.jsonl
-│   └── val.jsonl
+│   └── feedback_corrections.jsonl
 ├── eval/                ← Gold set cho đánh giá
-│   └── gold.jsonl
-└── models/              ← Model checkpoint sau khi train
+│   ├── gold_smoke.jsonl
+│   └── gold_synthetic_205.jsonl
 ```
 
 ---
@@ -180,9 +181,9 @@ python3 -m meeting_agent.mlops.data_pipeline.synthetic_to_audio \
 
 ```bash
 # Thu thập từ thư mục audio
-python3 -m meeting_agent.mlops.data_pipeline.collect audio \
+python3 -m meeting_agent.mlops.data_pipeline.collect \
   --audio-dir data/audio \
-  --roster examples/roster.json \
+  --roster data/roster_full.json \
   --out data/training/collected.jsonl
 ```
 
@@ -214,7 +215,7 @@ Trước khi fine-tune, luôn validate để tránh bias và data leakage.
 ```bash
 python3 -m meeting_agent.mlops.data_pipeline.validate \
   --train data/training/synthetic.jsonl \
-  --val   data/training/val.jsonl
+  --val   data/training/synthetic_long.jsonl
 ```
 
 ### Các check được thực hiện
@@ -237,13 +238,13 @@ python3 -m meeting_agent.mlops.data_pipeline.validate \
 # Bước 1: Sinh synthetic data
 python3 -m meeting_agent.mlops.data_pipeline.synthetic --count 100 --out data/training/synthetic.jsonl
 
-# Bước 2: Sinh validation set riêng
-python3 -m meeting_agent.mlops.data_pipeline.synthetic --count 20 --out data/training/val.jsonl
+# Bước 2: Sinh validation set riêng hoặc dùng synthetic_long hiện có
+python3 -m meeting_agent.mlops.data_pipeline.synthetic --count 20 --out data/training/synthetic_long.jsonl
 
 # Bước 3: Validate
 python3 -m meeting_agent.mlops.data_pipeline.validate \
   --train data/training/synthetic.jsonl \
-  --val   data/training/val.jsonl
+  --val   data/training/synthetic_long.jsonl
 
 # Bước 4: Fine-tune (cần GPU ≥ 8GB VRAM)
 pip install -e ".[train]"

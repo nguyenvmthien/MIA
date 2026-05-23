@@ -88,10 +88,19 @@ Recommended runtime:
 
 After training succeeds, the retrain pipeline:
 
-1. Runs the configured evaluation gate when `data/eval/gold_smoke.jsonl` exists.
-2. Promotes the MLflow model only if the gate passes.
-3. Writes `data/training/.promotion_manifest.json`.
-4. Does not silently switch production serving.
+1. Runs the configured evaluation gate when a gold set exists.
+2. Uses `data/eval/gold_synthetic_205.jsonl` for the current larger baseline benchmark when available; `data/eval/gold_smoke.jsonl` remains a fast CI smoke fallback.
+3. Promotes the MLflow model only if the gate passes.
+4. Writes `data/training/.promotion_manifest.json`.
+5. Does not silently switch production serving.
+
+Current promotion policy:
+
+- Candidate precision must stay at or above `0.70`.
+- Candidate F1 must not drop by more than `0.05` vs the current baseline.
+- Candidate hallucination rate must not increase by more than `0.02`.
+- Candidate schema failure rate must not regress.
+- Recall, assignee accuracy, and latency are watch metrics, not absolute hard gates.
 
 Deploy the promoted model explicitly:
 

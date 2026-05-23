@@ -186,10 +186,11 @@ make deploy-promoted-model APPLY=1
 \midrule
 \texttt{POST /meetings} & Upload audio & Tạo meeting job \\
 \texttt{GET /meetings/\{id\}} & Xem trạng thái & Frontend polling/resume \\
-\texttt{GET /meetings/\{id\}/transcript} & Lấy transcript turns & Dùng cho review \\
+\texttt{GET /meetings} & Lịch sử meetings & Có scope theo owner \\
 \texttt{POST /meetings/\{id\}/feedback} & Gửi correction & Lưu DB \\
 \texttt{POST /admin/retrain} & Trigger retrain & Đưa vào queue \texttt{mlops} \\
-\texttt{POST /admin/deploy-promoted-model} & Chuyển sang model promoted & Cần thao tác có chủ đích \\
+\texttt{GET /admin/retrain/state} & Xem retrain state & Dùng cho ops review \\
+\texttt{GET /workers} & Danh sách worker roster & Scope theo owner \\
 \texttt{GET /metrics} & Prometheus metrics & Monitoring \\
 \bottomrule
 \end{tabularx}

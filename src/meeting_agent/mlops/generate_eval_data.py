@@ -2,7 +2,8 @@
 Generate synthetic evaluation transcripts using the local Ollama LLM.
 
 Produces 45 diverse meeting transcripts across 5 meeting types, each with
-gold-annotated action items. Output matches the gold_smoke.jsonl schema exactly.
+gold-annotated action items. Output matches the eval JSONL schema used by
+gold_smoke and gold_synthetic datasets.
 
 Usage:
     python -m meeting_agent.mlops.generate_eval_data                    # generate all 45
