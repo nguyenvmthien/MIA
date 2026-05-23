@@ -15,8 +15,6 @@ Audio → WhisperX (ASR+Diarize) → Qwen2.5-3B (LLM) → Action Items JSON
 3. [How to run](#how-to-run)
    - [Option A — Local dev (no Docker)](#option-a--local-dev-no-docker)
    - [Option B — Docker Compose (recommended)](#option-b--docker-compose-recommended)
-   - [Streamlit UI](#streamlit-ui)
-   - [Using the CLI](#using-the-cli)
    - [Using the REST API](#using-the-rest-api)
    - [Fine-tuning](#fine-tuning)
    - [Data pipeline](#data-pipeline)
@@ -89,9 +87,8 @@ Audio file
 │   ├── api/main.py                FastAPI (submit / poll / feedback / metrics)
 │   ├── mlops/                     Training, evaluation, retraining, drift, A/B
 │   │   └── data_pipeline/         Collection, synthetic data, validation, export
-│   └── cli.py                     `meeting-agent` CLI
 ├── web/                           Next.js web UI
-├── tests/                         Unit tests (43 passing)
+├── tests/                         Unit and smoke tests
 ├── docs/                          Architecture & design documents
 ├── docker/                        Prometheus config, Grafana provisioning
 ├── .github/workflows/ci.yml       CI: lint → unit → schema smoke → eval smoke → docker
@@ -156,19 +153,22 @@ LANGCHAIN_API_KEY=ls_your_key_here
 #### 4. Run
 
 ```bash
-# CLI — process a single file
-meeting-agent process meeting.mp3 --roster examples/roster.json --output result.json
-
 # API server
-meeting-agent serve --reload
-# → http://localhost:8000/docs
+PYTHONPATH=src uvicorn meeting_agent.api.main:app --reload --port 8000
+
+# Celery worker in a second shell
+PYTHONPATH=src celery -A meeting_agent.pipeline.worker_task.celery_app worker \
+  --loglevel=info --concurrency=1 -Q celery
+
+# Web UI in a third shell
+cd web && npm install && npm run dev
 ```
 
 ---
 
 ### Option B — Docker Compose (recommended)
 
-Starts everything: API, Celery worker, Ollama, Postgres, Redis, Prometheus, Grafana, and the Streamlit UI.
+Starts everything: API, Celery worker, Ollama, Postgres, Redis, Prometheus, Grafana, and the Next.js UI.
 
 ```bash
 cp .env.example .env
@@ -197,7 +197,7 @@ Notes:
 
 | Service      | URL                        | Credentials                      |
 |--------------|----------------------------|----------------------------------|
-| **UI**       | http://localhost:8501      | —                                |
+| **UI**       | http://localhost:3001      | —                                |
 | API          | http://localhost:8000      | —                                |
 | API docs     | http://localhost:8000/docs | —                                |
 | Prometheus   | http://localhost:9090      | —                                |
@@ -230,75 +230,6 @@ To wipe all data (including models):
 ```bash
 docker compose down -v
 ```
-
----
-
-### Streamlit UI
-
-A browser-based UI for submitting meetings, viewing results, and submitting corrections.
-
-**With Docker Compose** (included in the default stack):
-```
-http://localhost:8501
-```
-
-**Local dev** (while the API is running at localhost:8000):
-```bash
-pip install streamlit httpx
-streamlit run streamlit_app.py
-```
-
-The UI has three tabs:
-
-| Tab | What it does |
-|-----|--------------|
-| **Upload** | Drag-and-drop audio, paste roster JSON, real-time polling with status hints |
-| **Results** | Action items (open / human-review / unresolved), run metrics, stage timings |
-| **Feedback** | Correct any task field and submit to the feedback loop |
-
----
-
-### Using the CLI
-
-#### Process a meeting file
-
-```bash
-meeting-agent process path/to/meeting.mp3 \
-  --roster path/to/roster.json \
-  --output result.json
-```
-
-**roster.json** format:
-```json
-{
-  "workers": [
-    {
-      "worker_id": "w1",
-      "name": "Alice Chen",
-      "aliases": ["Alice"],
-      "role": "Product Manager",
-      "email": "alice@example.com"
-    },
-    {
-      "worker_id": "w2",
-      "name": "Bob Kim",
-      "aliases": ["Bob", "Bobby"],
-      "role": "Developer",
-      "email": "thien792003@gmail.com"
-    }
-  ]
-}
-```
-
-#### Start the API server
-
-```bash
-meeting-agent serve                    # production
-meeting-agent serve --reload           # dev mode with auto-reload
-meeting-agent serve --host 0.0.0.0 --port 8080
-```
-
----
 
 ### Using the REST API
 
@@ -341,7 +272,7 @@ curl -X POST http://localhost:8000/meetings/abc-123/feedback \
   }'
 ```
 
-Corrections are stored in `data/transcripts/_feedback.jsonl` and consumed by the retraining pipeline.
+Corrections are stored in PostgreSQL and can be exported as JSONL for retraining.
 
 #### Delete meeting data (GDPR)
 
@@ -370,7 +301,9 @@ python3 -m meeting_agent.mlops.data_pipeline.validate \
 
 Checks: schema conformance, speaker balance, train/val leakage, duplicates.
 
-#### 3. Fine-tune (requires GPU with ≥8GB VRAM)
+#### 3. Fine-tune
+
+Local machines without GPU should use Kaggle for the training step. Kaggle produces a candidate artifact only; evaluate it locally before promotion.
 
 ```bash
 pip install -e ".[train]"
@@ -378,7 +311,8 @@ pip install -e ".[train]"
 python3 -m meeting_agent.mlops.finetune \
   --data data/training/synthetic.jsonl \
   --output models/qwen-meeting-v1 \
-  --epochs 3
+  --epochs 3 \
+  --mlflow-uri file:./mlruns
 
 # With Optuna hyperparameter search:
 python3 -m meeting_agent.mlops.finetune --data data/training/synthetic.jsonl --search
@@ -393,14 +327,10 @@ mlflow ui --port 5000
 #### 4. Deploy fine-tuned model via Ollama
 
 ```bash
-# After training, the GGUF file is in models/qwen-meeting-v1/gguf/
-# Create a Modelfile and push to Ollama:
-cat > Modelfile <<EOF
-FROM ./models/qwen-meeting-v1/gguf/model.gguf
-EOF
-ollama create meeting-agent-v1 -f Modelfile
+# Evaluate the candidate first, then deploy an approved promotion manifest.
+make deploy-promoted-model APPLY=1
 
-# Update .env to use the fine-tuned model:
+# Update .env after promotion:
 # OLLAMA_LLM_MODEL=meeting-agent-v1
 ```
 
@@ -420,13 +350,8 @@ python3 -m meeting_agent.mlops.data_pipeline.collect audio \
 #### Use feedback corrections as training data
 
 ```bash
-# Feedback corrections are stored at:
-cat data/transcripts/_feedback.jsonl
-
-# Include them alongside other training data:
-python3 -m meeting_agent.mlops.finetune \
-  --data data/training/synthetic.jsonl data/training/collected.jsonl \
-  --output models/qwen-meeting-v2
+# Export SFT examples from DB-backed interactions:
+make export-sft
 ```
 
 ---
@@ -667,10 +592,11 @@ Prometheus metrics are at `GET /metrics`. Import Grafana dashboard:
 
 | Document | Description |
 |----------|-------------|
+| [TODO.md](TODO.md) | Active roadmap and open work |
+| [docs/project-status.md](docs/project-status.md) | Current project status, constraints, and cleanup notes |
 | [docs/architecture.md](docs/architecture.md) | Full system architecture (C4 levels 1–3) |
-| [docs/gap-analysis.md](docs/gap-analysis.md) | Requirements coverage tracker |
-| [docs/doc.md](docs/doc.md) | Project requirements & LLMOps scope |
-| [docs/require.md](docs/require.md) | LLMOps requirement checklist |
-| [docs/planing.md](docs/planing.md) | Implementation plan & phase gates |
-| [docs/c4model.md](docs/c4model.md) | C4 modeling reference |
-| [docs/mainflow.md](docs/mainflow.md) | High-level agent flow |
+| [docs/data-pipeline.md](docs/data-pipeline.md) | Data collection, synthetic data, validation, and training prep |
+| [docs/mlops-runbook.md](docs/mlops-runbook.md) | Retraining, MLflow, promotion, and deploy operations |
+| [docs/monitoring-guide.md](docs/monitoring-guide.md) | Observability setup and day-to-day checks |
+| [docs/eval-results.md](docs/eval-results.md) | Baseline model evaluation results |
+| [docs/final-report/](docs/final-report/) | Final report source and generated PDF |

@@ -157,7 +157,7 @@ ANOMALY_WINDOW_SIZE=50
 
 ## 4. Feedback loop metrics
 
-The feedback store (`data/transcripts/_feedback.jsonl`) also exposes aggregate stats:
+The DB-backed feedback loop exposes aggregate stats:
 
 ```bash
 curl http://localhost:8000/feedback/stats

@@ -12,13 +12,13 @@ src/meeting_agent/
   mlops/
     evaluate.py                       # Evaluation harness
     finetune.py                       # GPU fine-tune entrypoint
-    export.py                         # Feedback/data export
-    deploy.py                         # Controlled deploy flow
+    data_pipeline/                    # Feedback/data export helpers
+scripts/deploy_promoted_model.py      # Controlled deploy flow
 docker-compose.yml
 Dockerfile.train
 Makefile
 docs/mlops-runbook.md
-docs/source-audit-notes.md
+docs/project-status.md
 data/eval/gold_smoke.jsonl
 data/training/
 \end{lstlisting}
