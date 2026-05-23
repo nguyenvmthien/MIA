@@ -41,6 +41,10 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+      - name: Install audio tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
       - run: pip install -e ".[dev]"
       - name: Run unit tests with coverage
         env:
