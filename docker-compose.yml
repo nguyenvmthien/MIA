@@ -74,6 +74,7 @@ services:
     env_file: .env
     environment:
       <<: *db-env
+      FRONTEND_URL: ${PUBLIC_URL:-http://localhost:3001}
     volumes:
       - ./data:/app/data
     depends_on:
@@ -175,11 +176,11 @@ services:
       context: .
       dockerfile: Dockerfile.web
     ports:
-      - "3001:3001"
+      - "${WEB_PORT:-3001}:3001"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_API_URL: ${PUBLIC_URL:-http://localhost:3001}
       BACKEND_API_URL: http://api:8000
-      AUTH_URL: http://localhost:3001
+      AUTH_URL: ${AUTH_URL:-http://localhost:3001}
       AUTH_TRUST_HOST: "true"
       AUTH_SECRET: ${AUTH_SECRET:-m9w0uRaiiSXrGv4X/WRd9b4nyi92fFu1BecpTu1NQWM=}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
