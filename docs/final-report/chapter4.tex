@@ -1,9 +1,11 @@
 \chapter{Triển khai hệ thống}
 \label{chap:impl}
 
-\section{Kiến trúc runtime}
+Chương này mô tả cách hiện thực Meeting AI Agent thành một hệ thống chạy được bằng Docker Compose. Trọng tâm của chương không phải là lặp lại thuật toán ở Chương~\ref{chap:method}, mà là làm rõ các quyết định kỹ thuật: thành phần runtime, luồng xử lý bất đồng bộ, mô hình dữ liệu, API, cơ chế quan sát hệ thống và các điểm hỗ trợ LLMOps.
 
-Hệ thống được tách thành các thành phần có trách nhiệm rõ ràng: frontend nhận thao tác người dùng, API điều phối request và truy cập dữ liệu, worker xử lý các tác vụ tốn thời gian, còn các dịch vụ nền đảm nhiệm hàng đợi, lưu trữ, inference và quan sát trạng thái. Hình~\ref{fig:runtime-architecture} mô tả kiến trúc runtime hiện tại.
+\section{Kiến trúc triển khai}
+
+Hệ thống được triển khai theo kiến trúc nhiều dịch vụ. Frontend xử lý tương tác người dùng; backend cung cấp API và ghi nhận trạng thái; worker thực thi pipeline audio--NLP; các dịch vụ nền đảm nhiệm hàng đợi, lưu trữ, suy luận mô hình và monitoring. Kiến trúc này phù hợp với bài toán xử lý audio vì thời gian chạy ASR, diarization và LLM thường dài hơn một request HTTP thông thường.
 
 \begin{figure}[H]
 \centering
@@ -15,183 +17,225 @@ Hệ thống được tách thành các thành phần có trách nhiệm rõ rà
   arrow/.style={-Latex, thick, color=darkgray},
   dashedarrow/.style={-Latex, thick, dashed, color=darkgray}
 ]
-  \node[component] (web) {Next.js\\frontend};
-  \node[component, right=1.0cm of web] (api) {FastAPI\\backend};
-  \node[service, below=0.9cm of api] (pg) {PostgreSQL};
-  \node[service, right=1.0cm of api] (redis) {Redis\\broker + cache};
-  \node[component, right=1.0cm of redis] (worker) {Celery\\worker};
-  \node[service, below=0.9cm of worker] (ollama) {Ollama\\Qwen2.5};
-  \node[monitor, below=0.9cm of web] (grafana) {Prometheus\\Grafana};
+  \node[component] (web) {Next.js\\Web UI};
+  \node[component, right=1.3cm of web] (api) {FastAPI\\REST API};
+  \node[service, right=1.3cm of api] (redis) {Redis\\queue/cache};
+  \node[component, right=1.3cm of redis] (worker) {Celery\\worker};
+
+  \node[service, below=1.1cm of api] (pg) {PostgreSQL\\persistent state};
+  \node[service, below=1.1cm of worker] (ollama) {Ollama\\Qwen2.5-3B};
+  \node[monitor, below=1.1cm of redis] (obs) {Prometheus\\Grafana};
 
   \draw[arrow] (web) -- node[above,font=\scriptsize]{HTTP} (api);
-  \draw[arrow] (api) -- (pg);
   \draw[arrow] (api) -- (redis);
   \draw[arrow] (redis) -- (worker);
-  \draw[arrow] (worker) -- (pg);
+  \draw[arrow] (api) -- (pg);
+  \draw[arrow] (worker.south west) -- (pg.east);
   \draw[arrow] (worker) -- (ollama);
-  \draw[dashedarrow] (api) -- (grafana);
-  \draw[dashedarrow] (worker.west) -- ++(-0.4,0) |- (grafana.east);
+  \draw[dashedarrow] (api.south east) -- (obs.north west);
+  \draw[dashedarrow] (worker.south west) -- (obs.north east);
 \end{tikzpicture}
 }
 \caption{Kiến trúc runtime của Meeting AI Agent}
 \label{fig:runtime-architecture}
 \end{figure}
 
-Các thành phần chính gồm:
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.8cm}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X}
+\toprule
+\textbf{Thành phần} & \textbf{Trách nhiệm chính} & \textbf{Dữ liệu vào/ra} \\
+\midrule
+Next.js Web UI & Upload audio, hiển thị trạng thái xử lý, review transcript, speaker mapping và task feedback. & Nhận audio và thao tác người dùng; gọi API nội bộ. \\
+FastAPI backend & Tạo meeting job, quản lý dữ liệu, phân quyền theo người dùng, cung cấp endpoint cho frontend và monitoring. & Nhận HTTP request; ghi PostgreSQL; đẩy job vào Redis. \\
+Celery worker & Chạy pipeline ASR, diarization, prompt construction, LLM extraction, guardrails và lưu kết quả. & Nhận job từ Redis; đọc/ghi artifact và PostgreSQL. \\
+PostgreSQL & Lưu trạng thái hệ thống có cấu trúc. & Meetings, transcript turns, tasks, feedback, workers, calendar events. \\
+Redis & Làm Celery broker/result backend và cache cho một số lời gọi suy luận. & Queue message, trạng thái job ngắn hạn, cache prompt. \\
+Ollama & Phục vụ LLM cục bộ. Trong bản demo dùng Qwen2.5-3B. & Nhận prompt; trả summary hoặc JSON action items. \\
+Prometheus/Grafana & Thu thập và hiển thị metrics vận hành. & Scrape \texttt{/metrics}; trực quan hóa latency, job, token, guardrail. \\
+\bottomrule
+\end{tabularx}
+\caption{Vai trò của các thành phần triển khai}
+\label{tab:runtime-components}
+\end{table}
+\normalsize
 
-\begin{itemize}[leftmargin=*]
-  \item \textbf{Frontend}: thư mục \texttt{web/}, xây bằng Next.js. UI hỗ trợ upload audio, theo dõi trạng thái job, review transcript, speaker mapping, task feedback và roster/history.
-  \item \textbf{API}: \texttt{src/meeting\_agent/api/main.py}, cung cấp REST endpoints cho meeting, transcript, feedback, metrics, retrain và deploy.
-  \item \textbf{Worker}: Celery worker xử lý pipeline audio và routing queue.
-  \item \textbf{Storage}: PostgreSQL lưu meeting, participants, transcript turns, tasks, artifacts, feedback corrections, calendar events và worker registry.
-  \item \textbf{Queue/cache}: Redis dùng cho Celery broker và cache một số bước inference.
-  \item \textbf{LLM serving}: Ollama phục vụ Qwen2.5-3B và embedding model nếu được cấu hình.
-  \item \textbf{Monitoring}: Prometheus và Grafana để theo dõi API, worker, pipeline và feedback.
-\end{itemize}
+Với Docker Compose, các dịch vụ cốt lõi gồm \texttt{postgres}, \texttt{redis}, \texttt{ollama}, \texttt{migrator}, \texttt{api}, \texttt{worker}, \texttt{web}, \texttt{prometheus} và \texttt{grafana}. Profile \texttt{mlops} bổ sung \texttt{beat}, \texttt{trainer} và \texttt{mlflow} cho các tác vụ đánh giá/huấn luyện mở rộng.
 
-\section{Database-backed workflow}
+\section{Luồng xử lý meeting}
 
-Database đóng vai trò là nguồn dữ liệu trung tâm của hệ thống. Các trạng thái quan trọng được lưu trong PostgreSQL thay vì chỉ nằm trong file artifact cục bộ:
+Một meeting được xử lý bất đồng bộ để tránh việc HTTP request bị khóa trong suốt quá trình audio processing. Luồng chính gồm năm bước:
 
-\begin{itemize}[leftmargin=*]
-  \item Transcript turns thay vì chỉ nằm trong file artifact.
-  \item Meeting participants và speaker mapping.
-  \item Action items và feedback corrections.
-  \item Calendar events để audit việc đồng bộ lịch.
-  \item Worker registry và metrics phục vụ dashboard.
-  \item Raw artifacts như diarization output và model/prompt metadata.
-\end{itemize}
+\begin{enumerate}[leftmargin=*]
+  \item Người dùng upload audio từ Web UI. Frontend gửi request \texttt{POST /meetings} đến backend.
+  \item Backend tạo bản ghi \texttt{meetings} với trạng thái \texttt{pending}, lưu metadata ban đầu và đẩy job vào Redis.
+  \item Celery worker nhận job, chuyển trạng thái sang \texttt{processing}, sau đó chạy pipeline ASR, diarization, chuẩn hóa transcript và gọi LLM.
+  \item Kết quả được kiểm tra bằng guardrails, ghi vào các bảng \texttt{transcript\_turns}, \texttt{tasks}, \texttt{meeting\_participants} và cập nhật \texttt{meetings}.
+  \item Frontend polling \texttt{GET /meetings/\{id\}} để hiển thị trạng thái. Khi hoàn tất, người dùng review transcript/task và gửi feedback nếu cần.
+\end{enumerate}
 
-Thiết kế này giúp hệ thống dễ truy vết hơn và là nền tảng cho feedback export/fine-tuning. Khi một task được người dùng sửa, hệ thống vẫn có thể truy ngược về transcript turn, meeting, model metadata và correction tương ứng.
+Trạng thái meeting được lưu trong cơ sở dữ liệu thay vì chỉ nằm trong bộ nhớ worker. Nhờ vậy, nếu frontend refresh hoặc worker xử lý lâu, người dùng vẫn có thể tiếp tục theo dõi cùng một meeting. Với các job bị treo ở trạng thái \texttt{pending}, backend có logic đánh dấu lỗi sau một khoảng thời gian nhất định để tránh hiển thị trạng thái không kết thúc.
 
 \section{Mô hình dữ liệu}
 
-Mô hình dữ liệu được thiết kế xoay quanh thực thể \texttt{Meeting}. Một meeting là đơn vị xử lý chính, được tạo ngay khi người dùng upload audio và được cập nhật dần qua các trạng thái \texttt{pending}, \texttt{processing}, \texttt{completed} hoặc \texttt{failed}. Các bảng con lưu transcript, task, participant, feedback, artifact và calendar event đều tham chiếu về \texttt{meeting\_id}. Cách tổ chức này giúp truy vấn theo meeting đơn giản, đồng thời hỗ trợ audit toàn bộ vòng đời xử lý của một audio.
+Thực thể trung tâm của hệ thống là \texttt{Meeting}. Mỗi audio upload sinh ra một meeting, và các dữ liệu dẫn xuất đều tham chiếu về \texttt{meeting\_id}. Thiết kế này giúp truy vết một action item về transcript gốc, feedback của người dùng, artifact xử lý và phiên bản mô hình đã dùng.
 
 \begin{figure}[H]
 \centering
 \resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
-  entity/.style={draw=primary, fill=light, rounded corners=3pt, text width=2.7cm, minimum height=1.0cm, align=left, font=\scriptsize},
+  entity/.style={draw=primary, fill=light, rounded corners=3pt, text width=3.0cm, minimum height=0.9cm, align=center, font=\scriptsize},
+  logical/.style={draw=accent, fill=stagecolor2, rounded corners=3pt, text width=3.0cm, minimum height=0.9cm, align=center, font=\scriptsize},
   arrow/.style={-Latex, thick, color=darkgray}
 ]
-  \node[entity] (meeting) {\textbf{meetings}\\status\\summary\\metrics};
-  \node[entity, right=0.9cm of meeting] (turns) {\textbf{transcript\_turns}\\speaker\\time\\text};
-  \node[entity, below=0.8cm of turns] (tasks) {\textbf{tasks}\\assignee\\due date\\source turns};
-  \node[entity, below=0.8cm of meeting] (feedback) {\textbf{feedback}\\original\\corrected};
-  \node[entity, left=0.9cm of meeting] (participants) {\textbf{participants}\\speaker\\display name};
-  \node[entity, below=0.8cm of participants] (workers) {\textbf{workers}\\worker\_id\\name, email\\aliases, skills};
-  \node[entity, right=0.9cm of tasks] (artifacts) {\textbf{meeting\_artifacts}\\artifact\_type\\payload\\checksum};
-  \node[entity, below=0.8cm of tasks] (calendar) {\textbf{calendar\_events}\\task\_id\\provider event\\sync status};
+  \node[entity, fill=stagecolor1] (meeting) {\textbf{meetings}\\root entity};
+  \node[entity, above left=1.0cm and 1.3cm of meeting] (turns) {\textbf{transcript\_turns}\\FK: meeting\_id};
+  \node[entity, above right=1.0cm and 1.3cm of meeting] (tasks) {\textbf{tasks}\\FK: meeting\_id};
+  \node[entity, left=1.9cm of meeting] (participants) {\textbf{meeting\_participants}\\FK: meeting\_id};
+  \node[entity, right=1.9cm of meeting] (feedback) {\textbf{feedback\_corrections}\\FK: meeting\_id};
+  \node[entity, below left=1.0cm and 1.3cm of meeting] (artifacts) {\textbf{meeting\_artifacts}\\FK: meeting\_id};
+  \node[entity, below right=1.0cm and 1.3cm of meeting] (calendar) {\textbf{calendar\_events}\\FK: meeting\_id};
+  \node[logical, below=2.25cm of meeting] (workers) {\textbf{workers}\\logical roster};
 
   \draw[arrow] (meeting) -- (turns);
   \draw[arrow] (meeting) -- (tasks);
-  \draw[arrow] (meeting) -- (feedback);
   \draw[arrow] (meeting) -- (participants);
-  \draw[arrow] (workers) -- (participants);
-  \draw[arrow] (tasks) -- (calendar);
+  \draw[arrow] (meeting) -- (feedback);
   \draw[arrow] (meeting) -- (artifacts);
-  \draw[arrow, dashed] (tasks) -- node[above,font=\scriptsize]{source\_turn\_ids} (turns);
+  \draw[arrow] (meeting) -- (calendar);
 \end{tikzpicture}
 }
-\caption{Mô hình dữ liệu chính của Meeting AI Agent}
+\caption{Mô hình dữ liệu chính. Các bảng nghiệp vụ chính tham chiếu trực tiếp về \texttt{meetings}; các liên kết logic khác được mô tả trong phần nội dung.}
 \label{fig:data-model}
 \end{figure}
 
-\small
-\begin{tabularx}{\textwidth}{p{3.0cm}X X}
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X}
 \toprule
 \textbf{Bảng} & \textbf{Vai trò} & \textbf{Trường đáng chú ý} \\
 \midrule
-\texttt{meetings} & Bản ghi gốc của một lần upload và xử lý audio. & \texttt{status}, \texttt{duration\_ms}, \texttt{summary\_text}, \texttt{run\_metrics}, \texttt{model\_version}. \\
-\texttt{transcript\_turns} & Transcript đã chuẩn hoá theo lượt nói, dùng cho UI, prompt và training export. & \texttt{turn\_id}, \texttt{speaker\_id}, \texttt{speaker\_name}, \texttt{start\_ms}, \texttt{end\_ms}, \texttt{asr\_confidence}. \\
-\texttt{tasks} & Action items sau khi qua LLM, guardrails và assignment. & \texttt{description}, \texttt{assignee\_id}, \texttt{due\_date}, \texttt{priority}, \texttt{status}, \texttt{bucket}, \texttt{source\_turn\_ids}. \\
-\texttt{feedback\_corrections} & Hiệu chỉnh của người dùng, là dữ liệu chính cho vòng LLMOps. & Cặp trường gốc/sửa như description, assignee, due date; kèm cờ false positive và missing. \\
-\texttt{meeting\_participants} & Mapping giữa speaker diarization và participant trong meeting. & \texttt{speaker\_id}, \texttt{display\_name}, \texttt{worker\_id}. \\
-\texttt{workers} & Roster người tham gia/người có thể được gán task. & \texttt{worker\_id}, \texttt{name}, \texttt{aliases}, \texttt{skills}. \\
-\texttt{meeting\_artifacts} & Lưu artifact thô hoặc dẫn xuất để audit. & \texttt{artifact\_type}, \texttt{payload}, \texttt{checksum}, \texttt{artifact\_metadata}. \\
-\texttt{calendar\_events} & Theo dõi việc đồng bộ action item sang calendar provider. & \texttt{provider}, \texttt{provider\_event\_id}, \texttt{status}, \texttt{last\_error}. \\
+\texttt{meetings} & Bản ghi gốc của một lần xử lý audio. & \texttt{id}, \texttt{status}, \texttt{owner\_user\_id}, \texttt{audio\_filename}, \texttt{duration\_ms}, \texttt{participants}, \texttt{summary\_text}, \texttt{run\_metrics}, \texttt{transcript\_turns}, \texttt{error}, \texttt{model\_version}. \\
+\texttt{transcript\_turns} & Lưu transcript chuẩn hoá theo lượt nói. Đây là bảng phục vụ truy vấn/UI, trong khi \texttt{meetings.transcript\_turns} là snapshot JSONB. & \texttt{meeting\_id}, \texttt{turn\_id}, \texttt{speaker\_id}, \texttt{speaker\_name}, \texttt{worker\_id}, \texttt{start\_ms}, \texttt{end\_ms}, \texttt{text}, \texttt{asr\_confidence}. \\
+\texttt{tasks} & Lưu action items sau LLM extraction và guardrails. & \texttt{meeting\_id}, \texttt{task\_id}, \texttt{description}, \texttt{assignee}, \texttt{assignee\_id}, \texttt{due\_date}, \texttt{priority}, \texttt{status}, \texttt{extraction\_confidence}, \texttt{source\_turn\_ids}, \texttt{bucket}. \\
+\texttt{feedback\_corrections} & Lưu correction, false positive hoặc missing task do người dùng gửi. & \texttt{meeting\_id}, \texttt{task\_id}, \texttt{reviewer}, các cặp \texttt{original\_*}/\texttt{corrected\_*}, \texttt{is\_false\_positive}, \texttt{is\_missing}, \texttt{submitted\_at}. \\
+\texttt{meeting\_participants} & Ánh xạ speaker ẩn danh sang tên người tham gia trong một meeting. & \texttt{meeting\_id}, \texttt{speaker\_id}, \texttt{display\_name}, \texttt{worker\_id}, \texttt{email}. \\
+\texttt{workers} & Danh bạ người tham gia/người có thể được gán task, được scope theo user. & \texttt{worker\_id}, \texttt{owner\_user\_id}, \texttt{name}, \texttt{email}, \texttt{role}, \texttt{aliases}, \texttt{skills}. \\
+\texttt{meeting\_artifacts} & Lưu artifact thô hoặc dẫn xuất để audit. & \texttt{meeting\_id}, \texttt{artifact\_type}, \texttt{storage\_uri}, \texttt{payload}, \texttt{checksum}, \texttt{artifact\_metadata}. \\
+\texttt{calendar\_events} & Theo dõi việc đồng bộ task sang Google Calendar. & \texttt{meeting\_id}, \texttt{task\_id}, \texttt{user\_id}, \texttt{provider}, \texttt{provider\_event\_id}, \texttt{html\_link}, \texttt{status}, \texttt{last\_error}. \\
 \bottomrule
 \end{tabularx}
+\caption{Các bảng dữ liệu chính}
+\label{tab:data-model}
+\end{table}
 \normalsize
 
-Điểm quan trọng trong mô hình này là \texttt{tasks.source\_turn\_ids}. Thay vì chỉ lưu mô tả task, mỗi action item giữ danh sách turn nguồn. Nhờ đó UI có thể hiển thị bằng chứng, feedback có thể chỉ ra task nào sai, và evaluation/training export có thể gắn correction với ngữ cảnh hội thoại ban đầu.
+Hai điểm quan trọng của mô hình dữ liệu là \texttt{owner\_user\_id} và \texttt{source\_turn\_ids}. Trường \texttt{owner\_user\_id} giúp tách dữ liệu theo người dùng khi bật xác thực. Trường \texttt{source\_turn\_ids} giúp mỗi task giữ liên kết logic đến các lượt nói đã tạo ra task đó; đây là cơ sở để UI hiển thị evidence, người dùng sửa lỗi có ngữ cảnh, và bộ đánh giá so sánh dự đoán với dữ liệu tham chiếu. Trong schema hiện tại, \texttt{calendar\_events.task\_id} và \texttt{meeting\_participants.worker\_id} là mã tham chiếu logic, không phải foreign key vật lý đến \texttt{tasks} hoặc \texttt{workers}.
 
-\section{Human feedback UI}
+\section{API và giao diện người dùng}
 
-Bước Human Feedback đã được điều chỉnh theo đúng bản chất multi-speaker:
+Backend cung cấp API REST cho ba nhóm chức năng: xử lý meeting, quản lý danh bạ người tham gia, và vận hành hệ thống. Bảng~\ref{tab:api-endpoints} liệt kê các endpoint chính.
 
-\begin{itemize}[leftmargin=*]
-  \item Panel transcript hiển thị lượt nói theo speaker.
-  \item Panel speaker evidence cho thấy mỗi \texttt{SPEAKER\_xx} đã nói những đoạn nào.
-  \item Người dùng map speaker ẩn danh sang participant thật thay vì hệ thống tự áp một speaker cho toàn bộ audio.
-  \item Task card hiển thị evidence turn để người dùng biết tại sao task được trích xuất hoặc gán cho người đó.
-  \item Layout review responsive hơn, không bị co lại thành một cụm nhỏ ở giữa màn hình.
-\end{itemize}
-
-\begin{figure}[H]
+\begin{table}[H]
 \centering
-\resizebox{\textwidth}{!}{%
-\begin{tikzpicture}[
-  box/.style={draw=primary, fill=light, rounded corners=3pt, minimum width=2.6cm, minimum height=0.8cm, align=center, font=\scriptsize},
-  store/.style={draw=accent, fill=stagecolor2, rounded corners=3pt, minimum width=2.6cm, minimum height=0.8cm, align=center, font=\scriptsize},
-  arrow/.style={-Latex, thick}
-]
-  \node[store] (turns) {Transcript turns};
-  \node[box, right=0.8cm of turns] (speaker) {Speaker mapping};
-  \node[box, right=0.8cm of speaker] (task) {Task review};
-  \node[store, below=0.9cm of task] (correction) {Feedback correction};
-  \node[store, left=0.8cm of correction] (eval) {Evaluation/export};
-  \node[box, left=0.8cm of eval] (improve) {Prompt/model\\improvement};
-
-  \draw[arrow] (turns) -- (speaker);
-  \draw[arrow] (speaker) -- (task);
-  \draw[arrow] (task) -- (correction);
-  \draw[arrow] (correction) -- (eval);
-  \draw[arrow] (eval) -- (improve);
-  \draw[arrow, dashed] (improve) -- ++(-0.5,0) |- (turns);
-\end{tikzpicture}
-}
-\caption{Luồng human feedback từ transcript evidence đến dữ liệu cải tiến}
-\label{fig:human-feedback-loop}
-\end{figure}
-
-\section{MLOps services}
-
-Profile \texttt{mlops} trong Docker Compose bổ sung các thành phần dành cho đánh giá và huấn luyện mở rộng:
-
-\begin{itemize}[leftmargin=*]
-  \item \texttt{beat}: Celery Beat schedule cho retrain check và drift check.
-  \item \texttt{trainer}: worker riêng chỉ consume queue \texttt{mlops}.
-  \item \texttt{mlflow}: tracking server cho experiment khi chạy training.
-  \item \texttt{Dockerfile.train}: image tách riêng dependency GPU/training khỏi runtime API.
-\end{itemize}
-
-Các lệnh chính khi cần chạy nhánh MLOps:
-
-\begin{lstlisting}[language=bash,caption={Lệnh vận hành MLOps}]
-make mlops-up
-make retrain-check
-make retrain-force
-make train-image
-make deploy-promoted-model APPLY=1
-\end{lstlisting}
-
-\section{API chính}
-
-\small
-\begin{tabularx}{\textwidth}{p{4.0cm}X p{3.3cm}}
+\scriptsize
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{4.0cm}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{2.2cm}}
 \toprule
-\textbf{Endpoint} & \textbf{Mục đích} & \textbf{Ghi chú} \\
+\textbf{Endpoint} & \textbf{Mục đích} & \textbf{Nhóm} \\
 \midrule
-\texttt{POST /meetings} & Upload audio & Tạo meeting job \\
-\texttt{GET /meetings/\{id\}} & Xem trạng thái & Frontend polling/resume \\
-\texttt{GET /meetings} & Lịch sử meetings & Có scope theo owner \\
-\texttt{POST /meetings/\{id\}/feedback} & Gửi correction & Lưu DB \\
-\texttt{POST /admin/retrain} & Trigger retrain & Đưa vào queue \texttt{mlops} \\
-\texttt{GET /admin/retrain/state} & Xem retrain state & Dùng cho ops review \\
-\texttt{GET /workers} & Danh sách worker roster & Scope theo owner \\
-\texttt{GET /metrics} & Prometheus metrics & Monitoring \\
+\texttt{POST /meetings} & Upload audio và tạo job xử lý bất đồng bộ. & Meeting \\
+\texttt{GET /meetings/\{id\}} & Lấy trạng thái, transcript, summary và tasks của một meeting. & Meeting \\
+\texttt{GET /meetings} & Liệt kê lịch sử meeting theo scope người dùng. & Meeting \\
+\texttt{DELETE /meetings/\{id\}} & Xóa dữ liệu meeting và các bản ghi liên quan. & Meeting \\
+\texttt{POST /meetings/\{id\}/feedback} & Gửi correction, false positive hoặc missing task. & Feedback \\
+\texttt{POST /meetings/\{id\}/participants/\{speaker\}/resolve} & Gán speaker diarization vào một worker cụ thể. & Review \\
+\texttt{GET/POST/PUT/DELETE /workers} & Quản lý roster người tham gia. & Roster \\
+\texttt{GET /metrics} & Xuất Prometheus metrics. & Ops \\
+\texttt{GET /metrics/business} & Xuất chỉ số tổng hợp từ database cho dashboard. & Ops \\
+\texttt{POST /admin/retrain} & Kích hoạt kiểm tra hoặc chạy retraining pipeline. & MLOps \\
+\texttt{GET /admin/retrain/state} & Xem trạng thái retraining gần nhất. & MLOps \\
 \bottomrule
 \end{tabularx}
+\caption{Các API chính của hệ thống}
+\label{tab:api-endpoints}
+\end{table}
 \normalsize
+
+Giao diện người dùng được triển khai bằng Next.js. Các view quan trọng gồm upload audio, meeting history, meeting detail, transcript review, speaker mapping, task correction và roster management. Điểm cần nhấn mạnh là UI không chỉ hiển thị kết quả cuối cùng; nó cho phép người dùng kiểm tra bằng chứng của từng task qua transcript turn. Điều này làm giảm tính ``hộp đen'' của LLM extraction và tạo dữ liệu feedback có giá trị hơn.
+
+\section{Xác thực, phân quyền và xử lý dữ liệu nhạy cảm}
+
+Ở mức frontend, hệ thống hỗ trợ đăng nhập bằng Google thông qua NextAuth. Khi frontend gọi backend, proxy nội bộ truyền định danh người dùng để backend có thể lọc meetings và workers theo \texttt{owner\_user\_id}. Backend cũng có cơ chế token cho user/admin khi bật cấu hình xác thực. Cách triển khai này đủ cho demo nhiều người dùng ở mức ứng dụng, nhưng chưa được trình bày như một cơ chế bảo mật doanh nghiệp hoàn chỉnh.
+
+Đối với dữ liệu nhạy cảm, hệ thống có lớp masking PII dựa trên biểu thức chính quy. Các mẫu như email, số điện thoại, URL, địa chỉ IP và một số định dạng định danh phổ biến được thay bằng placeholder trước khi đưa vào prompt hoặc log debug. Đây là biện pháp giảm rủi ro rò rỉ thông tin trong quá trình gọi LLM và observability; nó không thay thế cho một hệ thống DLP hoặc kiểm toán tuân thủ đầy đủ.
+
+\section{Monitoring và observability}
+
+Hệ thống dùng ba lớp quan sát chính: Prometheus/Grafana cho metrics định lượng, LangSmith cho trace LLM khi được cấu hình, và anomaly detection cho cảnh báo thống kê đơn giản.
+
+\subsection{Prometheus và Grafana}
+
+Backend cung cấp endpoint \texttt{GET /metrics} theo định dạng Prometheus. Prometheus scrape endpoint này định kỳ, còn Grafana dùng dữ liệu đó để hiển thị dashboard. Các metrics chính gồm:
+
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{4.7cm}>{\raggedright\arraybackslash}X}
+\toprule
+\textbf{Metric} & \textbf{Ý nghĩa kỹ thuật} \\
+\midrule
+\texttt{meeting\_stage\_duration\_seconds} & Histogram đo thời gian từng stage như ASR, LLM hoặc guardrail. Dùng để phát hiện bottleneck. \\
+\texttt{meeting\_llm\_tokens\_total} & Tổng token đã tiêu thụ bởi LLM. Dùng để theo dõi chi phí và độ dài prompt/response. \\
+\texttt{meeting\_llm\_calls\_total} & Số lần gọi LLM, có label theo model. Dùng để kiểm tra tần suất suy luận. \\
+\texttt{meeting\_jobs\_total} & Số job theo trạng thái hoàn tất/thất bại. Dùng để theo dõi độ ổn định pipeline. \\
+\texttt{meeting\_tasks\_extracted\_total} & Số task trích xuất thành công. Dùng để quan sát sản lượng đầu ra. \\
+\texttt{meeting\_hallucination\_flags\_total} & Số lần guardrail đánh dấu output có dấu hiệu không bám transcript. \\
+\texttt{meeting\_anomaly\_events\_total} & Số sự kiện bất thường do detector thống kê phát hiện. \\
+\bottomrule
+\end{tabularx}
+\caption{Metrics vận hành dùng cho Prometheus/Grafana}
+\label{tab:monitoring-metrics}
+\end{table}
+\normalsize
+
+Grafana không quyết định chất lượng mô hình; nó giúp quan sát hệ thống khi chạy. Ví dụ, nếu \texttt{meeting\_stage\_duration\_seconds} tăng mạnh ở stage LLM, nguyên nhân có thể đến từ prompt quá dài, model phục vụ chậm, hoặc hàng đợi worker bị quá tải. Các kết luận về chất lượng trích xuất như precision, recall và F1 được trình bày ở Chương~\ref{chap:eval}; các dashboard ở chương này chủ yếu phục vụ vận hành.
+
+\subsection{LangSmith trace}
+
+LangSmith là lớp quan sát dành riêng cho lời gọi LLM. Khi các biến môi trường \texttt{LANGCHAIN\_TRACING\_V2}, \texttt{LANGCHAIN\_API\_KEY} và \texttt{LANGCHAIN\_PROJECT} được cấu hình, orchestrator tự động trace prompt, response, latency và metadata của các lời gọi LLM. Trong ngữ cảnh hệ thống này, LangSmith hữu ích để trả lời các câu hỏi như: prompt nào tạo ra JSON sai schema, response nào bị guardrail loại, hoặc phiên bản prompt nào làm tăng token/latency.
+
+Vì LangSmith là dịch vụ ngoài và có thể lưu prompt/response, việc bật trace phải đi kèm quy tắc bảo vệ dữ liệu. Trong bản hiện tại, hệ thống có masking PII ở tầng prompt/logging; tuy vậy, báo cáo chỉ xem LangSmith là công cụ debug và phân tích, không phải yêu cầu bắt buộc để hệ thống demo chạy.
+
+\subsection{Anomaly detection}
+
+Ngoài dashboard, hệ thống có detector thống kê dựa trên rolling Z-score. Detector giữ cửa sổ giá trị gần nhất cho từng metric như latency LLM, số task trích xuất, số guardrail flag và tổng token. Một giá trị mới bị đánh dấu bất thường khi lệch khỏi trung bình động quá ngưỡng cấu hình. Cơ chế này đơn giản nhưng hữu ích trong demo: nó giúp phát hiện nhanh các phiên xử lý quá chậm, output có quá ít/quá nhiều task, hoặc token tăng bất thường.
+
+\section{MLOps và vòng cải tiến}
+
+Phần MLOps của hệ thống được thiết kế để nối dữ liệu feedback vào quá trình đánh giá và cải tiến mô hình. Khi người dùng sửa task, backend lưu correction vào \texttt{feedback\_corrections}; endpoint \texttt{/feedback/export} có thể xuất dữ liệu này thành JSONL, tức định dạng mỗi dòng là một JSON object, để phục vụ fine-tuning hoặc đánh giá offline.
+
+Trong Docker Compose, profile \texttt{mlops} thêm ba thành phần:
+
+\begin{itemize}[leftmargin=*]
+  \item \texttt{beat}: chạy lịch kiểm tra điều kiện retraining, ví dụ số lượng correction đã đủ ngưỡng hay chưa.
+  \item \texttt{trainer}: worker riêng cho queue \texttt{mlops}, tách training khỏi worker xử lý meeting.
+  \item \texttt{mlflow}: tracking server để ghi nhận experiment khi chạy training.
+\end{itemize}
+
+Thiết kế này thể hiện vòng đời LLMOps, nhưng cần phân biệt rõ giữa năng lực đã chuẩn bị và kết quả đã hoàn tất. Dự án hiện tại đã có luồng thu thập feedback, export dữ liệu, trigger retrain và tracking experiment; báo cáo không giả định rằng đã có một mô hình fine-tuned được triển khai vào môi trường vận hành chính thức nếu chưa có artifact và kết quả đánh giá tương ứng.
+
+\section{Giới hạn triển khai}
+
+Phiên bản hiện tại được tối ưu cho demo kỹ thuật bằng Docker Compose trên máy cá nhân. Cách chạy này giúp tái lập môi trường nhanh, nhưng chưa tương đương triển khai vận hành chính thức trên hạ tầng cloud. Một số giới hạn chính gồm:
+
+\begin{itemize}[leftmargin=*]
+  \item Khả năng chịu tải phụ thuộc tài nguyên máy chạy Docker, đặc biệt ở các bước ASR và LLM.
+  \item Ollama chạy cục bộ thuận tiện cho demo, nhưng cần sizing phần cứng rõ ràng nếu phục vụ nhiều người dùng đồng thời.
+  \item Monitoring đã có metrics và dashboard nền tảng, nhưng chưa có quy trình incident response đầy đủ.
+  \item PII masking hiện dựa trên pattern, chưa bao phủ mọi loại dữ liệu nhạy cảm trong hội thoại tự nhiên.
+  \item Triển khai qua domain public chưa được xem là kết quả chính thức của báo cáo; điểm demo tin cậy là môi trường Docker local.
+\end{itemize}
+
+Những giới hạn này không làm thay đổi mục tiêu của dự án: xây dựng một hệ thống NLP end-to-end có thể xử lý audio meeting, trích xuất action items, cho phép người dùng hiệu chỉnh và tạo nền tảng cho LLMOps. Chương tiếp theo sẽ đánh giá hệ thống bằng các thước đo định lượng và phân tích ý nghĩa của kết quả thu được.
