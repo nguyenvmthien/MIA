@@ -1,81 +1,153 @@
 \chapter{Đánh giá}
 \label{chap:eval}
 
-\section{Bộ dữ liệu đánh giá}
+Chương này trình bày cách đánh giá hệ thống và kết quả baseline hiện tại. Mục tiêu của phần đánh giá là kiểm tra năng lực trích xuất action items từ transcript cuộc họp, độ ổn định của output có cấu trúc, mức độ hallucination và chi phí thời gian khi chạy mô hình cục bộ. Các kết quả dưới đây được hiểu là baseline trước khi có mô hình fine-tuned từ dữ liệu feedback thật.
 
-Đánh giá hiện tại dùng \texttt{data/eval/gold\_synthetic\_205.jsonl}. Benchmark gần nhất chạy 100 mẫu trên tập này để kiểm tra chất lượng extraction ở mức baseline. \texttt{data/eval/gold\_smoke.jsonl} vẫn được giữ như smoke test nhỏ cho CI, nhưng không còn là số liệu chính để kết luận baseline.
+\section{Thiết lập đánh giá}
 
-Model được đánh giá là Qwen2.5-3B base chạy qua Ollama, chưa fine-tune. Vì vậy kết quả bên dưới là baseline trước khi sử dụng dữ liệu feedback thật để cải thiện mô hình hoặc prompt.
+Bộ đánh giá chính là \texttt{data/eval/gold\_synthetic\_205.jsonl}. Mỗi dòng trong file là một mẫu meeting ở định dạng JSON, gồm transcript theo lượt nói, ngày họp, roster người tham gia và danh sách action items tham chiếu. Tập này được tạo theo nhiều miền nội dung như engineering, product, sales, marketing và HR để tránh chỉ kiểm tra một kiểu cuộc họp đơn giản.
 
-\section{Kết quả định lượng}
+Trong lần benchmark gần nhất, hệ thống chạy 100 mẫu đầu tiên của tập trên với cấu hình:
 
 \begin{table}[H]
 \centering
-\caption{Kết quả baseline trên benchmark 100 mẫu}
-\begin{tabular}{lcc}
+\small
+\begin{tabularx}{\textwidth}{p{4.0cm}X}
 \toprule
-\textbf{Metric} & \textbf{Kết quả} & \textbf{Gate} \\
+\textbf{Thành phần} & \textbf{Cấu hình đánh giá} \\
 \midrule
-Precision & 0.8604 & hard: $\geq$ 0.70 \\
-Recall & 0.6665 & watch \\
-F1 & 0.6886 & no drop $>$ 0.05 \\
-Assignee accuracy & 0.5232 & watch \\
-Hallucination rate & 0.0\% & hard: no $>$2pp regression \\
-Schema failure rate & 0.0\% & hard: no regression \\
+Evaluation harness & \texttt{src/meeting\_agent/mlops/evaluate.py} \\
+Benchmark runner & \texttt{scripts/run\_benchmark.py} \\
+Tập tham chiếu & \texttt{data/eval/gold\_synthetic\_205.jsonl} \\
+Số mẫu đánh giá & 100 mẫu \\
+Model & \texttt{qwen2.5:3b} chạy qua Ollama \\
+Prompt mode & \texttt{few\_shot} \\
+Ngày chạy & 2026-05-23 \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
+\caption{Cấu hình benchmark baseline}
+\label{tab:eval-setup}
 \end{table}
 
-Kết quả cho thấy precision, schema validity và hallucination control đã đủ tốt cho baseline hiện tại. Recall và assignee accuracy vẫn là watch metrics cần cải thiện bằng dữ liệu feedback, prompt tuning hoặc fine-tuning. Promotion policy hiện không yêu cầu mọi metric vượt một ngưỡng cao tuyệt đối; candidate được so tương đối với baseline để tránh regression.
+Điểm cần làm rõ là benchmark này đánh giá phần action-item extraction từ transcript đã có sẵn, không đo trực tiếp Word Error Rate của ASR hoặc Diarization Error Rate của speaker diarization. Do đó, kết quả phản ánh chất lượng của bước LLM extraction, guardrails và assignee resolution trên transcript tham chiếu. Đánh giá audio end-to-end cần thêm tập audio có transcript và speaker annotation được kiểm chứng thủ công.
+
+\section{Phương pháp tính metric}
+
+Mỗi mẫu có hai danh sách: action items tham chiếu và action items dự đoán bởi hệ thống. Việc so sánh không dùng so khớp chuỗi tuyệt đối, vì cùng một công việc có thể được diễn đạt bằng nhiều câu khác nhau. Thay vào đó, hệ thống match theo trường \texttt{description} qua hai bước:
+
+\begin{enumerate}[leftmargin=*]
+  \item Tính điểm BM25 giữa mô tả task dự đoán và các mô tả task tham chiếu. Nếu điểm tốt nhất lớn hơn 2.0, cặp này được xem là match.
+  \item Nếu BM25 không đạt ngưỡng, hệ thống fallback sang Jaccard overlap trên tập token. Nếu overlap lớn hơn hoặc bằng 0.5, cặp này được xem là match.
+\end{enumerate}
+
+Mỗi action item tham chiếu chỉ được match một lần. Một task dự đoán match thành công với một task tham chiếu chưa dùng được tính là true positive. Task dự đoán không match được tính là false positive. Task tham chiếu không được match bởi dự đoán nào được tính là false negative.
+
+\begin{align}
+\text{Precision} &= \frac{TP}{TP + FP} \\
+\text{Recall} &= \frac{TP}{TP + FN} \\
+\text{F1} &= \frac{2 \times \text{Precision} \times \text{Recall}}{\text{Precision} + \text{Recall}}
+\end{align}
+
+Assignee accuracy được tính riêng sau khi description đã match. Nghĩa là nếu hệ thống trích xuất đúng nội dung công việc nhưng gán sai người phụ trách, task đó vẫn đóng góp vào true positive ở mức description, nhưng làm giảm assignee accuracy. Cách tách này giúp phân biệt hai lỗi khác nhau: bỏ sót/sinh thừa task và gán sai người thực hiện.
+
+Schema failure rate đo tỷ lệ mẫu mà pipeline không trả được output hợp lệ, ví dụ lỗi parse JSON hoặc lỗi validate schema. Hallucination rate đo tỷ lệ task dự đoán không có bằng chứng đủ mạnh trong transcript; heuristic hiện tại kiểm tra overlap giữa các content words trong mô tả task và toàn bộ transcript. Đây là tín hiệu tự động để phát hiện regression, không thay thế hoàn toàn đánh giá thủ công.
+
+\section{Kết quả định lượng}
+
+Bảng~\ref{tab:baseline-results} trình bày kết quả baseline của Qwen2.5-3B trên 100 mẫu của benchmark synthetic.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{4.0cm}p{2.5cm}X}
+\toprule
+\textbf{Metric} & \textbf{Kết quả} & \textbf{Vai trò trong đánh giá} \\
+\midrule
+Precision & 0.8604 & Hard gate: yêu cầu tối thiểu 0.70 để tránh sinh quá nhiều task sai. \\
+Recall & 0.6665 & Watch metric: theo dõi mức độ bỏ sót task. \\
+F1 & 0.6886 & Watch/relative metric: candidate không được giảm quá 0.05 so với baseline. \\
+Assignee accuracy & 0.5232 & Watch metric: đánh giá khả năng gán đúng người phụ trách. \\
+Hallucination rate & 0.0\% & Hard gate: không được tăng quá 2 điểm phần trăm so với baseline. \\
+Schema failure rate & 0.0\% & Hard gate: không được regression. \\
+Average latency & 26.97s & Watch metric: thời gian xử lý trung bình trên môi trường local. \\
+P95 latency & 120.2s & Watch metric: độ trễ ở nhóm mẫu chậm nhất. \\
+\bottomrule
+\end{tabularx}
+\caption{Kết quả baseline trên benchmark 100 mẫu}
+\label{tab:baseline-results}
+\end{table}
 
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}
 \begin{axis}[
   ybar,
-  bar width=18pt,
-  width=0.9\textwidth,
-  height=5.2cm,
+  bar width=16pt,
+  width=0.82\textwidth,
+  height=5.0cm,
   ymin=0,
   ymax=1.05,
   ylabel={Score},
-  symbolic x coords={Precision,Recall,F1},
+  symbolic x coords={Precision,Recall,F1,Assignee},
   xtick=data,
   nodes near coords,
   nodes near coords align={vertical},
-  every node near coord/.append style={font=\small},
+  every node near coord/.append style={font=\scriptsize},
   ymajorgrids=true,
   grid style={lightgray}
 ]
-\addplot+[fill=primary] coordinates {(Precision,0.8604) (Recall,0.6665) (F1,0.6886)};
+\addplot+[fill=primary] coordinates {
+  (Precision,0.8604)
+  (Recall,0.6665)
+  (F1,0.6886)
+  (Assignee,0.5232)
+};
 \end{axis}
 \end{tikzpicture}
-\caption{Kết quả baseline của Qwen2.5-3B trên benchmark 100 mẫu}
+\caption{Các metric chất lượng chính của baseline}
 \label{fig:baseline-metrics}
 \end{figure}
 
-\section{Cách tính metric}
+Kết quả cho thấy baseline có precision tốt: phần lớn task được sinh ra có mô tả khớp với action items tham chiếu. Schema failure rate bằng 0.0\% cho thấy output JSON và lớp validate đủ ổn định trên tập benchmark này. Hallucination rate bằng 0.0\% cho thấy guardrails và prompt hiện tại chưa tạo ra task hoàn toàn không có dấu vết trong transcript, theo heuristic đang dùng.
 
-Evaluation harness đo chất lượng extraction ở mức action item. Mỗi sample gồm transcript turns, roster và danh sách action items gold. Hệ thống chạy lại hàm extraction, chuyển kết quả Pydantic sang JSON, sau đó so sánh từng predicted task với gold task.
+Hai điểm yếu chính là recall và assignee accuracy. Recall 0.6665 nghĩa là hệ thống vẫn bỏ sót một phần action items tham chiếu, đặc biệt với những task được nói gián tiếp hoặc không có cấu trúc mệnh lệnh rõ ràng. Assignee accuracy 0.5232 cho thấy bài toán gán người phụ trách còn khó: người nói có thể giao việc cho người khác, tự nhận việc, hoặc nhắc lại một công việc đã thống nhất trước đó. Đây là nhóm lỗi cần ưu tiên trong feedback loop và prompt/model improvement.
 
-Matching mô tả task dùng BM25 trên trường \texttt{description}; nếu điểm BM25 không vượt ngưỡng, code fallback sang Jaccard overlap để tránh bỏ sót các câu ngắn có từ vựng trùng rõ ràng. Với mỗi predicted task, nếu match với một gold task chưa được dùng, hệ thống tính là true positive; predicted task không match là false positive; gold task không được match là false negative. Precision, recall và F1 được tính từ các giá trị này. Assignee accuracy chỉ được tính trên các true positive có cả assignee dự đoán và assignee gold.
+\section{Đánh giá độ trễ}
 
-Schema failure rate đo số sample mà pipeline không trả được output hợp lệ, ví dụ lỗi parse JSON hoặc lỗi guardrail nghiêm trọng làm extraction thất bại. Hallucination trong evaluation được ước lượng bằng overlap giữa từ nội dung trong task description và transcript; nếu overlap thấp hơn ngưỡng, predicted task bị xem là không có bằng chứng đủ mạnh trong transcript. Các metric này chưa thay thế đánh giá thủ công, nhưng đủ để phát hiện regression khi thay prompt, model hoặc dữ liệu training.
+Average latency 26.97 giây và P95 latency 120.2 giây phản ánh chi phí chạy Qwen2.5-3B qua Ollama trong môi trường local. Độ trễ này chưa phù hợp cho trải nghiệm real-time, nhưng chấp nhận được với workflow xử lý hậu kỳ sau cuộc họp: người dùng upload audio, đợi job hoàn tất, sau đó review kết quả.
 
-\section{Kiểm thử vận hành}
+P95 cao hơn trung bình nhiều cho thấy thời gian xử lý phụ thuộc mạnh vào độ dài transcript, số chunk cần gọi LLM và trạng thái tài nguyên máy chạy Docker. Trong bản hiện tại, latency được xem là watch metric chứ không phải hard gate. Nếu triển khai cho người dùng thật, cần bổ sung queue monitoring, giới hạn kích thước audio, batch/chunk strategy tốt hơn, hoặc phục vụ model trên phần cứng chuyên dụng.
 
-Các kiểm tra đã được dùng để xác nhận hành vi hệ thống:
+\section{Kiểm thử chức năng và vận hành}
+
+Bên cạnh benchmark định lượng, dự án có các kiểm thử chức năng để đảm bảo những phần chính không bị regression:
 
 \begin{itemize}[leftmargin=*]
-  \item Ruff check cho mã Python.
-  \item Pytest cho các phần STT, retrain promotion, deploy promoted model và export.
-  \item Next.js lint/build cho frontend.
-  \item Docker Compose config cho profile mặc định và profile \texttt{mlops}.
-  \item Health check API/web sau khi build lại container.
+  \item Unit tests cho API, feedback loop, export dữ liệu, PII masking, anomaly detection và model promotion.
+  \item Kiểm tra schema và guardrails để đảm bảo output LLM có thể lưu vào database.
+  \item Docker Compose cho profile mặc định và profile \texttt{mlops}, gồm API, worker, Redis, PostgreSQL, Ollama, Prometheus và Grafana.
+  \item Health check và metrics endpoint để xác nhận service có thể được quan sát khi chạy.
 \end{itemize}
 
-\section{Đánh giá định tính}
+Các kiểm thử này không thay thế benchmark chất lượng mô hình, nhưng giúp đảm bảo hệ thống vẫn vận hành được khi thay đổi code. Với một hệ thống LLMOps, điều này quan trọng vì lỗi có thể đến từ nhiều lớp: prompt, schema, model serving, database, queue hoặc frontend feedback.
 
-UI Human Feedback sau chỉnh sửa giúp người dùng hiểu ngữ cảnh multi-speaker rõ hơn: transcript và speaker evidence được đặt cạnh speaker mapping, task evidence hiển thị đoạn hội thoại nguồn. Điều này giảm rủi ro gán nhầm người phụ trách khi audio có nhiều speaker.
+\section{Phân tích kết quả}
 
-Grafana/Prometheus phản ánh trạng thái worker, meeting pipeline và số liệu feedback. Các panel hiện tại đủ để quan sát pipeline trong phạm vi dự án; những chỉ số vận hành nâng cao như latency percentile, queue age hoặc GPU utilization có thể bổ sung khi mở rộng tải hoặc bổ sung GPU training.
+Kết quả baseline phù hợp với kỳ vọng của một mô hình base chưa fine-tune. Mô hình có xu hướng thận trọng hơn là sinh quá nhiều task: precision cao hơn recall. Đây là lựa chọn an toàn cho ứng dụng quản lý công việc, vì task sai có thể gây nhiễu trực tiếp cho người dùng. Tuy nhiên, recall thấp làm giảm giá trị tự động hóa vì người dùng vẫn phải đọc lại transcript để tìm việc bị bỏ sót.
+
+Assignee accuracy là chỉ số đáng chú ý nhất. Trong meeting nhiều người, người nói và người chịu trách nhiệm không luôn trùng nhau. Ví dụ, một manager có thể nói ``Bob, please send the report'', hoặc một engineer có thể nói ``I will fix it''. Hai trường hợp này đòi hỏi hệ thống hiểu quan hệ giữa hành động, người được gọi tên, đại từ và speaker hiện tại. Vì vậy, assignee resolution cần kết hợp transcript context, speaker mapping, roster aliases và feedback từ người dùng.
+
+Kết quả hallucination và schema failure bằng 0.0\% là tín hiệu tốt, nhưng không nên diễn giải quá mức. Hallucination trong benchmark đang được đo bằng heuristic overlap nội dung, nên chỉ phát hiện các task gần như không có bằng chứng trong transcript. Những lỗi tinh vi hơn như sai deadline, sai priority, hoặc diễn giải quá rộng vẫn cần đánh giá thủ công và feedback UI.
+
+\section{Giới hạn của đánh giá}
+
+Đánh giá hiện tại có bốn giới hạn chính:
+
+\begin{itemize}[leftmargin=*]
+  \item Tập benchmark là synthetic, chưa phản ánh đầy đủ nhiễu âm thanh, ngắt lời, tiếng lóng, code-switching và thói quen nói của người dùng thật.
+  \item Benchmark dùng transcript có sẵn, nên chưa đo tác động của lỗi ASR và diarization lên task extraction.
+  \item Matching BM25/Jaccard chỉ xấp xỉ tương đồng ngữ nghĩa; một số task đúng nhưng diễn đạt khác xa có thể bị tính sai, và ngược lại.
+  \item Assignee accuracy chỉ kiểm tra exact match theo tên sau khi description đã match, chưa đánh giá các trường hợp nhiều bí danh hoặc người chưa có trong roster một cách đầy đủ.
+\end{itemize}
+
+Vì các giới hạn này, kết quả ở chương này nên được hiểu là baseline kỹ thuật để so sánh các phiên bản sau. Khi có dữ liệu meeting thật và feedback từ người dùng, cần mở rộng benchmark bằng tập đánh giá thủ công, thêm phân tích lỗi theo loại meeting, và đo end-to-end từ audio đến action items.

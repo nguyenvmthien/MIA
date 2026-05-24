@@ -6,9 +6,12 @@
 web/                                  # Next.js frontend
 src/meeting_agent/
   api/main.py                         # FastAPI endpoints
+  db/models.py                        # SQLAlchemy ORM schema
   pipeline/
     stt.py                            # WhisperX + diarization
+    orchestrator.py                   # Summary/action extraction pipeline
     worker_task.py                    # Celery tasks and queue routing
+    feedback.py                       # Human feedback persistence
   mlops/
     evaluate.py                       # Evaluation harness
     finetune.py                       # GPU fine-tune entrypoint
@@ -39,7 +42,8 @@ Các URL thường dùng:
   \item Frontend: \texttt{http://localhost:3001}
   \item API health: \texttt{http://localhost:8000/health}
   \item Prometheus metrics: \texttt{http://localhost:8000/metrics}
-  \item Grafana: port được cấu hình trong Docker Compose.
+  \item Prometheus UI: \texttt{http://localhost:9090}
+  \item Grafana: \texttt{http://localhost:3000}
 \end{itemize}
 
 \section{Chạy profile MLOps}
@@ -67,8 +71,23 @@ Deploy không tự động chạy ngay sau promotion. Operator phải thực hi�
 
 \begin{lstlisting}[language=bash,caption={Upload audio}]
 curl -X POST http://localhost:8000/meetings \
-  -F "file=@meeting.wav" \
-  -F "participants=Alice,Bob,Charlie"
+  -F "audio=@meeting.wav" \
+  -F 'roster_json={
+    "workers": [
+      {
+        "worker_id": "w1",
+        "name": "Alice Chen",
+        "aliases": ["Alice"],
+        "role": "Product Manager"
+      },
+      {
+        "worker_id": "w2",
+        "name": "Bob Kim",
+        "aliases": ["Bob"],
+        "role": "Backend Engineer"
+      }
+    ]
+  }'
 \end{lstlisting}
 
 \section{Lấy trạng thái meeting}
@@ -83,15 +102,28 @@ curl http://localhost:8000/meetings/{meeting_id}
 curl -X POST http://localhost:8000/meetings/{meeting_id}/feedback \
   -H "Content-Type: application/json" \
   -d '{
+    "reviewer": "human-reviewer",
+    "notes": "Assignee corrected after transcript review",
     "corrections": [
       {
         "task_id": "task-1",
-        "field": "assignee",
-        "old_value": "Bob",
-        "new_value": "Alice"
+        "original_description": "Send the quarterly report",
+        "corrected_description": "Send the quarterly report to the client",
+        "original_assignee": "Bob",
+        "corrected_assignee": "Alice Chen",
+        "original_due_date": null,
+        "corrected_due_date": "2026-05-30",
+        "is_false_positive": false,
+        "is_missing": false
       }
     ]
   }'
+\end{lstlisting}
+
+\section{Xuất feedback cho fine-tuning}
+
+\begin{lstlisting}[language=bash,caption={Export feedback dạng JSONL}]
+curl "http://localhost:8000/feedback/export?format=jsonl"
 \end{lstlisting}
 
 \chapter{Cấu hình môi trường quan trọng}
@@ -107,6 +139,13 @@ curl -X POST http://localhost:8000/meetings/{meeting_id}/feedback \
 \texttt{WHISPER\_MODEL} & Model WhisperX \\
 \texttt{WHISPER\_DEVICE} & \texttt{cpu} hoặc \texttt{cuda} \\
 \texttt{HF\_TOKEN} & Token cho model diarization nếu cần \\
+\texttt{WEB\_PORT} & Port public của frontend, mặc định \texttt{3001} \\
+\texttt{PUBLIC\_URL} & URL public/frontend dùng khi cấu hình domain hoặc tunnel \\
+\texttt{AUTH\_URL} & URL callback cho NextAuth \\
+\texttt{GOOGLE\_CLIENT\_ID} & OAuth client ID cho đăng nhập Google \\
+\texttt{GOOGLE\_CLIENT\_SECRET} & OAuth client secret cho đăng nhập Google \\
+\texttt{LANGCHAIN\_TRACING\_V2} & Bật/tắt LangSmith tracing nếu có cấu hình \\
+\texttt{LANGCHAIN\_API\_KEY} & API key LangSmith, nếu dùng \\
 \texttt{RETRAIN\_MIN\_CORRECTIONS} & Ngưỡng correction để retrain check \\
 \texttt{MLFLOW\_TRACKING\_URI} & Tracking URI cho MLflow \\
 \bottomrule

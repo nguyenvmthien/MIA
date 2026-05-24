@@ -1,26 +1,80 @@
 \chapter{Hướng phát triển}
 \label{chap:future}
 
-\section{Mở rộng dữ liệu}
+Các hướng phát triển dưới đây được sắp xếp theo mức độ ảnh hưởng đến chất lượng hệ thống. Ưu tiên chính không phải thêm nhiều tính năng rời rạc, mà là cải thiện độ tin cậy của pipeline NLP, mở rộng dữ liệu đánh giá và làm cho quy trình vận hành an toàn hơn.
 
-Ưu tiên tiếp theo là thu thập thêm feedback thật từ UI, mở rộng gold set và bổ sung dữ liệu tiếng Việt/đa ngôn ngữ. Khi số correction đạt ngưỡng và có chất lượng ổn định, có thể chạy fine-tuning trên GPU rồi so sánh với baseline hiện tại bằng cùng một bộ đánh giá.
+\section{Mở rộng dữ liệu đánh giá và feedback}
 
-\section{Nâng cấp evaluation}
+Hướng quan trọng nhất là thu thập thêm dữ liệu feedback từ UI và xây dựng tập đánh giá nhỏ nhưng được kiểm chứng thủ công. Tập này nên bao gồm transcript thật hoặc transcript đã được scrub thông tin nhạy cảm, có action items tham chiếu, assignee, deadline và ghi chú về các trường hợp mơ hồ.
 
-Hiện tại evaluation dựa trên matching action item ở mức mô tả. Hướng phát triển là thêm semantic matching, đánh giá riêng assignee/deadline/priority, đo hallucination rate và theo dõi confidence calibration nếu model hoặc pipeline có trả về điểm tin cậy.
+Dữ liệu mới nên được chia theo mục đích:
+
+\begin{itemize}[leftmargin=*]
+  \item Tập smoke test nhỏ để chạy nhanh trong CI.
+  \item Tập benchmark chính để so sánh baseline và candidate model.
+  \item Tập phân tích lỗi thủ công để hiểu các lỗi như missing task, wrong assignee, wrong due date và hallucination.
+\end{itemize}
+
+Khi dữ liệu feedback đủ lớn và đủ sạch, có thể dùng nó cho prompt tuning, fine-tuning hoặc preference-style training. Tuy nhiên, mọi candidate cần được đánh giá lại bằng cùng benchmark trước khi được xem là cải tiến.
+
+\section{Đánh giá audio end-to-end}
+
+Benchmark hiện tại tập trung vào extraction từ transcript. Để đánh giá đúng toàn bộ hệ thống audio meeting, cần bổ sung benchmark end-to-end từ audio đến action items. Benchmark này cần ít nhất ba loại annotation: transcript chuẩn, speaker segment/speaker identity và action items tham chiếu.
+
+Khi có dữ liệu này, hệ thống có thể đo thêm:
+
+\begin{itemize}[leftmargin=*]
+  \item Word Error Rate cho ASR.
+  \item Diarization Error Rate cho speaker diarization.
+  \item Tác động của lỗi ASR/diarization đến precision, recall và assignee accuracy.
+  \item Độ trễ theo thời lượng audio thay vì chỉ theo số sample transcript.
+\end{itemize}
+
+Đây là bước cần thiết nếu hệ thống được dùng trong môi trường có audio thật thay vì chỉ demo trên transcript hoặc audio kiểm soát.
+
+\section{Cải thiện assignee và deadline extraction}
+
+Assignee accuracy hiện là một trong các điểm yếu chính. Hướng cải tiến gồm chuẩn hóa alias trong roster, dùng speaker mapping làm tín hiệu mạnh hơn, mở rộng prompt với ví dụ về giao việc gián tiếp và bổ sung rule hậu xử lý cho các mẫu câu phổ biến như ``I will...'', ``Bob, please...'', hoặc ``Can you...''.
+
+Deadline extraction cũng cần được đánh giá riêng. Các cụm như ``next Friday'', ``end of next week'' hoặc ``before the release'' phụ thuộc vào meeting date và ngữ cảnh nghiệp vụ. Một hướng phát triển tốt là tách due-date normalization thành module có test riêng, thay vì để toàn bộ trách nhiệm nằm trong LLM.
+
+\section{Nâng cấp evaluation harness}
+
+Evaluation harness hiện đã có matching BM25/Jaccard, assignee accuracy, hallucination heuristic và schema failure rate. Các cải tiến tiếp theo gồm:
+
+\begin{itemize}[leftmargin=*]
+  \item Thêm semantic matching bằng embedding hoặc cross-encoder để giảm sai lệch do diễn đạt khác nhau.
+  \item Tách metric theo field: description, assignee, due date, priority và evidence turn.
+  \item Báo cáo lỗi theo domain, số speaker, độ dài meeting và số action items.
+  \item Lưu per-sample error cases để phục vụ phân tích sau benchmark.
+  \item Chuẩn hóa promotion report để mỗi lần thay prompt/model đều có bằng chứng so sánh.
+\end{itemize}
+
+Mục tiêu của phần này là biến benchmark thành công cụ ra quyết định, không chỉ là bảng điểm tổng hợp.
+
+\section{Fine-tuning và model lifecycle}
+
+Khi có đủ dữ liệu correction chất lượng tốt và môi trường GPU phù hợp, có thể chạy QLoRA fine-tuning cho mô hình extraction. Candidate sau huấn luyện cần đi qua cùng evaluation gate: precision không được giảm dưới ngưỡng hard gate, hallucination/schema failure không regression, và F1 không giảm đáng kể so với baseline.
+
+Sau khi candidate đạt gate, hệ thống có thể mở rộng theo hướng canary hoặc A/B testing. Một phần traffic nhỏ được route sang candidate, kết quả feedback và metrics được so sánh với baseline trong một khoảng thời gian. Chỉ khi candidate ổn định mới chuyển thành model mặc định.
 
 \section{Nâng cao vận hành}
 
-Các cải tiến vận hành không làm thay đổi pipeline cốt lõi nhưng giúp hệ thống bền vững hơn khi dữ liệu và tải xử lý tăng:
+Để tiến gần hơn đến môi trường sử dụng thật, hệ thống cần các cải tiến vận hành sau:
 
 \begin{itemize}[leftmargin=*]
-  \item Chuẩn hoá HTTPS/reverse proxy và secret manager.
-  \item Backup/restore PostgreSQL và object storage cho artifacts.
-  \item Role-based access control chi tiết hơn.
-  \item Alert rules cho queue backlog, worker failure, API latency và GPU memory.
-  \item Retention policy/cleanup cho raw artifacts.
+  \item Reverse proxy HTTPS, domain cấu hình ổn định và secret manager.
+  \item Backup/restore PostgreSQL và chính sách lưu trữ artifact.
+  \item Role-based access control chi tiết hơn cho user/admin.
+  \item Alert rules cho queue backlog, worker failure, API latency, LLM latency và disk usage.
+  \item Retention policy cho audio, transcript, prompt trace và feedback data.
+  \item Dashboard tách rõ metrics vận hành và metrics chất lượng mô hình.
 \end{itemize}
 
-\section{Tự động hoá release có kiểm soát}
+Những cải tiến này không thay đổi thuật toán NLP cốt lõi, nhưng quyết định khả năng hệ thống hoạt động ổn định khi có nhiều người dùng và dữ liệu thật.
 
-Serving switch hiện là manual. Trong tương lai có thể thêm release policy bán tự động: model promoted được đưa vào canary, so sánh A/B trong một khoảng thời gian, sau đó mới chuyển traffic chính nếu không có regression.
+\section{Hỗ trợ tiếng Việt và đa ngôn ngữ}
+
+Dự án hiện ưu tiên pipeline tiếng Anh trong benchmark. Nếu mở rộng cho người dùng Việt Nam, cần bổ sung dữ liệu tiếng Việt, hội thoại trộn Anh--Việt, cách gọi tên người Việt và cách diễn đạt deadline trong tiếng Việt. Đây không chỉ là bài toán dịch ngôn ngữ; nó ảnh hưởng đến ASR, diarization review, prompt, assignee resolution và evaluation.
+
+Hướng phù hợp là xây dựng một tập đánh giá tiếng Việt nhỏ trước, đo baseline, sau đó mới quyết định cần prompt tuning, fine-tuning hay thay đổi ASR/model.

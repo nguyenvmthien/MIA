@@ -1,22 +1,46 @@
 \chapter{Thách thức và hạn chế}
 \label{chap:challenge}
 
-\section{Diarization và speaker identity}
+Chương này tổng hợp các thách thức kỹ thuật còn tồn tại của hệ thống. Các hạn chế được trình bày theo hướng ảnh hưởng trực tiếp đến chất lượng xử lý, khả năng vận hành và mức độ sẵn sàng khi mở rộng từ demo kỹ thuật sang môi trường sử dụng thực tế.
 
-Diarization chỉ tạo nhãn speaker ẩn danh, không tự xác định danh tính thật của người nói. Vì vậy hệ thống cần bước human review để map \texttt{SPEAKER\_00}, \texttt{SPEAKER\_01} sang participant thật. Đây là giới hạn tự nhiên của diarization khi không có voice enrollment hoặc dữ liệu giọng nói tham chiếu.
+\section{Chất lượng audio và lỗi lan truyền trong pipeline}
 
-\section{Hiệu năng CPU}
+Meeting AI Agent là một pipeline nhiều bước: audio được chuyển thành transcript, transcript được gắn speaker, sau đó LLM trích xuất action items. Vì vậy lỗi ở bước trước có thể lan sang bước sau. Nếu ASR nhận sai từ khóa quan trọng, action item có thể bị bỏ sót hoặc hiểu sai. Nếu diarization tách nhầm speaker, hệ thống có thể gán sai người phụ trách dù nội dung task được trích xuất đúng.
 
-WhisperX, Pyannote và LLM inference đều tốn tài nguyên nếu chạy CPU. Môi trường local có thể xử lý chậm, đặc biệt ở lần đầu khi model cần tải về hoặc khởi tạo. Fine-tuning bằng QLoRA gần như cần GPU/CUDA nếu muốn có thời gian chạy hợp lý.
+Trong báo cáo này, benchmark chính đánh giá extraction từ transcript tham chiếu, chưa đo đầy đủ ảnh hưởng của nhiễu audio, overlap speech hoặc micro chất lượng thấp. Đây là giới hạn quan trọng vì cuộc họp thật thường có ngắt lời, nói đè, âm nền, chuyển ngôn ngữ và cách nói không hoàn chỉnh.
 
-\section{Fine-tuning phụ thuộc dữ liệu và GPU}
+\section{Diarization và định danh người nói}
 
-Luồng fine-tune đã được chuẩn bị về code, Dockerfile, dependencies, queue và trigger. Tuy nhiên chất lượng fine-tuning phụ thuộc vào hai điều kiện: đủ dữ liệu correction chất lượng tốt và môi trường GPU phù hợp. Vì vậy báo cáo hiện tại xem fine-tuning là bước mở rộng của vòng lặp cải tiến, không dùng nó làm bằng chứng chính cho chất lượng baseline.
+Diarization chỉ trả về nhãn speaker ẩn danh như \texttt{SPEAKER\_00} hoặc \texttt{SPEAKER\_01}; nó không tự biết danh tính thật của người nói. Hệ thống hiện xử lý điểm này bằng speaker mapping trong UI: người dùng xem transcript evidence và map speaker ẩn danh sang participant thật hoặc worker trong roster.
 
-\section{Thay đổi model được kiểm soát thủ công}
+Cách làm này phù hợp với phạm vi dự án vì tránh suy đoán danh tính người nói khi không có voice enrollment. Tuy nhiên, nó cũng tạo thêm bước review thủ công. Nếu muốn tự động hóa cao hơn, hệ thống cần dữ liệu giọng nói tham chiếu, chính sách quyền riêng tư rõ ràng và cơ chế xác nhận danh tính an toàn hơn.
 
-Sau khi model candidate đạt điều kiện promotion, việc chuyển sang Ollama tag mới vẫn là thao tác manual/auditable. Cách làm này giúp mọi thay đổi model đều có dấu vết đánh giá, tránh trường hợp model mới thay thế baseline khi chưa được kiểm tra.
+\section{Assignee resolution}
 
-\section{Giới hạn dữ liệu đánh giá}
+Kết quả đánh giá cho thấy assignee accuracy còn thấp hơn các metric mô tả task. Nguyên nhân không chỉ nằm ở model, mà còn ở bản chất ngôn ngữ cuộc họp. Người nói có thể giao việc cho người khác, tự nhận việc bằng đại từ ``I'', nhắc đến một người theo bí danh, hoặc nói một task đã được thống nhất từ trước. Các trường hợp này đòi hỏi hệ thống kết hợp speaker hiện tại, nội dung câu, roster, alias và ngữ cảnh lân cận.
 
-Benchmark hiện tại đã mở rộng lên 100 mẫu synthetic từ \texttt{data/eval/gold\_synthetic\_205.jsonl}. Tập này tốt hơn smoke test 5 mẫu để theo dõi regression, nhưng vẫn chưa thay thế được benchmark trên meeting thật. Cần bổ sung dữ liệu đã scrub từ real meetings để kiểm tra assignee resolution, deadline extraction và hành vi end-to-end trên audio thật.
+Trong phiên bản hiện tại, assignee resolution đã có roster và speaker mapping hỗ trợ, nhưng chưa đủ mạnh để xử lý toàn bộ trường hợp mơ hồ. Đây là một hướng cải tiến cần ưu tiên vì task đúng nội dung nhưng sai người phụ trách vẫn gây tác động lớn trong workflow quản lý công việc.
+
+\section{Giới hạn của dữ liệu đánh giá}
+
+Tập đánh giá chính hiện là synthetic benchmark. Tập này hữu ích để kiểm tra regression vì có cấu trúc ổn định và đủ số lượng mẫu, nhưng chưa thay thế được meeting thật. Dữ liệu synthetic thường sạch hơn, có deadline rõ hơn và ít nhiễu hơn hội thoại thực tế.
+
+Ngoài ra, matching bằng BM25/Jaccard chỉ xấp xỉ tương đồng giữa task dự đoán và task tham chiếu. Một số task đúng nhưng diễn đạt khác xa có thể bị đánh giá thấp; ngược lại, một số task trùng nhiều từ nhưng sai sắc thái có thể được match. Vì vậy, benchmark tự động cần được bổ sung bằng phân tích lỗi thủ công trên một tập nhỏ nhưng chất lượng cao.
+
+\section{Hiệu năng và tài nguyên tính toán}
+
+WhisperX, diarization và LLM inference đều tiêu tốn tài nguyên. Khi chạy trên máy cá nhân bằng Docker Compose, độ trễ phụ thuộc mạnh vào CPU/GPU, dung lượng RAM, độ dài transcript và số lần gọi LLM. Kết quả P95 latency cao cho thấy hệ thống chưa phù hợp với yêu cầu real-time.
+
+Fine-tuning cũng có yêu cầu phần cứng riêng. Luồng fine-tuning bằng QLoRA đã được chuẩn bị ở mức code, Dockerfile, queue và tracking, nhưng việc chạy hiệu quả gần như cần GPU/CUDA. Do đó, báo cáo xem fine-tuning là năng lực mở rộng đã chuẩn bị, không xem nó là bằng chứng đã cải thiện baseline nếu chưa có artifact và benchmark sau huấn luyện.
+
+\section{Bảo mật và dữ liệu nhạy cảm}
+
+Hệ thống đã có PII masking dựa trên pattern trước khi đưa nội dung vào prompt hoặc log debug. Cơ chế này giúp giảm rủi ro lộ email, số điện thoại, URL, IP và một số định danh phổ biến. Tuy nhiên, dữ liệu cuộc họp có thể chứa thông tin nhạy cảm không theo pattern cố định, ví dụ tên khách hàng, chiến lược kinh doanh, thông tin nhân sự hoặc dữ kiện nội bộ.
+
+Vì vậy, PII masking hiện tại không nên được mô tả như một hệ thống DLP hoàn chỉnh. Khi triển khai thực tế, cần bổ sung chính sách retention, phân quyền chi tiết, mã hóa secret, audit access và quy trình xử lý dữ liệu theo yêu cầu tổ chức.
+
+\section{Mức độ sẵn sàng triển khai}
+
+Hệ thống hiện chạy ổn cho demo kỹ thuật bằng Docker Compose. Cách triển khai này phù hợp để kiểm chứng pipeline, UI, database, worker và monitoring trên cùng một máy. Tuy nhiên, nó chưa tương đương môi trường vận hành chính thức có autoscaling, backup, secret manager, CI/CD release gate, alerting đầy đủ và incident response.
+
+Triển khai qua domain public hoặc tunnel có thể phục vụ demo ngắn hạn, nhưng chưa được xem là kết quả vận hành chính thức của báo cáo. Điểm đáng tin cậy của dự án ở thời điểm hiện tại là một hệ thống end-to-end có thể tái lập cục bộ, có benchmark baseline và có nền tảng LLMOps để tiếp tục cải tiến.
