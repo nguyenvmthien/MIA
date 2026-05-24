@@ -73,6 +73,20 @@ Basis: `debai.md` and the current Meeting AI Agent implementation.
 
 ## Reader-First Explanation Rules
 
+- Write deeply but avoid repeating the same claim across sections.
+- Each chapter must have a distinct purpose:
+  - Chapter 1 introduces the problem, scope, and contribution.
+  - Chapter 2 explains related concepts and technologies.
+  - Chapter 3 explains the methodology and design rationale.
+  - Chapter 4 explains the concrete implementation.
+  - Chapter 5 explains evaluation setup, metrics, and results.
+  - Chapter 6 explains limitations.
+  - Chapter 7 explains future work.
+  - Chapter 8 summarizes impact.
+- Define a concept when it first appears, then refer to it consistently without re-explaining unless the later section adds new technical depth.
+- Use one paragraph for one idea. Avoid paragraphs that restate the same point with different wording.
+- Prefer structured tables or diagrams when they can replace repeated prose.
+- At the end of each chapter, avoid generic summaries unless they connect directly to the next chapter.
 - Before using any metric, explain:
   - What the metric measures.
   - Why the metric matters for this project.

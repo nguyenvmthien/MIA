@@ -1,33 +1,62 @@
 \chapter{Giới thiệu}
 
-\section{Bối cảnh}
+\section{Bối cảnh và động lực}
 
-Sau mỗi cuộc họp, thông tin quan trọng thường bị phân tán trong ghi chú thủ công, tin nhắn follow-up hoặc trí nhớ của từng người tham gia. Cách xử lý này làm action items dễ bị bỏ sót, deadline không rõ ràng và người phụ trách có thể bị gán sai. Dự án \textbf{Meeting AI Agent} được xây dựng nhằm chuyển audio cuộc họp thành dữ liệu có cấu trúc: transcript theo lượt nói, danh sách công việc, người phụ trách, hạn chót, mức ưu tiên và bằng chứng transcript liên quan.
+Trong doanh nghiệp, cuộc họp thường tạo ra nhiều quyết định, công việc cần theo dõi và cam kết giữa các thành viên. Tuy nhiên, các thông tin này thường nằm rải rác trong audio, ghi chú cá nhân hoặc tin nhắn sau họp. Điều này làm action items dễ bị bỏ sót, deadline không rõ ràng và người phụ trách có thể bị gán sai.
 
-Trọng tâm của dự án không chỉ là gọi một LLM để tóm tắt nội dung. Hệ thống được thiết kế như một pipeline xử lý thông tin có thể truy vết: audio được chuẩn hoá, transcript được lưu theo lượt nói, kết quả LLM được kiểm tra bằng schema, người dùng có thể hiệu chỉnh và các hiệu chỉnh được lưu lại cho đánh giá hoặc huấn luyện tiếp theo. Cách tiếp cận này phù hợp với bài toán Applied LLM, nơi chất lượng hệ thống phụ thuộc đồng thời vào mô hình, dữ liệu, prompt, kiểm chứng kết quả và vòng lặp phản hồi.
+\textbf{Meeting AI Agent} được xây dựng để chuyển audio cuộc họp thành dữ liệu có cấu trúc: transcript theo lượt nói, tóm tắt, danh sách action items, assignee, due date, priority và bằng chứng transcript liên quan. Trọng tâm của dự án không chỉ là sinh văn bản bằng LLM, mà là xây dựng một pipeline có thể vận hành, đo lường và cải tiến theo hướng LLMOps.
+
+Trong báo cáo này, LLMOps được hiểu là tập hợp các thực hành để quản lý vòng đời của hệ thống dùng mô hình ngôn ngữ lớn: dữ liệu, prompt, suy luận, đánh giá, monitoring, feedback và kiểm soát thay đổi mô hình.
 
 \section{Bài toán NLP}
 
-Dự án kết hợp ba nhóm bài toán chính:
+Dự án kết hợp ba bài toán chính.
 
-\begin{itemize}[leftmargin=*]
-  \item \textbf{ASR}: chuyển audio thành transcript bằng WhisperX.
-  \item \textbf{Speaker diarization}: tách và gán nhãn các lượt nói bằng WhisperX/Pyannote. Speaker mặc định là các nhãn ẩn danh như \texttt{SPEAKER\_00}; người dùng có thể map sang tên thật khi review.
-  \item \textbf{Information extraction}: dùng Qwen2.5-3B qua Ollama để trích xuất action items theo JSON schema, sau đó chuẩn hoá assignee theo roster của cuộc họp.
-\end{itemize}
+\subsection{Nhận dạng tiếng nói tự động}
+
+Nhận dạng tiếng nói tự động (Automatic Speech Recognition -- ASR) chuyển audio thành văn bản. Trong hệ thống này, WhisperX nhận audio đã được chuẩn hoá và trả về transcript kèm thông tin thời gian. WhisperX được chọn vì hỗ trợ alignment tốt hơn ở mức từ hoặc đoạn nói, giúp truy vết action items về đoạn hội thoại gốc. Chất lượng ASR vẫn phụ thuộc vào tiếng ồn, accent, ngôn ngữ và tài nguyên tính toán.
+
+\subsection{Phân tách người nói}
+
+Speaker diarization xác định ``ai nói khi nào''. Khác với ASR, diarization không tạo nội dung văn bản mà gán các đoạn audio cho speaker labels như \texttt{SPEAKER\_00} hoặc \texttt{SPEAKER\_01}. Thông tin này giúp hệ thống hiểu ngữ cảnh người nói và hỗ trợ gán assignee. Giới hạn chính là audio nhiễu, giọng nói chồng lấn hoặc các speaker có giọng tương tự nhau.
+
+\subsection{Trích xuất thông tin có cấu trúc}
+
+Sau khi có transcript, hệ thống dùng Qwen2.5-3B qua Ollama để trích xuất action items. Đầu vào của LLM là prompt chứa ngày họp, danh sách người tham gia, transcript chunk và hướng dẫn xuất JSON. Đầu ra là danh sách task có mô tả, assignee, due date, priority và source turns. Vì backend cần dữ liệu có cấu trúc, kết quả LLM được kiểm tra bằng schema và guardrails trước khi lưu.
 
 \section{Mục tiêu hệ thống}
 
-Các mục tiêu chính của hệ thống được xác định như sau:
+Các mục tiêu chính của dự án gồm:
 
 \begin{enumerate}[leftmargin=*]
   \item Xử lý audio cuộc họp end-to-end qua giao diện web.
-  \item Lưu transcript, speaker turns, tasks, feedback và artifacts vào database để audit.
-  \item Cho phép human-in-the-loop sửa speaker mapping và task assignment dựa trên bằng chứng transcript.
-  \item Cung cấp dashboard Prometheus/Grafana cho trạng thái pipeline, worker, task và feedback.
-  \item Chuẩn bị dữ liệu và quy trình đánh giá để có thể mở rộng sang fine-tuning khi đủ correction.
+  \item Tạo transcript theo speaker turns để phục vụ truy vết.
+  \item Trích xuất summary và action items bằng LLM chạy local.
+  \item Chuẩn hoá assignee theo worker roster và cho phép người dùng hiệu chỉnh.
+  \item Lưu meeting, transcript, tasks, feedback corrections và calendar events vào PostgreSQL.
+  \item Tích hợp feedback loop cho đánh giá và fine-tuning trong tương lai.
+  \item Theo dõi hệ thống bằng Prometheus/Grafana.
+  \item Chuẩn bị benchmark, dataset validation, retrain trigger và promotion gate theo hướng LLMOps.
 \end{enumerate}
 
-\section{Phạm vi và đóng góp}
+\section{Phạm vi dự án}
 
-Phiên bản hiện tại đã triển khai được pipeline end-to-end và có thể vận hành trong môi trường Docker Compose của dự án. Báo cáo tập trung vào đóng góp kỹ thuật cốt lõi: kiến trúc xử lý audio--LLM, cơ chế lưu vết dữ liệu trong database, giao diện human feedback, đánh giá baseline và nền tảng LLMOps cho vòng lặp cải tiến. Các nội dung như mở rộng quy mô, chính sách retention dài hạn, canary release hoặc quản trị hạ tầng nhiều tenant được xem là phần nâng cao, không phải điều kiện để hệ thống hiện tại hoạt động.
+Phiên bản hiện tại là hệ thống local-first chạy bằng Docker Compose. Runtime stack gồm Next.js, FastAPI, Celery, Redis, PostgreSQL, Ollama, Prometheus và Grafana. Cách triển khai này phù hợp với mục tiêu môn học: chứng minh một pipeline NLP/LLMOps hoàn chỉnh mà không phụ thuộc vào dịch vụ LLM trả phí.
+
+Dự án đã tập trung vào các năng lực cốt lõi: xử lý audio, tạo transcript, trích xuất action items, lưu trữ có truy vết, human review, Google Calendar sync, benchmark baseline và monitoring. Một số phần như fine-tuning GPU, public-domain deployment, autoscaling, compliance đầy đủ và multi-tenant governance được xem là hướng mở rộng. Báo cáo không xem các phần này là kết quả production hoàn chỉnh.
+
+\section{Đóng góp chính}
+
+Dự án đóng góp các thành phần sau:
+
+\begin{itemize}[leftmargin=*]
+  \item Pipeline audio-to-action-items kết hợp ASR, diarization, LLM extraction, guardrails và worker assignment.
+  \item Backend bất đồng bộ bằng FastAPI, Celery, Redis và PostgreSQL cho các job audio dài.
+  \item Web UI cho upload, theo dõi tiến trình, review task, sửa kết quả và đồng bộ lịch.
+  \item Feedback loop lưu dữ liệu hiệu chỉnh của người dùng để phục vụ đánh giá và cải tiến mô hình.
+  \item Monitoring và benchmark baseline để đo chất lượng extraction, schema stability, hallucination rate và các chỉ số vận hành.
+\end{itemize}
+
+\section{Cấu trúc báo cáo}
+
+Chương 2 trình bày cơ sở lý thuyết và công nghệ liên quan. Chương 3 mô tả phương pháp luận, bao gồm pipeline dữ liệu, lựa chọn mô hình, prompt engineering, guardrails và đánh giá. Chương 4 trình bày kiến trúc triển khai. Chương 5 phân tích thiết lập đánh giá và kết quả baseline. Chương 6 thảo luận thách thức và giới hạn. Chương 7 nêu hướng phát triển. Chương 8 tổng kết dự án.

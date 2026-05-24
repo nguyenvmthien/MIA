@@ -1,160 +1,125 @@
 \chapter{Phương pháp}
 \label{chap:method}
 
-\section{Pipeline xử lý}
+Chương này mô tả phương pháp thiết kế hệ thống ở mức pipeline và dữ liệu. Các chi tiết triển khai cụ thể như API, database schema và Docker services được trình bày ở Chương~4.
 
-Pipeline xử lý được thiết kế theo dạng nhiều bước, trong đó mỗi bước tạo ra một artifact hoặc bản ghi có thể kiểm tra lại. Hình~\ref{fig:processing-pipeline} mô tả luồng xử lý chính từ lúc người dùng upload audio đến khi hệ thống tạo action items và ghi nhận feedback.
+\section{Tổng quan phương pháp}
+
+Meeting AI Agent được thiết kế như một pipeline chuyển đổi từ audio sang dữ liệu có cấu trúc. Đầu vào là file audio cuộc họp. Đầu ra gồm tóm tắt cuộc họp và danh sách action items có các trường chính: mô tả công việc, người phụ trách, thời hạn, mức ưu tiên và lượt transcript nguồn.
 
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[
-  node distance=0.45cm,
-  step/.style={draw=primary, fill=light, rounded corners=3pt, text width=5.8cm, minimum height=0.62cm, align=center, font=\scriptsize},
-  datastore/.style={draw=accent, fill=stagecolor2, rounded corners=3pt, text width=5.8cm, minimum height=0.62cm, align=center, font=\scriptsize},
+  node distance=0.5cm,
+  step/.style={draw=primary, fill=light, rounded corners=3pt, text width=6cm, minimum height=0.68cm, align=center, font=\scriptsize},
+  store/.style={draw=accent, fill=stagecolor2, rounded corners=3pt, text width=6cm, minimum height=0.68cm, align=center, font=\scriptsize},
   arrow/.style={-Latex, thick, color=darkgray}
 ]
-  \node[step] (upload) {Upload audio};
-  \node[step, below=of upload] (pre) {Ingest và preprocess 16 kHz};
-  \node[step, below=of pre] (asr) {WhisperX ASR và diarization};
-  \node[datastore, below=of asr] (turns) {Lưu transcript turns};
-  \node[step, below=of turns] (llm) {LLM extraction và assignment};
-  \node[datastore, below=of llm] (tasks) {Lưu tasks kèm evidence};
+  \node[step] (audio) {Audio cuộc họp};
+  \node[step, below=of audio] (pre) {Chuẩn hoá audio};
+  \node[step, below=of pre] (speech) {ASR + diarization};
+  \node[store, below=of speech] (turns) {Transcript turns};
+  \node[step, below=of turns] (llm) {LLM structured extraction};
+  \node[step, below=of llm] (guard) {Guardrails + assignment};
+  \node[store, below=of guard] (tasks) {Summary + action items};
   \node[step, below=of tasks] (review) {Human review};
-  \node[datastore, below=of review] (feedback) {Corrections cho evaluation/training};
+  \node[store, below=of review] (feedback) {Feedback corrections};
 
-  \draw[arrow] (pre) -- (asr);
-  \draw[arrow] (upload) -- (pre);
-  \draw[arrow] (asr) -- (turns);
+  \draw[arrow] (audio) -- (pre);
+  \draw[arrow] (pre) -- (speech);
+  \draw[arrow] (speech) -- (turns);
   \draw[arrow] (turns) -- (llm);
-  \draw[arrow] (llm) -- (tasks);
+  \draw[arrow] (llm) -- (guard);
+  \draw[arrow] (guard) -- (tasks);
   \draw[arrow] (tasks) -- (review);
   \draw[arrow] (review) -- (feedback);
 \end{tikzpicture}
-\caption{Pipeline xử lý audio cuộc họp và vòng phản hồi của người dùng}
-\label{fig:processing-pipeline}
+\caption{Pipeline phương pháp từ audio cuộc họp đến dữ liệu hiệu chỉnh}
+\label{fig:method-pipeline}
 \end{figure}
 
-Backend lưu trạng thái cuộc họp và kết quả trung gian vào PostgreSQL. Thiết kế này giúp worker có thể restart mà không mất toàn bộ tiến độ, frontend có thể resume job, và dữ liệu feedback có thể được xuất lại cho đánh giá hoặc huấn luyện.
+Thiết kế này tách rõ ba lớp trách nhiệm. Lớp xử lý tiếng nói tạo transcript có speaker turns. Lớp LLM chuyển transcript thành dữ liệu có cấu trúc. Lớp LLMOps lưu vết, đánh giá, nhận feedback và chuẩn bị dữ liệu cho các vòng cải tiến.
 
-\section{ASR và diarization}
+\section{Thiết kế dữ liệu}
 
-Module STT chịu trách nhiệm gọi WhisperX và diarization. Kết quả diarization được lưu dạng raw artifact và được dùng để gán speaker cho từng segment/turn. Hệ thống truyền waveform trực tiếp cho diarization để tránh phụ thuộc vào decode nội bộ khi thư viện audio runtime thiếu \texttt{torchcodec} đầy đủ.
+Hệ thống sử dụng nhiều loại dữ liệu khác nhau, mỗi loại phục vụ một mục đích riêng. Bảng~\ref{tab:data-types} tóm tắt vai trò của các loại dữ liệu chính.
 
-Trên UI, speaker ban đầu vẫn là nhãn kỹ thuật như \texttt{SPEAKER\_00}. Người dùng xem transcript evidence và gán speaker này cho participant phù hợp. Thiết kế này đúng với bản chất audio một cuộc họp có thể có nhiều speaker, không ép toàn bộ audio về một người nói duy nhất.
-
-Luồng WhisperX trong hệ thống gồm bốn bước tách biệt. Thứ nhất, audio đã được preprocess về WAV mono 16 kHz và được nạp vào pipeline. Thứ hai, model WhisperX chạy ASR để tạo các segment văn bản kèm timestamp thô. Thứ ba, alignment model căn chỉnh lại timestamp ở mức word-level, giúp hệ thống có căn cứ thời gian tốt hơn khi chia transcript theo lượt nói. Thứ tư, nếu bật diarization, Pyannote tạo các đoạn speaker; sau đó WhisperX gán speaker vào từng word/segment. Khi segment không có speaker trực tiếp, code lấy speaker xuất hiện nhiều nhất trong danh sách word làm fallback; nếu vẫn không có thì dùng \texttt{SPEAKER\_UNKNOWN}.
-
-\begin{figure}[H]
+\begin{table}[H]
 \centering
-\begin{tikzpicture}[
-  node distance=0.45cm,
-  step/.style={draw=primary, fill=light, rounded corners=3pt, text width=5.8cm, minimum height=0.62cm, align=center, font=\scriptsize},
-  artifact/.style={draw=accent, fill=stagecolor2, rounded corners=3pt, text width=5.8cm, minimum height=0.62cm, align=center, font=\scriptsize},
-  arrow/.style={-Latex, thick, color=darkgray}
-]
-  \node[step] (wav) {16 kHz mono WAV};
-  \node[step, below=of wav] (asr) {WhisperX transcribe};
-  \node[step, below=of asr] (align) {Word-level alignment};
-  \node[step, below=of align] (dia) {Pyannote diarization};
-  \node[step, below=of dia] (assign) {Assign word speakers};
-  \node[artifact, below=of assign] (turns) {TranscriptTurn: speaker, time, text};
-  \node[artifact, below=of turns] (raw) {Raw ASR/diarization artifacts};
+\caption{Các loại dữ liệu chính trong phương pháp}
+\label{tab:data-types}
+\begin{tabularx}{\textwidth}{@{}p{3.4cm}X X@{}}
+\toprule
+\textbf{Loại dữ liệu} & \textbf{Nội dung} & \textbf{Vai trò} \\
+\midrule
+Audio đầu vào & File \texttt{mp3}, \texttt{wav}, \texttt{m4a} hoặc định dạng tương đương & Nguồn dữ liệu ban đầu của pipeline \\
+Transcript turns & Các lượt nói gồm speaker, thời gian và nội dung & Làm input cho LLM và bằng chứng truy vết \\
+Worker roster & Danh sách nhân sự, tên, email, alias và vai trò & Chuẩn hoá assignee và giảm lỗi gán người \\
+Action items & Task có description, assignee, due date, priority và source turns & Kết quả vận hành chính của hệ thống \\
+Feedback corrections & Dữ liệu người dùng hiệu chỉnh sau review & Nguồn cải tiến, đánh giá và fine-tuning sau này \\
+Tập đánh giá tham chiếu & Transcript tổng hợp kèm action items kỳ vọng & Benchmark baseline và so sánh candidate model \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
-  \draw[arrow] (wav) -- (asr);
-  \draw[arrow] (asr) -- (align);
-  \draw[arrow] (align) -- (dia);
-  \draw[arrow] (dia) -- (assign);
-  \draw[arrow] (assign) -- (turns);
-  \draw[arrow] (turns) -- (raw);
-\end{tikzpicture}
-\caption{Luồng xử lý WhisperX và Pyannote để tạo transcript theo lượt nói}
-\label{fig:whisperx-flow}
-\end{figure}
+Dữ liệu tổng hợp (synthetic data) được dùng để bootstrap training hoặc evaluation trong điều kiện kiểm soát. Ví dụ, \texttt{data/eval/gold\_synthetic\_205.jsonl} là tập đánh giá tham chiếu gồm transcript cuộc họp tổng hợp và action items kỳ vọng. Vì tập này không thay thế dữ liệu họp thật đã được kiểm chứng bởi con người, báo cáo chỉ dùng nó như benchmark có kiểm soát cho baseline.
 
-Đầu ra chuẩn hoá của bước này là danh sách \texttt{TranscriptTurn}, gồm \texttt{turn\_id}, \texttt{speaker\_id}, \texttt{start\_ms}, \texttt{end\_ms}, \texttt{text} và \texttt{asr\_confidence}. Đây là đơn vị dữ liệu trung tâm cho các bước sau: prompt LLM được dựng từ danh sách turn, action item lưu \texttt{source\_turn\_ids}, UI hiển thị evidence theo turn, và feedback có thể truy ngược về đoạn hội thoại nguồn.
+Dữ liệu hiệu chỉnh của người dùng (feedback corrections) là các bản ghi sinh ra khi người dùng sửa kết quả model, chẳng hạn sửa mô tả task, assignee, due date, đánh dấu false positive hoặc bổ sung task bị bỏ sót. Đây là nguồn dữ liệu quan trọng nhất cho vòng cải tiến vì nó phản ánh lỗi thật trong quá trình sử dụng.
 
-\section{Trích xuất action items}
+\section{Xử lý audio và transcript}
 
-LLM được gọi qua Ollama với model cấu hình mặc định Qwen2.5-3B. Prompt yêu cầu output là JSON array, chỉ được trích xuất task có bằng chứng trong transcript và assignee phải thuộc roster hoặc được đánh dấu cần review. Sau khi model trả kết quả, backend chạy validation và assignment normalization trước khi lưu.
+Audio đầu vào được chuẩn hoá trước khi đưa vào mô hình nhận dạng tiếng nói. Mục tiêu của bước này là giảm khác biệt giữa các định dạng file và tạo đầu vào nhất quán cho ASR. Sau đó, WhisperX tạo transcript và thông tin thời gian; diarization gán các đoạn nói cho speaker labels như \texttt{SPEAKER\_00}, \texttt{SPEAKER\_01}.
 
-Các task lưu trong database có thể kèm \texttt{source\_turn\_ids}. UI dùng các turn này để hiển thị bằng chứng cho người review, giúp việc sửa assignee hoặc mô tả task không chỉ dựa vào cảm tính.
+Đầu ra chuẩn hoá của bước này là danh sách \texttt{TranscriptTurn}. Mỗi turn biểu diễn một đoạn nói gồm speaker, thời gian bắt đầu, thời gian kết thúc và nội dung văn bản. Đây là đơn vị trung tâm của hệ thống: prompt LLM được dựng từ transcript turns, action item lưu \texttt{source\_turn\_ids}, còn UI dùng các turn này để hiển thị bằng chứng khi người dùng review.
 
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-  node distance=0.45cm,
-  box/.style={draw=primary, fill=light, rounded corners=3pt, text width=5.8cm, minimum height=0.62cm, align=center, font=\scriptsize},
-  check/.style={draw=secondary, fill=stagecolor3, rounded corners=3pt, text width=5.8cm, minimum height=0.62cm, align=center, font=\scriptsize},
-  store/.style={draw=accent, fill=stagecolor2, rounded corners=3pt, text width=5.8cm, minimum height=0.62cm, align=center, font=\scriptsize},
-  arrow/.style={-Latex, thick}
-]
-  \node[box] (context) {Transcript turns + roster};
-  \node[box, below=of context] (prompt) {Prompt với schema instruction};
-  \node[box, below=of prompt] (model) {Qwen2.5-3B qua Ollama};
-  \node[check, below=of model] (guard) {JSON parse + Pydantic guardrails};
-  \node[check, below=of guard] (norm) {Assignee normalization};
-  \node[store, below=of norm] (db) {Tasks + source turn ids};
+\section{Trích xuất action items bằng LLM}
 
-  \draw[arrow] (context) -- (prompt);
-  \draw[arrow] (prompt) -- (model);
-  \draw[arrow] (model) -- (guard);
-  \draw[arrow] (guard) -- (norm);
-  \draw[arrow] (norm) -- (db);
-\end{tikzpicture}
-\caption{Luồng trích xuất action items có kiểm tra schema và chuẩn hoá assignee}
-\label{fig:action-extraction}
-\end{figure}
+LLM được dùng cho hai nhiệm vụ: tóm tắt cuộc họp và trích xuất action items. Với action item extraction, hệ thống xây dựng prompt từ bốn thành phần: ngày họp, danh sách người tham gia, transcript chunk và hướng dẫn xuất JSON theo schema. Việc chia transcript thành chunk giúp kiểm soát độ dài prompt khi cuộc họp dài.
 
-\section{Dữ liệu và feedback}
+Đầu ra mong muốn không phải văn bản tự do mà là JSON array. Mỗi phần tử biểu diễn một task với các trường chính như \texttt{description}, \texttt{assignee}, \texttt{due\_date}, \texttt{priority} và \texttt{source\_turn\_ids}. Cách tiếp cận này giúp kết quả LLM có thể được lưu, kiểm tra và đánh giá bằng chương trình.
 
-Nguồn dữ liệu hiện tại gồm:
+Sau khi model trả kết quả, hệ thống không lưu trực tiếp raw output. Kết quả phải được parse, kiểm tra schema và chuẩn hoá assignee. Nếu output không hợp lệ, task có thể bị loại hoặc đưa vào nhóm cần review thay vì được xem là kết quả đã xác nhận.
+
+\section{Chuẩn hoá assignee}
+
+Trong transcript, người phụ trách có thể được nhắc bằng tên đầy đủ, tên ngắn, alias hoặc chỉ xuất hiện gián tiếp qua lượt nói. Vì vậy, hệ thống sử dụng worker roster để chuẩn hoá assignee. Về phương pháp, assignee từ LLM được so khớp với roster bằng tên và alias; nếu không đủ tin cậy, task được đưa vào trạng thái unresolved hoặc human review.
+
+Thiết kế này tránh việc backend lưu các tên không nhất quán như ``Bob'', ``Bobby'' và ``Robert'' như ba người khác nhau. Nó cũng phản ánh thực tế rằng một phần lỗi gán người không nên được tự động quyết định nếu transcript hoặc diarization chưa đủ rõ.
+
+\section{Guardrails}
+
+Guardrails được đặt quanh cả input và output của LLM. Ở phía input, hệ thống kiểm tra một số mẫu prompt injection hoặc jailbreak và che các dạng thông tin nhạy cảm phổ biến như email, số điện thoại, SSN, thẻ, IP và URL bằng regex-based PII masking. Cơ chế này giảm rủi ro đưa thông tin nhạy cảm hoặc chỉ dẫn độc hại vào prompt.
+
+Ở phía output, hệ thống kiểm tra JSON schema, chuẩn hoá ngày hạn và phát hiện một số dấu hiệu hallucination. Hallucination trong ngữ cảnh này là trường hợp model tạo task không có đủ bằng chứng trong transcript. Guardrails không đảm bảo loại bỏ mọi lỗi, nhưng giúp biến output của LLM thành dữ liệu có thể kiểm soát trước khi đi vào database.
+
+\section{Feedback loop và lifecycle LLMOps}
+
+Sau khi hệ thống sinh task, người dùng có thể review và gửi dữ liệu hiệu chỉnh. Một correction có thể sửa task description, assignee, due date, đánh dấu task là false positive hoặc bổ sung task bị thiếu. Các correction được lưu trong database và có thể export thành JSONL.
+
+Luồng LLMOps của dự án gồm bốn bước chính: thu thập feedback, validate dữ liệu, đánh giá regression và chuẩn bị fine-tuning khi đủ điều kiện. Fine-tuning dùng LoRA/QLoRA~\cite{hu2021lora,dettmers2023qlora} là hướng đã chuẩn bị về kỹ thuật, nhưng trong báo cáo này không được xem là bằng chứng chính cho chất lượng hiện tại nếu chưa có artifact huấn luyện và kết quả so sánh cụ thể.
+
+\section{Phương pháp đánh giá}
+
+Đánh giá chất lượng action item extraction cần trả lời hai câu hỏi: model có tìm đúng task hay không và các trường quan trọng như assignee có đúng không. Trong benchmark hiện tại, mỗi mẫu gồm transcript turns, roster, ngày họp và danh sách action items tham chiếu.
+
+Quy trình so sánh hoạt động như sau. Hệ thống chạy pipeline trích xuất trên transcript để tạo danh sách predicted tasks. Mỗi predicted task được so với các reference tasks chủ yếu bằng trường \texttt{description}. Matcher dùng BM25 trước, tức một phương pháp xếp hạng độ liên quan văn bản dựa trên mức độ trùng khớp từ khóa có trọng số; nếu không đạt ngưỡng, nó fallback sang Jaccard token overlap. Mỗi reference task chỉ được match một lần.
+
+Từ quy trình trên, các đại lượng được định nghĩa như sau:
 
 \begin{itemize}[leftmargin=*]
-  \item Gold smoke set: bộ đánh giá nhỏ dùng cho CI regression nhanh.
-  \item Gold synthetic benchmark: bộ \texttt{data/eval/gold\_synthetic\_205.jsonl} dùng cho benchmark baseline/candidate, hiện chạy mặc định 100 mẫu.
-  \item Synthetic training set: dữ liệu synthetic dùng làm bootstrap.
-  \item Collected training set: dữ liệu export/thu thập cho training.
-  \item File feedback corrections JSONL: artifact được export từ bảng feedback trong database.
+  \item \textbf{True positive}: predicted task match được một reference task.
+  \item \textbf{False positive}: predicted task không match được reference task nào.
+  \item \textbf{False negative}: reference task không được predicted task nào match.
+  \item \textbf{Precision}: tỷ lệ task dự đoán là đúng trên tổng số task dự đoán.
+  \item \textbf{Recall}: tỷ lệ task tham chiếu được hệ thống tìm thấy.
+  \item \textbf{F1}: trung bình điều hoà giữa precision và recall.
+  \item \textbf{Assignee accuracy}: tỷ lệ assignee đúng trên các task đã match description.
+  \item \textbf{Schema failure rate}: tỷ lệ mẫu mà output không parse hoặc validate được theo schema.
+  \item \textbf{Hallucination rate}: tỷ lệ task dự đoán thiếu bằng chứng rõ ràng trong transcript.
 \end{itemize}
 
-Database là nguồn dữ liệu chính cho feedback. JSONL không phải nơi hệ thống ghi trực tiếp mỗi lần người dùng sửa, mà là artifact training được export để dùng với HuggingFace/TRL/Unsloth.
+Precision quan trọng vì task sai có thể làm người dùng mất niềm tin và tạo công việc không tồn tại. Recall cũng quan trọng vì task bị bỏ sót làm giảm giá trị tự động hoá. Trong baseline hiện tại, benchmark synthetic giúp kiểm soát regression và so sánh candidate model, nhưng chưa thay thế đánh giá trên meeting thật với audio nhiễu, cách nói tự nhiên và tổ chức nhân sự thực tế.
 
-\section{LLMOps: dữ liệu, đánh giá và promotion}
+\section{Kết luận chương}
 
-Luồng LLMOps của dự án không chỉ là một câu lệnh fine-tune. Nó gồm các bước có đầu vào và đầu ra rõ ràng: thu thập correction từ người dùng, export correction thành JSONL huấn luyện, kiểm tra contract dữ liệu, chạy đánh giá trên gold set, ghi kết quả/promotion manifest và chỉ chuyển model serving khi kết quả được chấp nhận.
-
-Khi số correction mới đạt ngưỡng retrain (hiện cấu hình 50), Celery Beat hoặc REST API có thể trigger retrain check. Hàm retrain không tự tạo dữ liệu giả nếu DB không export được feedback; thay vào đó nó dừng với lý do rõ ràng. Dữ liệu training được kiểm tra bằng module validate trước khi chạy training. Fine-tuning dùng QLoRA/LoRA~\cite{dettmers2023qlora,hu2021lora} qua dependency nhóm train; worker train chạy trên queue riêng, tách khỏi worker xử lý meeting bình thường.
-
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-  node distance=0.45cm,
-  step/.style={draw=primary, fill=light, rounded corners=3pt, text width=5.8cm, minimum height=0.62cm, align=center, font=\scriptsize},
-  datastore/.style={draw=accent, fill=stagecolor2, rounded corners=3pt, text width=5.8cm, minimum height=0.62cm, align=center, font=\scriptsize},
-  gate/.style={draw=secondary, fill=stagecolor3, rounded corners=3pt, text width=5.8cm, minimum height=0.62cm, align=center, font=\scriptsize},
-  arrow/.style={-Latex, thick, color=darkgray}
-]
-  \node[datastore] (fb) {Feedback corrections};
-  \node[step, below=of fb] (export) {Export SFT JSONL};
-  \node[gate, below=of export] (validate) {Data contract validation};
-  \node[step, below=of validate] (train) {QLoRA/LoRA training};
-  \node[gate, below=of train] (eval) {Gold-set evaluation};
-  \node[datastore, below=of eval] (manifest) {Promotion manifest};
-  \node[step, below=of manifest] (serve) {Manual serving switch};
-
-  \draw[arrow] (fb) -- (export);
-  \draw[arrow] (export) -- (validate);
-  \draw[arrow] (validate) -- (train);
-  \draw[arrow] (train) -- (eval);
-  \draw[arrow] (eval) -- (manifest);
-  \draw[arrow] (manifest) -- (serve);
-\end{tikzpicture}
-\caption{Vòng LLMOps từ feedback đến đánh giá và promotion model}
-\label{fig:llmops-loop}
-\end{figure}
-
-Sau khi có model candidate, hệ thống chạy evaluation và ghi promotion manifest gồm model tag, output directory, checksum artifact, MLflow metadata nếu có, eval result và thông tin rollback. Việc chuyển model serving được giữ ở dạng thao tác có chủ đích để kết quả đánh giá luôn được kiểm tra trước khi thay đổi mô hình đang phục vụ.
-
-\section{Observability}
-
-Prometheus thu metrics từ API/worker, Grafana hiển thị trạng thái pipeline, task, worker, feedback, drift và MLOps. Các số liệu quan trọng được tính từ database khi cần để tránh mất trạng thái sau restart. Dashboard hiện phục vụ mục tiêu quan sát hệ thống trong phạm vi dự án; các chỉ số SRE chuyên sâu có thể được bổ sung khi tải xử lý và yêu cầu vận hành tăng lên.
+Phương pháp của dự án kết hợp xử lý tiếng nói, trích xuất có cấu trúc bằng LLM, guardrails, feedback loop và đánh giá định lượng. Điểm quan trọng là mỗi bước đều tạo ra dữ liệu trung gian có thể kiểm tra lại, thay vì chỉ trả về một câu trả lời cuối cùng từ model. Chương tiếp theo trình bày cách các phương pháp này được hiện thực hoá thành kiến trúc phần mềm, database, API, worker queue và monitoring stack.
