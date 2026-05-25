@@ -1,6 +1,7 @@
 # Legacy/exported project folders
 seminar/
 final_report/
+docs/*
 
 # Python build/cache
 __pycache__/
