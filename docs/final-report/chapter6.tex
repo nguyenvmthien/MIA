@@ -1,60 +1,34 @@
-\chapter{Thách thức và hạn chế}
-\label{chap:challenge}
+\chapter{Học liên tục và monitoring}
 
-Chương này tổng hợp các thách thức kỹ thuật còn tồn tại của hệ thống. Các hạn chế được trình bày theo hướng ảnh hưởng trực tiếp đến chất lượng xử lý, khả năng vận hành và mức độ sẵn sàng khi mở rộng từ demo kỹ thuật sang môi trường sử dụng thực tế.
+\section{Chiến lược học liên tục}
 
-\section{Chất lượng audio và lỗi lan truyền trong pipeline}
+Hệ thống thu dữ liệu mới qua feedback UI. Người dùng có thể sửa description, assignee, due date, đánh dấu false positive hoặc bổ sung missing task. Các correction được lưu trong PostgreSQL và export JSONL để phục vụ đánh giá hoặc huấn luyện. Trước khi training, dữ liệu được scrub PII, validate schema, loại trùng và chia train/validation/test theo meeting.
 
-Meeting AI Agent là một pipeline nhiều bước: audio được chuyển thành transcript, transcript được gắn speaker, sau đó LLM trích xuất action items. Vì vậy lỗi ở bước trước có thể lan sang bước sau. Nếu ASR nhận sai từ khóa quan trọng, action item có thể bị bỏ sót hoặc hiểu sai. Nếu diarization tách nhầm speaker, hệ thống có thể gán sai người phụ trách dù nội dung task được trích xuất đúng.
+Retraining được thiết kế theo hướng có kiểm soát. Candidate model không tự động thay thế baseline sau mỗi feedback; nó được đánh giá bằng cùng benchmark và quality gates. Promotion manifest ghi lại model path, metrics và điều kiện pass/fail để giữ audit trail.
 
-Trong báo cáo này, benchmark chính đánh giá extraction từ transcript tham chiếu, chưa đo đầy đủ ảnh hưởng của nhiễu audio, overlap speech hoặc micro chất lượng thấp. Đây là giới hạn quan trọng vì cuộc họp thật thường có ngắt lời, nói đè, âm nền, chuyển ngôn ngữ và cách nói không hoàn chỉnh.
+\section{Chỉ số monitoring}
 
-\section{Diarization và định danh người nói}
+Bảng \ref{tab:monitoring} định nghĩa các chỉ số vận hành cần theo dõi trong Prometheus/Grafana. Cách thiết kế monitoring và promotion gate dựa trên nguyên tắc MLOps có audit trail, đánh giá định kỳ và triển khai có kiểm soát \cite{shankar2022mlops}.
 
-Diarization chỉ trả về nhãn speaker ẩn danh như \texttt{SPEAKER\_00} hoặc \texttt{SPEAKER\_01}; nó không tự biết danh tính thật của người nói. Hệ thống hiện xử lý điểm này bằng speaker mapping trong UI: người dùng xem transcript evidence và map speaker ẩn danh sang participant thật hoặc worker trong roster.
+\begin{table}[H]
+\centering
+\footnotesize
+\caption{Các metric monitoring}
+\label{tab:monitoring}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{6.7cm}X@{}}
+\toprule
+\textbf{Chỉ số} & \textbf{Mục đích} \\
+\midrule
+\codefield{meeting_stage_duration_seconds} & Theo dõi độ trễ theo từng stage xử lý. \\
+\codefield{meeting_llm_calls_total} và token metrics & Theo dõi số lần gọi LLM và kích thước prompt/response. \\
+\codefield{meeting_jobs_total} & Theo dõi job hoàn tất và job lỗi. \\
+\codefield{meeting_tasks_extracted_total} & Theo dõi số lượng task theo thời gian. \\
+\codefield{meeting_hallucination_flags_total} & Theo dõi tín hiệu từ guardrails. \\
+\codefield{meeting_anomaly_events_total} & Theo dõi anomaly detection bằng rolling Z-score. \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
-Cách làm này phù hợp với phạm vi dự án vì tránh suy đoán danh tính người nói khi không có voice enrollment. Tuy nhiên, nó cũng tạo thêm bước review thủ công. Nếu muốn tự động hóa cao hơn, hệ thống cần dữ liệu giọng nói tham chiếu, chính sách quyền riêng tư rõ ràng và cơ chế xác nhận danh tính an toàn hơn.
+\section{Suy giảm hiệu năng và drift}
 
-\section{Assignee resolution}
-
-Kết quả đánh giá cho thấy assignee accuracy còn thấp hơn các metric mô tả task. Nguyên nhân không chỉ nằm ở model, mà còn ở bản chất ngôn ngữ cuộc họp. Người nói có thể giao việc cho người khác, tự nhận việc bằng đại từ ``I'', nhắc đến một người theo bí danh, hoặc nói một task đã được thống nhất từ trước. Các trường hợp này đòi hỏi hệ thống kết hợp speaker hiện tại, nội dung câu, roster, alias và ngữ cảnh lân cận.
-
-Trong phiên bản hiện tại, assignee resolution đã có roster và speaker mapping hỗ trợ, nhưng chưa đủ mạnh để xử lý toàn bộ trường hợp mơ hồ. Đây là một hướng cải tiến cần ưu tiên vì task đúng nội dung nhưng sai người phụ trách vẫn gây tác động lớn trong workflow quản lý công việc.
-
-\section{Giới hạn của dữ liệu đánh giá}
-
-Tập đánh giá chính hiện là synthetic benchmark. Tập này hữu ích để kiểm tra regression vì có cấu trúc ổn định và đủ số lượng mẫu, nhưng chưa thay thế được meeting thật. Dữ liệu synthetic thường sạch hơn, có deadline rõ hơn và ít nhiễu hơn hội thoại thực tế.
-
-Ngoài ra, matching bằng BM25/Jaccard chỉ xấp xỉ tương đồng giữa task dự đoán và task tham chiếu. Một số task đúng nhưng diễn đạt khác xa có thể bị đánh giá thấp; ngược lại, một số task trùng nhiều từ nhưng sai sắc thái có thể được match. Vì vậy, benchmark tự động cần được bổ sung bằng phân tích lỗi thủ công trên một tập nhỏ nhưng chất lượng cao.
-
-\section{Hiệu năng và tài nguyên tính toán}
-
-WhisperX, diarization và LLM inference đều tiêu tốn tài nguyên. Khi chạy trên máy cá nhân bằng Docker Compose, độ trễ phụ thuộc mạnh vào CPU/GPU, dung lượng RAM, độ dài transcript và số lần gọi LLM. Kết quả P95 latency cao cho thấy hệ thống chưa phù hợp với yêu cầu real-time.
-
-Fine-tuning cũng có yêu cầu phần cứng riêng. Luồng fine-tuning bằng QLoRA đã được chuẩn bị ở mức code, Dockerfile, queue và tracking, nhưng việc chạy hiệu quả gần như cần GPU/CUDA. Do đó, báo cáo xem fine-tuning là năng lực mở rộng đã chuẩn bị, không xem nó là bằng chứng đã cải thiện baseline nếu chưa có artifact và benchmark sau huấn luyện.
-
-\section{Bảo mật và dữ liệu nhạy cảm}
-
-Hệ thống đã có PII masking dựa trên pattern trước khi đưa nội dung vào prompt hoặc log debug. Cơ chế này giúp giảm rủi ro lộ email, số điện thoại, URL, IP và một số định danh phổ biến. Tuy nhiên, dữ liệu cuộc họp có thể chứa thông tin nhạy cảm không theo pattern cố định, ví dụ tên khách hàng, chiến lược kinh doanh, thông tin nhân sự hoặc dữ kiện nội bộ.
-
-Vì vậy, PII masking hiện tại không nên được mô tả như một hệ thống DLP hoàn chỉnh. Khi triển khai thực tế, cần bổ sung chính sách retention, phân quyền chi tiết, mã hóa secret, audit access và quy trình xử lý dữ liệu theo yêu cầu tổ chức.
-
-\section{Robustness và đầu vào ngoài miền}
-
-Hệ thống cần robust trước các đầu vào không lý tưởng như audio quá nhiễu, transcript trộn ngôn ngữ, câu lệnh cố tình yêu cầu model bỏ qua schema, hoặc cuộc họp không có action item rõ ràng. Cách giảm rủi ro hiện tại gồm validate định dạng audio, prompt injection check, schema validation, due-date sanity check, hallucination heuristic và trạng thái \texttt{human\_review} cho kết quả thiếu tự tin.
-
-Các failure case quan trọng gồm: model bỏ sót task vì ASR nhận sai từ khóa, tạo due date sai do hiểu nhầm thời điểm tương đối, gán sai assignee khi người nói dùng đại từ, hoặc tạo task từ một câu thảo luận chưa phải cam kết. Vì vậy, UI hiển thị evidence transcript và cho phép sửa feedback được xem là một lớp robustness vận hành, không chỉ là tính năng tiện ích.
-
-\section{Đạo đức và Responsible AI}
-
-Nhóm được hưởng lợi trực tiếp là người tham gia cuộc họp vì họ có thể theo dõi quyết định và công việc nhanh hơn. Tuy nhiên, hệ thống cũng có thể gây hại nếu biến lời nói chưa chắc chắn thành cam kết chính thức, gán nhầm trách nhiệm cho một cá nhân, hoặc lưu trữ nội dung họp nhạy cảm lâu hơn cần thiết.
-
-Rủi ro thiên lệch xuất hiện khi ASR/diarization hoạt động kém hơn với accent, giới tính, tiếng ồn hoặc hội thoại đa ngôn ngữ. Nếu nhóm người nào đó bị nhận dạng kém hơn, họ có thể bị gán thiếu/nhầm task nhiều hơn. Vì vậy, hệ thống không nên được dùng để đánh giá hiệu suất cá nhân nếu không có review của con người và benchmark trên dữ liệu đại diện.
-
-Về explainability, mỗi action item cần đi kèm transcript evidence, model version và trạng thái confidence/review. Với stakeholder không kỹ thuật, giải thích quan trọng nhất không phải thuật toán chi tiết mà là: task này đến từ đoạn hội thoại nào, ai đã review, và trường nào do model suy luận. Misuse cần tránh gồm theo dõi nhân viên quá mức, ghi âm không có đồng ý, hoặc dùng transcript/action items cho mục đích kỷ luật ngoài phạm vi thông báo ban đầu.
-
-\section{Mức độ sẵn sàng triển khai}
-
-Hệ thống hiện chạy ổn cho demo kỹ thuật bằng Docker Compose. Cách triển khai này phù hợp để kiểm chứng pipeline, UI, database, worker và monitoring trên cùng một máy. Tuy nhiên, nó chưa tương đương môi trường vận hành chính thức có autoscaling, backup, secret manager, CI/CD release gate, alerting đầy đủ và incident response.
-
-Triển khai qua domain public hoặc tunnel có thể phục vụ demo ngắn hạn, nhưng chưa được xem là kết quả vận hành chính thức của báo cáo. Điểm đáng tin cậy của dự án ở thời điểm hiện tại là một hệ thống end-to-end có thể tái lập cục bộ, có benchmark baseline và có nền tảng LLMOps để tiếp tục cải tiến.
+Suy giảm hiệu năng được phát hiện bằng hai lớp. Online monitoring theo dõi latency, schema failures, guardrail flags, job failures và task count. Offline evaluation chạy benchmark định kỳ để so sánh precision, recall, F1, assignee accuracy và hallucination rate giữa baseline và candidate. Drift có thể đến từ domain meeting mới, cách nói mới, ngôn ngữ mới, chất lượng audio khác hoặc roster/alias thay đổi. Biện pháp giảm thiểu gồm versioning dataset/prompt/model, fixed benchmark, promotion gate và rollback bằng model manifest.

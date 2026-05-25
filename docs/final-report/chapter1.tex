@@ -1,87 +1,38 @@
-\chapter{Giới thiệu}
+\chapter{Định nghĩa bài toán}
 
-\section{Bối cảnh và động lực}
+\section{Bối cảnh nghiệp vụ và động lực}
 
-Trong doanh nghiệp, cuộc họp thường tạo ra nhiều quyết định, công việc cần theo dõi và cam kết giữa các thành viên. Tuy nhiên, các thông tin này thường nằm rải rác trong audio, ghi chú cá nhân hoặc tin nhắn sau họp. Điều này làm action items dễ bị bỏ sót, deadline không rõ ràng và người phụ trách có thể bị gán sai.
+Trong môi trường doanh nghiệp, cuộc họp thường tạo ra quyết định, công việc cần theo dõi và cam kết giữa các thành viên. Tuy nhiên, các thông tin này thường nằm trong audio, ghi chú cá nhân hoặc tin nhắn sau họp. Khi không có hệ thống trích xuất và lưu vết thống nhất, action items dễ bị bỏ sót, deadline không rõ ràng và trách nhiệm có thể bị hiểu sai.
 
-\textbf{Meeting AI Agent} được xây dựng để chuyển audio cuộc họp thành dữ liệu có cấu trúc: transcript theo lượt nói, tóm tắt, danh sách action items, assignee, due date, priority và bằng chứng transcript liên quan. Trọng tâm của dự án không chỉ là sinh văn bản bằng LLM, mà là xây dựng một pipeline có thể vận hành, đo lường và cải tiến theo hướng LLMOps.
+Meeting AI Agent được xây dựng để chuyển audio cuộc họp thành dữ liệu có cấu trúc: transcript theo lượt nói, tóm tắt, action items, người phụ trách, thời hạn, mức ưu tiên và bằng chứng nguồn. Giá trị nghiệp vụ nằm ở việc giảm thời gian viết biên bản họp thủ công, tăng khả năng theo dõi công việc sau họp và giúp người dùng kiểm tra task dựa trên đoạn hội thoại gốc.
 
-Trong báo cáo này, LLMOps được hiểu là tập hợp các thực hành để quản lý vòng đời của hệ thống dùng mô hình ngôn ngữ lớn: dữ liệu, prompt, suy luận, đánh giá, monitoring, feedback và kiểm soát thay đổi mô hình.
+\section{Người dùng mục tiêu và các bên liên quan}
 
-\section{Bài toán NLP}
+Người dùng trực tiếp gồm project manager, technical lead, product owner và thành viên nhóm cần theo dõi công việc sau họp. Các bên liên quan gián tiếp gồm bộ phận vận hành, bảo mật dữ liệu và quản lý chất lượng vì hệ thống xử lý nội dung hội thoại nội bộ, lưu dữ liệu có thể chứa PII và tạo output ảnh hưởng tới workflow quản lý công việc.
 
-Dự án kết hợp ba bài toán chính.
+\section{Mô tả bài toán và nhu cầu NLP}
 
-\subsection{Nhận dạng tiếng nói tự động}
+Bài toán cần giải quyết không chỉ là speech-to-text. Hệ thống phải nhận diện nội dung công việc trong hội thoại tự nhiên, phân biệt câu thảo luận với cam kết, chuẩn hoá người phụ trách theo roster, diễn giải deadline tương đối theo ngày họp và xuất kết quả thành JSON có thể lưu vào database. Các bước này đòi hỏi NLP ở nhiều mức: ASR, speaker diarization, contextual information extraction, entity resolution và structured generation.
 
-Nhận dạng tiếng nói tự động (Automatic Speech Recognition -- ASR) chuyển audio thành văn bản. Trong hệ thống này, WhisperX nhận audio đã được chuẩn hoá và trả về transcript kèm thông tin thời gian. WhisperX được chọn vì hỗ trợ alignment tốt hơn ở mức từ hoặc đoạn nói, giúp truy vết action items về đoạn hội thoại gốc. Chất lượng ASR vẫn phụ thuộc vào tiếng ồn, accent, ngôn ngữ và tài nguyên tính toán.
+Ví dụ, câu ``Bob, can you send the report by Friday?'' cần được chuyển thành task ``send the report'', assignee được map từ alias ``Bob'' sang worker trong roster, due date được chuẩn hoá theo meeting date, và task giữ source turn để người dùng audit.
 
-\subsection{Phân tách người nói}
+\section{Tiêu chí thành công}
 
-Speaker diarization xác định ``ai nói khi nào''. Khác với ASR, diarization không tạo nội dung văn bản mà gán các đoạn audio cho speaker labels như \texttt{SPEAKER\_00} hoặc \texttt{SPEAKER\_01}. Thông tin này giúp hệ thống hiểu ngữ cảnh người nói và hỗ trợ gán assignee. Giới hạn chính là audio nhiễu, giọng nói chồng lấn hoặc các speaker có giọng tương tự nhau.
-
-\subsection{Trích xuất thông tin có cấu trúc}
-
-Sau khi có transcript, hệ thống dùng Qwen2.5-3B qua Ollama để trích xuất action items. Đầu vào của LLM là prompt chứa ngày họp, danh sách người tham gia, transcript chunk và hướng dẫn xuất JSON. Đầu ra là danh sách task có mô tả, assignee, due date, priority và source turns. Vì backend cần dữ liệu có cấu trúc, kết quả LLM được kiểm tra bằng schema và guardrails trước khi lưu.
-
-\section{Mục tiêu hệ thống}
-
-Các mục tiêu chính của dự án gồm:
-
-\begin{enumerate}[leftmargin=*]
-  \item Xử lý audio cuộc họp end-to-end qua giao diện web.
-  \item Tạo transcript theo speaker turns để phục vụ truy vết.
-  \item Trích xuất summary và action items bằng LLM chạy local.
-  \item Chuẩn hoá assignee theo worker roster và cho phép người dùng hiệu chỉnh.
-  \item Lưu meeting, transcript, tasks, feedback corrections và calendar events vào PostgreSQL.
-  \item Tích hợp feedback loop cho đánh giá và fine-tuning trong tương lai.
-  \item Theo dõi hệ thống bằng Prometheus/Grafana.
-  \item Chuẩn bị benchmark, dataset validation, retrain trigger và promotion gate theo hướng LLMOps.
-\end{enumerate}
-
-\section{Người dùng mục tiêu và tiêu chí thành công}
-
-Người dùng mục tiêu của hệ thống là các nhóm làm việc thường xuyên họp trực tuyến hoặc ghi âm cuộc họp: quản lý dự án, trưởng nhóm kỹ thuật, product owner và thành viên cần theo dõi công việc sau họp. Stakeholder gián tiếp gồm bộ phận vận hành, bảo mật dữ liệu và quản lý chất lượng, vì hệ thống xử lý nội dung hội thoại có thể chứa thông tin nội bộ.
-
-Giá trị nghiệp vụ chính là giảm thời gian chuyển cuộc họp thành danh sách công việc có thể theo dõi. Thay vì người dùng phải nghe lại audio hoặc đọc toàn bộ transcript, hệ thống sinh bản tóm tắt và action items có assignee, deadline và evidence để review nhanh hơn.
+Bảng \ref{tab:success-metrics} tóm tắt các chỉ số dùng để đánh giá giá trị nghiệp vụ và chất lượng kỹ thuật của hệ thống.
 
 \begin{table}[H]
 \centering
-\caption{Tiêu chí thành công của dự án}
+\small
+\caption{Tiêu chí thành công về nghiệp vụ và kỹ thuật}
 \label{tab:success-metrics}
-\begin{tabularx}{\textwidth}{@{}p{3.5cm}X X@{}}
+\begin{tabularx}{\textwidth}{@{}p{3.2cm}X@{}}
 \toprule
-\textbf{Nhóm metric} & \textbf{Metric} & \textbf{Mục tiêu/ý nghĩa} \\
+\textbf{Nhóm chỉ số} & \textbf{Chỉ số} \\
 \midrule
-Business & Thời gian tạo minutes sau họp & Giảm đáng kể thời gian soạn thủ công bằng việc tự động tạo summary và action items để người dùng chỉ cần review. \\
-Business & Tỷ lệ task cần sửa sau review & Phản ánh mức độ người dùng tin cậy output; giảm dần khi có feedback loop. \\
-Business & Tỷ lệ task có assignee/deadline rõ ràng & Đo khả năng biến hội thoại thành dữ liệu có thể hành động trong workflow quản lý công việc. \\
-Technical & Precision, recall, F1 & Đo chất lượng trích xuất action items trên benchmark có nhãn. \\
-Technical & Assignee accuracy & Đo khả năng gán đúng người phụ trách, một trường quan trọng về mặt nghiệp vụ. \\
-Technical & Schema failure và hallucination rate & Đo độ ổn định của output có cấu trúc và mức độ bám transcript. \\
-Technical & Latency trung bình và P95 & Đánh giá khả năng dùng trong demo/deployment bất đồng bộ. \\
+Nghiệp vụ & Thời gian tạo minutes sau họp; tỷ lệ task cần sửa sau review; tỷ lệ task có assignee và due date rõ ràng. \\
+Kỹ thuật & Precision, recall, F1, assignee accuracy, schema failure rate, hallucination rate, latency trung bình và P95 latency. \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\section{Phạm vi dự án}
-
-Phiên bản hiện tại là hệ thống local-first chạy bằng Docker Compose. Runtime stack gồm Next.js, FastAPI, Celery, Redis, PostgreSQL, Ollama, Prometheus và Grafana. Cách triển khai này phù hợp với mục tiêu môn học: chứng minh một pipeline NLP/LLMOps hoàn chỉnh mà không phụ thuộc vào dịch vụ LLM trả phí.
-
-Dự án đã tập trung vào các năng lực cốt lõi: xử lý audio, tạo transcript, trích xuất action items, lưu trữ có truy vết, human review, Google Calendar sync, benchmark baseline và monitoring. Một số phần như fine-tuning GPU, triển khai qua domain public, autoscaling, tuân thủ dữ liệu đầy đủ và quản trị multi-tenant được xem là hướng mở rộng. Báo cáo không xem các phần này là kết quả vận hành chính thức hoàn chỉnh.
-
-\section{Đóng góp chính}
-
-Dự án đóng góp các thành phần sau:
-
-\begin{itemize}[leftmargin=*]
-  \item Pipeline audio-to-action-items kết hợp ASR, diarization, LLM extraction, guardrails và worker assignment.
-  \item Backend bất đồng bộ bằng FastAPI, Celery, Redis và PostgreSQL cho các job audio dài.
-  \item Web UI cho upload, theo dõi tiến trình, review task, sửa kết quả và đồng bộ lịch.
-  \item Feedback loop lưu dữ liệu hiệu chỉnh của người dùng để phục vụ đánh giá và cải tiến mô hình.
-  \item Monitoring và benchmark baseline để đo chất lượng extraction, schema stability, hallucination rate và các chỉ số vận hành.
-\end{itemize}
-
-\section{Cấu trúc báo cáo}
-
-Chương 2 trình bày cơ sở lý thuyết và công nghệ liên quan. Chương 3 mô tả phương pháp luận, bao gồm pipeline dữ liệu, lựa chọn mô hình, prompt engineering, guardrails và đánh giá. Chương 4 trình bày kiến trúc triển khai. Chương 5 phân tích thiết lập đánh giá và kết quả baseline. Chương 6 thảo luận thách thức và giới hạn. Chương 7 nêu hướng phát triển. Chương 8 tổng kết dự án.
+Chỉ số nghiệp vụ phản ánh giá trị sử dụng trong quy trình sau họp. Chỉ số kỹ thuật phản ánh chất lượng trích xuất, độ ổn định của đầu ra có cấu trúc và khả năng vận hành của pipeline bất đồng bộ.

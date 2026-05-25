@@ -90,7 +90,7 @@ Audio file
 ├── web/                           Next.js web UI
 ├── tests/                         Unit and smoke tests
 ├── configs/                       Example configuration files
-├── models/                        Local trained models/checkpoints (not committed)
+├── models/                        Baseline checkpoint plus ignored runtime model outputs
 ├── docs/                          Architecture & design documents
 ├── docker/                        Prometheus config, Grafana provisioning
 ├── .github/workflows/ci.yml       CI: lint → unit → schema smoke → eval smoke → docker

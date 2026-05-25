@@ -1,111 +1,40 @@
-\chapter{Hướng phát triển}
-\label{chap:future}
+\chapter{Quyền riêng tư, độ bền vững và AI có trách nhiệm}
 
-Các hướng phát triển dưới đây được sắp xếp theo mức độ ảnh hưởng đến chất lượng hệ thống. Ưu tiên chính không phải thêm nhiều tính năng rời rạc, mà là cải thiện độ tin cậy của pipeline NLP, mở rộng dữ liệu đánh giá và làm cho quy trình vận hành an toàn hơn.
+\section{Rủi ro quyền riêng tư và bảo mật}
 
-\section{Mở rộng dữ liệu đánh giá và feedback}
+Audio cuộc họp có thể chứa PII, thông tin khách hàng, thông tin nhân sự hoặc chiến lược nội bộ. Hệ thống giảm rủi ro bằng local inference, \texttt{.env} cho secret, ignore runtime artifacts, và regex-based PII masking cho email, số điện thoại, URL, IP và một số định danh phổ biến. Dữ liệu audio/transcript runtime không được commit vào Git.
 
-Hướng quan trọng nhất là thu thập thêm dữ liệu feedback từ UI và xây dựng tập đánh giá nhỏ nhưng được kiểm chứng thủ công. Tập này nên bao gồm transcript thật hoặc transcript đã được scrub thông tin nhạy cảm, có action items tham chiếu, assignee, deadline và ghi chú về các trường hợp mơ hồ.
+\section{Ẩn danh và tối thiểu hoá dữ liệu}
 
-Dữ liệu mới nên được chia theo mục đích:
+Speaker diarization tạo nhãn ẩn danh như \texttt{SPEAKER\_00}. Danh tính thật chỉ được map khi người dùng review hoặc cung cấp roster. Action items lưu \texttt{source\_turn\_ids} thay vì lưu thêm dữ liệu ngoài transcript. Cách tiếp cận này giảm lượng thông tin cần suy diễn tự động và giữ output có thể kiểm chứng.
 
-\begin{itemize}[leftmargin=*]
-  \item Tập smoke test nhỏ để chạy nhanh trong CI.
-  \item Tập benchmark chính để so sánh baseline và candidate model.
-  \item Tập phân tích lỗi thủ công để hiểu các lỗi như missing task, wrong assignee, wrong due date và hallucination.
-\end{itemize}
+\section{Độ bền vững với đầu vào nhiễu hoặc đối kháng}
 
-Khi dữ liệu feedback đủ lớn và đủ sạch, có thể dùng nó cho prompt tuning, fine-tuning hoặc preference-style training. Tuy nhiên, mọi candidate cần được đánh giá lại bằng cùng benchmark trước khi được xem là cải tiến.
+Độ bền vững được xử lý bằng validate audio, schema validation, prompt-injection checks, due-date sanity checks, hallucination heuristic và human review. Các failure case quan trọng gồm ASR sai từ khóa, diarization sai speaker, LLM hiểu nhầm deadline tương đối, hoặc tạo task từ câu thảo luận chưa phải cam kết. Guardrails không thay thế review của con người, nhưng giúp output phù hợp hơn với database schema và workflow kiểm chứng.
 
-\section{Đánh giá audio end-to-end}
-
-Benchmark hiện tại tập trung vào extraction từ transcript. Để đánh giá đúng toàn bộ hệ thống audio meeting, cần bổ sung benchmark end-to-end từ audio đến action items. Benchmark này cần ít nhất ba loại annotation: transcript chuẩn, speaker segment/speaker identity và action items tham chiếu.
-
-Khi có dữ liệu này, hệ thống có thể đo thêm:
-
-\begin{itemize}[leftmargin=*]
-  \item Word Error Rate cho ASR.
-  \item Diarization Error Rate cho speaker diarization.
-  \item Tác động của lỗi ASR/diarization đến precision, recall và assignee accuracy.
-  \item Độ trễ theo thời lượng audio thay vì chỉ theo số sample transcript.
-\end{itemize}
-
-Đây là bước cần thiết nếu hệ thống được dùng trong môi trường có audio thật thay vì chỉ demo trên transcript hoặc audio kiểm soát.
-
-\section{Cải thiện assignee và deadline extraction}
-
-Assignee accuracy hiện là một trong các điểm yếu chính. Hướng cải tiến gồm chuẩn hóa alias trong roster, dùng speaker mapping làm tín hiệu mạnh hơn, mở rộng prompt với ví dụ về giao việc gián tiếp và bổ sung rule hậu xử lý cho các mẫu câu phổ biến như ``I will...'', ``Bob, please...'', hoặc ``Can you...''.
-
-Deadline extraction cũng cần được đánh giá riêng. Các cụm như ``next Friday'', ``end of next week'' hoặc ``before the release'' phụ thuộc vào meeting date và ngữ cảnh nghiệp vụ. Một hướng phát triển tốt là tách due-date normalization thành module có test riêng, thay vì để toàn bộ trách nhiệm nằm trong LLM.
-
-\section{Nâng cấp evaluation harness}
-
-Evaluation harness hiện đã có matching BM25/Jaccard, assignee accuracy, hallucination heuristic và schema failure rate. Các cải tiến tiếp theo gồm:
-
-\begin{itemize}[leftmargin=*]
-  \item Thêm semantic matching bằng embedding hoặc cross-encoder để giảm sai lệch do diễn đạt khác nhau.
-  \item Tách metric theo field: description, assignee, due date, priority và evidence turn.
-  \item Báo cáo lỗi theo domain, số speaker, độ dài meeting và số action items.
-  \item Lưu per-sample error cases để phục vụ phân tích sau benchmark.
-  \item Chuẩn hóa promotion report để mỗi lần thay prompt/model đều có bằng chứng so sánh.
-\end{itemize}
-
-Mục tiêu của phần này là biến benchmark thành công cụ ra quyết định, không chỉ là bảng điểm tổng hợp.
-
-\section{Fine-tuning và model lifecycle}
-
-Khi có đủ dữ liệu correction chất lượng tốt và môi trường GPU phù hợp, có thể chạy QLoRA fine-tuning cho mô hình extraction. Candidate sau huấn luyện cần đi qua cùng evaluation gate: precision không được giảm dưới ngưỡng hard gate, hallucination/schema failure không regression, và F1 không giảm đáng kể so với baseline.
-
-Sau khi candidate đạt gate, hệ thống có thể mở rộng theo hướng canary hoặc A/B testing. Một phần traffic nhỏ được route sang candidate, kết quả feedback và metrics được so sánh với baseline trong một khoảng thời gian. Chỉ khi candidate ổn định mới chuyển thành model mặc định.
-
-\section{Chiến lược continual learning và monitoring drift}
-
-Continual learning của dự án được thiết kế theo hướng có kiểm soát, không tự động cập nhật model ngay sau mỗi feedback. Dữ liệu mới được thu từ corrections trong UI, missing tasks, false positives và các trường hợp người dùng sửa assignee/deadline. Trước khi dùng cho huấn luyện, dữ liệu phải được scrub thông tin nhạy cảm, validate schema, loại trùng lặp và tách thành train/validation/test theo meeting.
-
-Hiệu năng suy giảm được phát hiện qua hai lớp. Lớp online monitoring theo dõi latency, số lỗi schema, số guardrail flags, số task mỗi meeting, tỷ lệ human review và feedback volume. Lớp offline evaluation chạy benchmark định kỳ để so sánh precision, recall, F1, assignee accuracy và hallucination rate giữa baseline và candidate. Nếu drift xuất hiện, ví dụ tỷ lệ human review tăng hoặc F1 giảm trên benchmark mới, hệ thống cần ưu tiên phân tích lỗi và cập nhật dữ liệu trước khi fine-tune.
-
-Rủi ro drift chính gồm thay đổi cách họp của nhóm, domain nghiệp vụ mới, ngôn ngữ mới, chất lượng audio khác và roster/alias thay đổi theo thời gian. Mitigation tương ứng là versioning dataset/model/prompt, giữ baseline cố định để so sánh, promotion gate trước deployment và rollback sang model trước đó nếu metrics vận hành xấu đi.
-
-\section{Kế hoạch dự án và phân rã công việc}
-
-Nếu triển khai theo nhóm, dự án có thể được chia thành các vai trò: backend/API, frontend/UI review, NLP pipeline, MLOps/evaluation, DevOps/monitoring và documentation. Với đồ án solo, các vai trò này được mô phỏng bằng các nhóm việc và artifact riêng trong repo.
+Bảng \ref{tab:robustness} liệt kê các trường hợp lỗi chính và biện pháp xử lý đã được thiết kế trong hệ thống.
 
 \begin{table}[H]
 \centering
-\caption{Timeline triển khai đề xuất}
-\label{tab:project-timeline}
-\begin{tabularx}{\textwidth}{@{}p{2.5cm}X X@{}}
+\small
+\caption{Trường hợp lỗi và biện pháp xử lý}
+\label{tab:robustness}
+\begin{tabularx}{\textwidth}{@{}p{3.5cm}X@{}}
 \toprule
-\textbf{Giai đoạn} & \textbf{Công việc chính} & \textbf{Kết quả} \\
+\textbf{Trường hợp lỗi} & \textbf{Biện pháp xử lý trong hệ thống} \\
 \midrule
-Tuần 1 & Xác định business problem, schema, dữ liệu mẫu và baseline architecture. & Problem definition, data schema, kế hoạch repo. \\
-Tuần 2 & Xây dựng pipeline audio/transcript, LLM extraction và guardrails. & Pipeline chạy end-to-end ở mức backend. \\
-Tuần 3 & Thêm UI review, database persistence, feedback loop và API hoàn chỉnh. & Demo web có upload, review và correction. \\
-Tuần 4 & Bổ sung benchmark, monitoring, retraining hooks và Docker Compose. & Repo runnable, metrics, baseline results. \\
-Tuần 5 & Viết report, slide deck, kiểm thử và cleanup deliverables. & Báo cáo PDF, source code, presentation. \\
+Audio nhiễu hoặc định dạng không ổn định & Validate file, preprocess audio và lưu job status/error rõ ràng. \\
+Diarization gán sai speaker & Speaker mapping trong UI và bảng \texttt{meeting\_participants}. \\
+LLM xuất JSON sai schema & Parse/validate bằng schema trước khi persist. \\
+Assignee mơ hồ hoặc không match roster & Chuyển task sang \texttt{unresolved} hoặc \texttt{human\_review}. \\
+Task thiếu evidence từ transcript & Hallucination heuristic và \texttt{source\_turn\_ids} để audit. \\
+Prompt injection trong transcript & Pattern checks trước khi gọi hoặc lưu output model. \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Khi mở rộng thành dự án thật, nhóm cần bổ sung quy trình review code, data governance, incident response, quyền truy cập theo vai trò và kiểm thử trên dữ liệu thật của từng tổ chức.
+\section{Tác động đạo đức}
 
-\section{Nâng cao vận hành}
+Nhóm hưởng lợi trực tiếp là những người cần theo dõi công việc sau họp: manager, technical lead, product owner và thành viên nhóm. Lợi ích chính là giảm thời gian viết biên bản họp, tăng tính truy vết và giúp task có bằng chứng từ transcript. Nhóm có thể bị ảnh hưởng là người tham gia cuộc họp nếu output bị dùng ngoài ngữ cảnh, ví dụ xem task chưa review như cam kết chính thức hoặc dùng transcript cho mục đích giám sát cá nhân.
 
-Để tiến gần hơn đến môi trường sử dụng thật, hệ thống cần các cải tiến vận hành sau:
-
-\begin{itemize}[leftmargin=*]
-  \item Reverse proxy HTTPS, domain cấu hình ổn định và secret manager.
-  \item Backup/restore PostgreSQL và chính sách lưu trữ artifact.
-  \item Role-based access control chi tiết hơn cho user/admin.
-  \item Alert rules cho queue backlog, worker failure, API latency, LLM latency và disk usage.
-  \item Retention policy cho audio, transcript, prompt trace và feedback data.
-  \item Dashboard tách rõ metrics vận hành và metrics chất lượng mô hình.
-\end{itemize}
-
-Những cải tiến này không thay đổi thuật toán NLP cốt lõi, nhưng quyết định khả năng hệ thống hoạt động ổn định khi có nhiều người dùng và dữ liệu thật.
-
-\section{Hỗ trợ tiếng Việt và đa ngôn ngữ}
-
-Dự án hiện ưu tiên pipeline tiếng Anh trong benchmark. Nếu mở rộng cho người dùng Việt Nam, cần bổ sung dữ liệu tiếng Việt, hội thoại trộn Anh--Việt, cách gọi tên người Việt và cách diễn đạt deadline trong tiếng Việt. Đây không chỉ là bài toán dịch ngôn ngữ; nó ảnh hưởng đến ASR, diarization review, prompt, assignee resolution và evaluation.
-
-Hướng phù hợp là xây dựng một tập đánh giá tiếng Việt nhỏ trước, đo baseline, sau đó mới quyết định cần prompt tuning, fine-tuning hay thay đổi ASR/model.
+Rủi ro thiên lệch và công bằng đến từ ASR và diarization khi chất lượng khác nhau theo accent, tiếng ồn, chất lượng microphone hoặc hội thoại đa ngôn ngữ. Explainability được xử lý bằng bằng chứng nguồn, model version và trạng thái review. Rủi ro sử dụng sai mục đích gồm ghi âm không có đồng ý, theo dõi nhân viên quá mức hoặc dùng action items tự động cho kỷ luật mà không qua review.

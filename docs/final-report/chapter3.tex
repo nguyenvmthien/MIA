@@ -1,173 +1,76 @@
-\chapter{Phương pháp}
-\label{chap:method}
+\chapter{Quản lý dữ liệu}
 
-Chương này mô tả phương pháp thiết kế hệ thống ở mức pipeline và dữ liệu. Các chi tiết triển khai cụ thể như API, database schema và Docker services được trình bày ở Chương~4.
+\section{Nguồn dữ liệu và giấy phép}
 
-\section{Tổng quan phương pháp}
+Dữ liệu của dự án gồm ba nhóm. Thứ nhất là audio/transcript do người dùng upload khi demo, được xem là dữ liệu nhạy cảm và không commit vào Git. Thứ hai là worker roster do người dùng cung cấp, dùng để chuẩn hoá assignee. Thứ ba là synthetic benchmark \texttt{data/eval/gold\_synthetic\_205.jsonl}, gồm 205 meeting samples với transcript turns, participants và action items tham chiếu. Synthetic benchmark được tạo cho kiểm thử nội bộ nên không phụ thuộc giấy phép dữ liệu bên thứ ba.
 
-Meeting AI Agent được thiết kế như một pipeline chuyển đổi từ audio sang dữ liệu có cấu trúc. Đầu vào là file audio cuộc họp. Đầu ra gồm tóm tắt cuộc họp và danh sách action items có các trường chính: mô tả công việc, người phụ trách, thời hạn, mức ưu tiên và lượt transcript nguồn.
+\section{Kích thước dữ liệu và ngôn ngữ}
+
+Benchmark chính có 205 meetings. Khi huấn luyện baseline action-turn detector, các meetings được tách thành 2036 transcript turns. Metadata checkpoint ghi nhận 1620 train turns, 416 test turns và positive rate 0.3001. Benchmark hiện ưu tiên tiếng Anh, phù hợp với prompt/model runtime đang dùng trong demo.
+
+\section{Tiền xử lý và làm sạch dữ liệu}
+
+Audio runtime được chuẩn hoá trước khi đưa vào ASR. Transcript được tổ chức thành \codefield{TranscriptTurn} gồm speaker, start/end timestamp và text. Với benchmark synthetic, script baseline gán nhãn turn bằng cách so khớp token overlap giữa action item reference và từng transcript turn. Dữ liệu được validate schema, kiểm tra record rỗng và giữ meeting-level grouping để tránh leakage.
+
+\section{Lược đồ dữ liệu}
+
+Thực thể trung tâm của hệ thống là \texttt{Meeting}. Mỗi meeting sinh ra transcript turns, action items, participant mapping, feedback corrections, artifacts và calendar events. Thiết kế này giữ được đường truy vết từ task quay lại đoạn hội thoại gốc, đồng thời tách dữ liệu review/feedback khỏi output ban đầu của model.
+
+Hình \ref{fig:data-schema} mô tả quan hệ giữa meeting, transcript, task, participant, worker roster, feedback và artifact. Bảng \ref{tab:data-schema} mô tả schema trung gian quan trọng nhất được pipeline tạo ra hoặc tiêu thụ.
 
 \begin{figure}[H]
 \centering
+\resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
-  node distance=0.5cm,
-  step/.style={draw=primary, fill=light, rounded corners=3pt, text width=6cm, minimum height=0.68cm, align=center, font=\scriptsize},
-  store/.style={draw=accent, fill=stagecolor2, rounded corners=3pt, text width=6cm, minimum height=0.68cm, align=center, font=\scriptsize},
+  entity/.style={draw=primary, fill=light, rounded corners=3pt, text width=3.2cm, minimum height=0.8cm, align=center, font=\scriptsize},
   arrow/.style={-Latex, thick, color=darkgray}
 ]
-  \node[step] (audio) {Audio cuộc họp};
-  \node[step, below=of audio] (pre) {Chuẩn hoá audio};
-  \node[step, below=of pre] (speech) {ASR + diarization};
-  \node[store, below=of speech] (turns) {Transcript turns};
-  \node[step, below=of turns] (llm) {LLM structured extraction};
-  \node[step, below=of llm] (guard) {Guardrails + assignment};
-  \node[store, below=of guard] (tasks) {Summary + action items};
-  \node[step, below=of tasks] (review) {Human review};
-  \node[store, below=of review] (feedback) {Feedback corrections};
+  \node[entity, fill=stagecolor1] (meeting) {\textbf{meetings}\\id, status, summary, model\_version};
+  \node[entity, above left=1.0cm and 1.6cm of meeting] (turns) {\textbf{transcript\_turns}\\turn\_id, speaker, time, text};
+  \node[entity, above right=1.0cm and 1.6cm of meeting] (tasks) {\textbf{tasks}\\description, assignee, due, source turns};
+  \node[entity, left=2.0cm of meeting] (participants) {\textbf{meeting\_participants}\\speaker\_id, display\_name, worker\_id};
+  \node[entity, right=2.0cm of meeting] (feedback) {\textbf{feedback\_corrections}\\original/corrected fields};
+  \node[entity, below left=1.0cm and 1.6cm of meeting] (artifacts) {\textbf{meeting\_artifacts}\\payload, checksum, metadata};
+  \node[entity, below right=1.0cm and 1.6cm of meeting] (calendar) {\textbf{calendar\_events}\\provider, event id, status};
+  \node[entity, below=2.1cm of meeting, fill=stagecolor2] (workers) {\textbf{workers}\\worker\_id, name, email, aliases};
 
-  \draw[arrow] (audio) -- (pre);
-  \draw[arrow] (pre) -- (speech);
-  \draw[arrow] (speech) -- (turns);
-  \draw[arrow] (turns) -- (llm);
-  \draw[arrow] (llm) -- (guard);
-  \draw[arrow] (guard) -- (tasks);
-  \draw[arrow] (tasks) -- (review);
-  \draw[arrow] (review) -- (feedback);
+  \draw[arrow] (meeting) -- (turns);
+  \draw[arrow] (meeting) -- (tasks);
+  \draw[arrow] (meeting) -- (participants);
+  \draw[arrow] (meeting) -- (feedback);
+  \draw[arrow] (meeting) -- (artifacts);
+  \draw[arrow] (meeting) -- (calendar);
+  \draw[arrow, dashed] (participants) -- (workers);
+  \draw[arrow, dashed] (tasks) -- (workers);
 \end{tikzpicture}
-\caption{Pipeline phương pháp từ audio cuộc họp đến dữ liệu hiệu chỉnh}
-\label{fig:method-pipeline}
+}
+\caption{Lược đồ dữ liệu chính của hệ thống}
+\label{fig:data-schema}
 \end{figure}
-
-Thiết kế này tách rõ ba lớp trách nhiệm. Lớp xử lý tiếng nói tạo transcript có speaker turns. Lớp LLM chuyển transcript thành dữ liệu có cấu trúc. Lớp LLMOps lưu vết, đánh giá, nhận feedback và chuẩn bị dữ liệu cho các vòng cải tiến.
-
-\section{Thiết kế dữ liệu}
-
-Hệ thống sử dụng nhiều loại dữ liệu khác nhau, mỗi loại phục vụ một mục đích riêng. Bảng~\ref{tab:data-types} tóm tắt vai trò của các loại dữ liệu chính.
 
 \begin{table}[H]
 \centering
-\caption{Các loại dữ liệu chính trong phương pháp}
-\label{tab:data-types}
-\begin{tabularx}{\textwidth}{@{}p{3.4cm}X X@{}}
+\footnotesize
+\caption{Schema dữ liệu trung gian và output chính}
+\label{tab:data-schema}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{3.9cm}X@{}}
 \toprule
-\textbf{Loại dữ liệu} & \textbf{Nội dung} & \textbf{Vai trò} \\
+\textbf{Đối tượng} & \textbf{Trường chính} \\
 \midrule
-Audio đầu vào & File \texttt{mp3}, \texttt{wav}, \texttt{m4a} hoặc định dạng tương đương & Nguồn dữ liệu ban đầu của pipeline \\
-Transcript turns & Các lượt nói gồm speaker, thời gian và nội dung & Làm input cho LLM và bằng chứng truy vết \\
-Worker roster & Danh sách nhân sự, tên, email, alias và vai trò & Chuẩn hoá assignee và giảm lỗi gán người \\
-Action items & Task có description, assignee, due date, priority và source turns & Kết quả vận hành chính của hệ thống \\
-Feedback corrections & Dữ liệu người dùng hiệu chỉnh sau review & Nguồn cải tiến, đánh giá và fine-tuning sau này \\
-Tập đánh giá tham chiếu & Transcript tổng hợp kèm action items kỳ vọng & Benchmark baseline và so sánh candidate model \\
+\codefield{TranscriptTurn} & \codefield{turn_id}, \codefield{speaker_id}, \codefield{speaker_name}, \codefield{start_ms}, \codefield{end_ms}, \texttt{text}, \codefield{asr_confidence}. \\
+\codefield{ExtractedTask} & \codefield{task_id}, \texttt{description}, \texttt{assignee}, \codefield{assignee_id}, \codefield{due_date}, \texttt{priority}, \codefield{source_turn_ids}, \texttt{status}. \\
+\codefield{MeetingSummary} & \codefield{meeting_id}, \codefield{job_status}, \texttt{participants}, \codefield{transcript_turns}, \codefield{summary_text}, \codefield{action_items}, \codefield{run_metrics}, \codefield{model_version}. \\
+\codefield{FeedbackCorrection} & \codefield{task_id}, \texttt{original\_*}, \texttt{corrected\_*}, \codefield{is_false_positive}, \codefield{is_missing}, \codefield{submitted_at}. \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Dữ liệu tổng hợp (synthetic data) được dùng để bootstrap training hoặc evaluation trong điều kiện kiểm soát. Ví dụ, \texttt{data/eval/gold\_synthetic\_205.jsonl} là tập đánh giá tham chiếu gồm transcript cuộc họp tổng hợp và action items kỳ vọng. Vì tập này không thay thế dữ liệu họp thật đã được kiểm chứng bởi con người, báo cáo chỉ dùng nó như benchmark có kiểm soát cho baseline.
+\section{Chia tập train/test và chất lượng dữ liệu}
 
-Dữ liệu hiệu chỉnh của người dùng (feedback corrections) là các bản ghi sinh ra khi người dùng sửa kết quả model, chẳng hạn sửa mô tả task, assignee, due date, đánh dấu false positive hoặc bổ sung task bị bỏ sót. Đây là nguồn dữ liệu quan trọng nhất cho vòng cải tiến vì nó phản ánh lỗi thật trong quá trình sử dụng.
+Baseline checkpoint dùng meeting-level split 80/20: các turns từ cùng một meeting không xuất hiện đồng thời ở train và test. Cách chia này phản ánh đúng bản chất dữ liệu cuộc họp, vì các lượt nói trong cùng meeting có ngữ cảnh phụ thuộc nhau.
 
-\subsection{Nguồn dữ liệu, chia tập và hạn chế}
+Dữ liệu synthetic hỗ trợ reproducibility và regression testing. Khi mở rộng sang dữ liệu thật, pipeline feedback sẽ cung cấp corrections từ người dùng như missing task, false positive, corrected assignee và corrected due date. Các correction này được export JSONL để phục vụ evaluation hoặc training sau khi scrub PII, validate schema và loại trùng.
 
-Trong phạm vi đồ án, dữ liệu được lấy từ ba nguồn: audio hoặc transcript do người dùng cung cấp khi demo, worker roster do người dùng nhập, và synthetic benchmark được sinh theo schema kiểm soát. Dữ liệu synthetic không có giấy phép bên thứ ba vì được tạo phục vụ kiểm thử nội bộ; dữ liệu người dùng khi triển khai thật phải được xem là dữ liệu nhạy cảm và cần chính sách quyền truy cập/retention riêng.
+\section{Dữ liệu thiếu, nhiễu và thiên lệch}
 
-Tập \texttt{data/eval/gold\_synthetic\_205.jsonl} được dùng làm benchmark chính. Khi dùng cho huấn luyện hoặc tuning, dữ liệu phải được tách train/validation/test theo meeting-level split để tránh cùng một nội dung cuộc họp xuất hiện ở nhiều tập. Các bước validate kiểm tra schema, trùng lặp, rò rỉ giữa split và cân bằng speaker ở mức cơ bản. Hạn chế đã biết là dữ liệu synthetic thường sạch hơn dữ liệu thật, ít nhiễu audio hơn, ít câu nói bỏ lửng hơn và có deadline rõ hơn.
-
-Với dữ liệu thiếu hoặc nhiễu, hệ thống không tự tin gán nhãn bằng mọi giá. Task thiếu assignee hoặc deadline được giữ ở trạng thái cần review; transcript/audio lỗi được phản ánh qua trạng thái job và metrics thay vì ghi kết quả như đã xác nhận.
-
-\section{Xử lý audio và transcript}
-
-Audio đầu vào được chuẩn hoá trước khi đưa vào mô hình nhận dạng tiếng nói. Mục tiêu của bước này là giảm khác biệt giữa các định dạng file và tạo đầu vào nhất quán cho ASR. Sau đó, WhisperX tạo transcript và thông tin thời gian; diarization gán các đoạn nói cho speaker labels như \texttt{SPEAKER\_00}, \texttt{SPEAKER\_01}.
-
-Đầu ra chuẩn hoá của bước này là danh sách \texttt{TranscriptTurn}. Mỗi turn biểu diễn một đoạn nói gồm speaker, thời gian bắt đầu, thời gian kết thúc và nội dung văn bản. Đây là đơn vị trung tâm của hệ thống: prompt LLM được dựng từ transcript turns, action item lưu \texttt{source\_turn\_ids}, còn UI dùng các turn này để hiển thị bằng chứng khi người dùng review.
-
-\section{Trích xuất action items bằng LLM}
-
-LLM được dùng cho hai nhiệm vụ: tóm tắt cuộc họp và trích xuất action items. Với action item extraction, hệ thống xây dựng prompt từ bốn thành phần: ngày họp, danh sách người tham gia, transcript chunk và hướng dẫn xuất JSON theo schema. Việc chia transcript thành chunk giúp kiểm soát độ dài prompt khi cuộc họp dài.
-
-Đầu ra mong muốn không phải văn bản tự do mà là JSON array. Mỗi phần tử biểu diễn một task với các trường chính như \texttt{description}, \texttt{assignee}, \texttt{due\_date}, \texttt{priority} và \texttt{source\_turn\_ids}. Cách tiếp cận này giúp kết quả LLM có thể được lưu, kiểm tra và đánh giá bằng chương trình.
-
-Sau khi model trả kết quả, hệ thống không lưu trực tiếp raw output. Kết quả phải được parse, kiểm tra schema và chuẩn hoá assignee. Nếu output không hợp lệ, task có thể bị loại hoặc đưa vào nhóm cần review thay vì được xem là kết quả đã xác nhận.
-
-\section{Thành phần Agentic AI}
-
-Hệ thống có hành vi agentic ở lớp orchestrator thay vì chỉ gọi một mô hình một lần. Agent nhận trạng thái trung gian của meeting, chọn các công cụ xử lý phù hợp, kiểm tra kết quả sau từng bước và quyết định khi nào cần chuyển sang human review. Luồng quyết định chính gồm:
-
-\begin{enumerate}[leftmargin=*]
-  \item Kiểm tra audio và metadata đầu vào; nếu file không hợp lệ, dừng sớm với lỗi rõ ràng.
-  \item Gọi công cụ preprocessing, ASR và diarization để tạo transcript turns.
-  \item Dựng speaker/roster context và chia transcript thành chunk nếu vượt giới hạn prompt.
-  \item Gọi LLM cho summary và action item extraction theo schema.
-  \item Chạy tool guardrails: parse JSON, validate schema, PII masking, kiểm tra prompt injection, sanity check due date và hallucination heuristic.
-  \item Gọi resolver để map assignee vào worker roster; nếu confidence thấp, route task sang \texttt{human\_review}.
-  \item Lưu kết quả, phát metrics và chờ feedback của người dùng để đóng vòng cải tiến.
-\end{enumerate}
-
-\begin{lstlisting}[language=Python3,caption={Pseudocode luồng agentic của Meeting AI Agent}]
-def run_meeting_agent(audio, roster, meeting_date):
-    audio = ingest_and_preprocess(audio)
-    turns = transcribe_and_diarize(audio)
-    chunks = chunk_transcript(turns)
-
-    predictions = []
-    for chunk in chunks:
-        prompt = build_extraction_prompt(chunk, roster, meeting_date)
-        raw = llm.generate(prompt)
-        parsed = validate_schema(raw)
-        predictions.extend(parsed)
-
-    checked = apply_guardrails(predictions, turns)
-    resolved = resolve_assignments(checked, roster)
-    for task in resolved:
-        if task.confidence < REVIEW_THRESHOLD:
-            task.status = "human_review"
-
-    store_results(turns, resolved)
-    emit_metrics(resolved)
-    return resolved
-\end{lstlisting}
-
-Ví dụ, nếu transcript có câu ``Bob, please send the report by Friday'' nhưng roster chỉ có ``Robert Kim'' với alias ``Bob'', agent không chỉ trả văn bản; nó dùng roster như một công cụ tri thức để chuẩn hoá assignee thành \texttt{Robert Kim}. Nếu câu giao việc mơ hồ hoặc không match roster đủ tin cậy, agent chọn trạng thái \texttt{human\_review} thay vì tự động khẳng định.
-
-\section{Chuẩn hoá assignee}
-
-Trong transcript, người phụ trách có thể được nhắc bằng tên đầy đủ, tên ngắn, alias hoặc chỉ xuất hiện gián tiếp qua lượt nói. Vì vậy, hệ thống sử dụng worker roster để chuẩn hoá assignee. Về phương pháp, assignee từ LLM được so khớp với roster bằng tên và alias; nếu không đủ tin cậy, task được đưa vào trạng thái unresolved hoặc human review.
-
-Thiết kế này tránh việc backend lưu các tên không nhất quán như ``Bob'', ``Bobby'' và ``Robert'' như ba người khác nhau. Nó cũng phản ánh thực tế rằng một phần lỗi gán người không nên được tự động quyết định nếu transcript hoặc diarization chưa đủ rõ.
-
-\section{Guardrails}
-
-Guardrails được đặt quanh cả input và output của LLM. Ở phía input, hệ thống kiểm tra một số mẫu prompt injection hoặc jailbreak và che các dạng thông tin nhạy cảm phổ biến như email, số điện thoại, SSN, thẻ, IP và URL bằng regex-based PII masking. Cơ chế này giảm rủi ro đưa thông tin nhạy cảm hoặc chỉ dẫn độc hại vào prompt.
-
-Ở phía output, hệ thống kiểm tra JSON schema, chuẩn hoá ngày hạn và phát hiện một số dấu hiệu hallucination. Hallucination trong ngữ cảnh này là trường hợp model tạo task không có đủ bằng chứng trong transcript. Guardrails không đảm bảo loại bỏ mọi lỗi, nhưng giúp biến output của LLM thành dữ liệu có thể kiểm soát trước khi đi vào database.
-
-\section{Feedback loop và lifecycle LLMOps}
-
-Sau khi hệ thống sinh task, người dùng có thể review và gửi dữ liệu hiệu chỉnh. Một correction có thể sửa task description, assignee, due date, đánh dấu task là false positive hoặc bổ sung task bị thiếu. Các correction được lưu trong database và có thể export thành JSONL.
-
-Luồng LLMOps của dự án gồm bốn bước chính: thu thập feedback, validate dữ liệu, đánh giá regression và chuẩn bị fine-tuning khi đủ điều kiện. Fine-tuning dùng LoRA/QLoRA~\cite{hu2021lora,dettmers2023qlora} là hướng đã chuẩn bị về kỹ thuật, nhưng trong báo cáo này không được xem là bằng chứng chính cho chất lượng hiện tại nếu chưa có artifact huấn luyện và kết quả so sánh cụ thể.
-
-\section{Phương pháp đánh giá}
-
-Đánh giá chất lượng action item extraction cần trả lời hai câu hỏi: model có tìm đúng task hay không và các trường quan trọng như assignee có đúng không. Trong benchmark hiện tại, mỗi mẫu gồm transcript turns, roster, ngày họp và danh sách action items tham chiếu.
-
-Quy trình so sánh hoạt động như sau. Hệ thống chạy pipeline trích xuất trên transcript để tạo danh sách predicted tasks. Mỗi predicted task được so với các reference tasks chủ yếu bằng trường \texttt{description}. Matcher dùng BM25 trước, tức một phương pháp xếp hạng độ liên quan văn bản dựa trên mức độ trùng khớp từ khóa có trọng số; nếu không đạt ngưỡng, nó fallback sang Jaccard token overlap. Mỗi reference task chỉ được match một lần.
-
-Từ quy trình trên, các đại lượng được định nghĩa như sau:
-
-\begin{itemize}[leftmargin=*]
-  \item \textbf{True positive}: predicted task match được một reference task.
-  \item \textbf{False positive}: predicted task không match được reference task nào.
-  \item \textbf{False negative}: reference task không được predicted task nào match.
-  \item \textbf{Precision}: tỷ lệ task dự đoán là đúng trên tổng số task dự đoán.
-  \item \textbf{Recall}: tỷ lệ task tham chiếu được hệ thống tìm thấy.
-  \item \textbf{F1}: trung bình điều hoà giữa precision và recall.
-  \item \textbf{Assignee accuracy}: tỷ lệ assignee đúng trên các task đã match description.
-  \item \textbf{Schema failure rate}: tỷ lệ mẫu mà output không parse hoặc validate được theo schema.
-  \item \textbf{Hallucination rate}: tỷ lệ task dự đoán thiếu bằng chứng rõ ràng trong transcript.
-\end{itemize}
-
-Precision quan trọng vì task sai có thể làm người dùng mất niềm tin và tạo công việc không tồn tại. Recall cũng quan trọng vì task bị bỏ sót làm giảm giá trị tự động hoá. Trong baseline hiện tại, benchmark synthetic giúp kiểm soát regression và so sánh candidate model, nhưng chưa thay thế đánh giá trên meeting thật với audio nhiễu, cách nói tự nhiên và tổ chức nhân sự thực tế.
-
-\section{Kết luận chương}
-
-Phương pháp của dự án kết hợp xử lý tiếng nói, trích xuất có cấu trúc bằng LLM, guardrails, feedback loop và đánh giá định lượng. Điểm quan trọng là mỗi bước đều tạo ra dữ liệu trung gian có thể kiểm tra lại, thay vì chỉ trả về một câu trả lời cuối cùng từ model. Chương tiếp theo trình bày cách các phương pháp này được hiện thực hoá thành kiến trúc phần mềm, database, API, worker queue và monitoring stack.
+Hệ thống xử lý dữ liệu thiếu hoặc mơ hồ bằng trạng thái review thay vì lưu output như kết quả đã xác nhận. Audio nhiễu, speaker overlap hoặc transcript thiếu ngữ cảnh được phản ánh qua job status, guardrail signals và human feedback. Về bias, ASR/diarization có thể hoạt động khác nhau theo accent, chất lượng microphone, ngôn ngữ hoặc speaking style; vì vậy benchmark tương lai cần bao phủ nhiều dạng meeting hơn.

@@ -3,12 +3,12 @@
 % ── Encoding & Language ───────────────────────────────────────────────────────
 \usepackage[utf8]{inputenc}
 \usepackage[T5]{fontenc}
-\usepackage[vietnamese,english]{babel}
+\usepackage[english,vietnamese]{babel}
 
 % ── Page Layout ───────────────────────────────────────────────────────────────
 \usepackage[top=2.5cm,bottom=2.5cm,left=3cm,right=2.5cm]{geometry}
 \usepackage{setspace}
-\onehalfspacing
+\setstretch{1.15}
 
 % ── Typography ────────────────────────────────────────────────────────────────
 \usepackage{lmodern}
@@ -70,10 +70,12 @@
 
 % ── Hyperlinks & PDF ──────────────────────────────────────────────────────────
 \usepackage[hidelinks,
-  pdftitle={Meeting AI Agent — Final Report},
+  pdftitle={MIA - Bao cao do an},
   pdfauthor={Nguyễn Văn Minh Thiện},
   pdfsubject={Applied LLM}]{hyperref}
-\usepackage{url}
+\usepackage{xurl}
+\usepackage{seqsplit}
+\urlstyle{same}
 
 % ── Captions ──────────────────────────────────────────────────────────────────
 \usepackage{caption}
@@ -105,6 +107,7 @@
 \definecolor{stagecolor6}{RGB}{178,235,242}
 
 % ── Header / Footer ───────────────────────────────────────────────────────────
+\setlength{\headheight}{16pt}
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\small\textit{Meeting AI Agent}}
@@ -128,8 +131,16 @@
   innerbottommargin=8pt,
 ]{infobox}
 
+
+% ── Convenience commands ─────────────────────────────────────────────────────
+\newcommand{\apipath}[1]{\begingroup\Urlmuskip=0mu plus 2mu\path{#1}\endgroup}
+\newcommand{\codefield}[1]{\begingroup\Urlmuskip=0mu plus 2mu\path{#1}\endgroup}
+\renewcommand{\lstlistingname}{Đoạn mã}
+\renewcommand{\lstlistlistingname}{Danh sách đoạn mã}
+
 % ─────────────────────────────────────────────────────────────────────────────
 \begin{document}
+\selectlanguage{vietnamese}
 
 % ── Title Page ────────────────────────────────────────────────────────────────
 \begin{titlepage}
@@ -148,7 +159,7 @@
 \vspace{2.2cm}
 {\Huge\bfseries MIA \par}
 \vspace{0.45cm}
-{\Large\bfseries Automatic Meeting Minutes \& Action Item Extraction System \par}
+{\Large\bfseries Hệ thống tự động tạo biên bản họp và trích xuất công việc \par}
 
 \vspace{1.6cm}
 {\large\bfseries Báo cáo đồ án \par}
@@ -158,8 +169,8 @@
 \vspace{2.0cm}
 \begin{tabular}{rl}
 \textbf{Sinh viên thực hiện:} & Nguyễn Văn Minh Thiện -- 22127398 \\[6pt]
-\textbf{Giảng viên hướng dẫn:} & PhD. Nguyễn Hồng Bữu Long \\
-& PhD. Lương An Vinh \\
+\textbf{Giảng viên hướng dẫn:} & TS. Nguyễn Hồng Bữu Long \\
+& TS. Lương An Vinh \\
 \end{tabular}
 
 \vfill
@@ -170,8 +181,6 @@
 % ── Front Matter ──────────────────────────────────────────────────────────────
 \pagenumbering{roman}
 \tableofcontents
-\listoffigures
-\listoftables
 \newpage
 
 % ── Main Matter ───────────────────────────────────────────────────────────────

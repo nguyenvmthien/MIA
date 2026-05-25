@@ -6,7 +6,7 @@ Source of truth: `Prokct.md`, converted from the original assignment PDF.
 
 | Requirement | Current coverage |
 | --- | --- |
-| Written report, 10-15 pages PDF | `docs/final-report/` LaTeX source and `docs/final-report/MIA_System.pdf` |
+| Written report, 10-15 pages PDF | `docs/final-report/` LaTeX source. `docs/final-report/MIA_System.pdf` must be rebuilt from the updated source before submission. |
 | Complete runnable source code | `src/meeting_agent/`, `web/`, Dockerfiles, `docker-compose.yml`, `README.md` |
 | Presentation slide deck, 10-15 slides | Still needs final slide deck export |
 
@@ -15,17 +15,17 @@ Source of truth: `Prokct.md`, converted from the original assignment PDF.
 | Rubric item | Evidence in repo/report |
 | --- | --- |
 | Business problem definition | `docs/final-report/chapter1.tex` |
-| Business and technical success metrics | `docs/final-report/chapter1.tex`, `docs/final-report/chapter5.tex` |
+| Business and technical success metrics | `docs/final-report/chapter1.tex`, `docs/final-report/chapter4.tex` |
 | Development infrastructure and tooling | `README.md`, `pyproject.toml`, `Dockerfile*`, `docker-compose.yml`, `.github/workflows/ci.yml` |
-| Required structure: `src/`, `data/`, `models/`, `configs/`, `tests/` | Present; `configs/app.example.yml` is loaded by runtime settings; `models/` contains a real trained baseline checkpoint plus registry paths for retraining output and promotion metadata |
+| Required structure: `src/`, `data/`, `models/`, `configs/`, `tests/` | Present; `configs/app.example.yml` is loaded by runtime settings; `models/` contains a real trained baseline checkpoint under `models/baseline-action-detector/`. Retraining output and promotion metadata are generated later under the ignored runtime paths documented in `models/README.md`. |
 | Data management and limitations | `docs/final-report/chapter3.tex`, `docs/data-pipeline.md` |
-| Model selection, baseline comparison, error analysis | `docs/final-report/chapter3.tex`, `docs/final-report/chapter5.tex`, `docs/eval-results.md` |
-| Deployable system | `README.md`, `docs/final-report/chapter4.tex`, `docs/public-demo-deployment.md` |
-| Agentic AI component | `docs/final-report/chapter3.tex` |
-| Continual learning and monitoring | `docs/final-report/chapter4.tex`, `docs/final-report/chapter7.tex`, `docs/monitoring-guide.md`, `docs/mlops-runbook.md` |
-| Privacy and robustness | `docs/final-report/chapter6.tex`, tests for PII/guardrails |
-| Project management and teamwork | `docs/final-report/chapter7.tex` |
-| Ethics and responsible AI | `docs/final-report/chapter6.tex` |
+| Model selection, baseline comparison, error analysis | `docs/final-report/chapter4.tex`, `docs/eval-results.md` |
+| Deployable system | `README.md`, `docs/final-report/chapter2.tex`, `docs/public-demo-deployment.md` |
+| Agentic AI component | `docs/final-report/chapter5.tex` |
+| Continual learning and monitoring | `docs/final-report/chapter6.tex`, `docs/monitoring-guide.md`, `docs/mlops-runbook.md` |
+| Privacy and robustness | `docs/final-report/chapter7.tex`, tests for PII/guardrails |
+| Project management and teamwork | `docs/final-report/chapter8.tex` |
+| Ethics and responsible AI | `docs/final-report/chapter7.tex` |
 
 ## Remaining Manual Deliverable
 

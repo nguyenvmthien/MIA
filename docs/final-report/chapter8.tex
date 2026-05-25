@@ -1,12 +1,31 @@
-\chapter{Kết luận}
-\label{chap:conclusion}
+\chapter{Quản lý dự án và kết luận}
 
-Đề tài đã xây dựng Meeting AI Agent như một hệ thống NLP end-to-end cho bài toán xử lý audio cuộc họp và trích xuất action items. Hệ thống bao gồm các thành phần chính: upload audio, speech-to-text bằng WhisperX, phân tách speaker, chuẩn hóa transcript theo lượt nói, trích xuất summary/action items bằng LLM, kiểm tra output bằng guardrails, lưu trữ dữ liệu vào PostgreSQL, giao diện human feedback, monitoring bằng Prometheus/Grafana và nền tảng LLMOps cho đánh giá/fine-tuning sau này.
+\section{Kế hoạch dự án}
 
-Về mặt kỹ thuật, đóng góp chính của dự án không chỉ nằm ở việc gọi một mô hình ngôn ngữ lớn, mà ở cách tổ chức toàn bộ vòng xử lý. Hệ thống tách rõ frontend, API, worker, database, queue, model serving và observability. Các action items được lưu cùng metadata, source turns và feedback corrections, giúp người dùng truy vết kết quả thay vì chỉ nhận một danh sách task thiếu ngữ cảnh. Đây là điểm quan trọng đối với ứng dụng doanh nghiệp, nơi khả năng giải thích và sửa lỗi thường quan trọng không kém độ chính xác ban đầu.
+Bảng \ref{tab:project-plan} trình bày kế hoạch triển khai theo tuần, phân rã công việc và kết quả bàn giao tương ứng.
 
-Kết quả baseline với Qwen2.5-3B trên 100 mẫu của \texttt{data/eval/gold\_synthetic\_205.jsonl} đạt precision 0.8604, recall 0.6665, F1 0.6886, assignee accuracy 0.5232, hallucination rate 0.0\% và schema failure rate 0.0\%. Các con số này cho thấy pipeline đã ổn định về định dạng output và có precision tốt ở bước trích xuất task. Tuy nhiên, recall và assignee accuracy vẫn là điểm cần cải thiện, đặc biệt khi chuyển từ dữ liệu synthetic sang meeting thật.
+\begin{table}[H]
+\centering
+\small
+\caption{Tiến độ và phân rã công việc}
+\label{tab:project-plan}
+\begin{tabularx}{\textwidth}{@{}p{2.0cm}X X@{}}
+\toprule
+\textbf{Giai đoạn} & \textbf{Công việc chính} & \textbf{Kết quả bàn giao} \\
+\midrule
+Tuần 1 & Định nghĩa bài toán, schema và kiến trúc. & Outline báo cáo, data schema. \\
+Tuần 2 & Audio pipeline, LLM extraction và guardrails. & Backend pipeline, prompt, test. \\
+Tuần 3 & Web review, database persistence và feedback. & UI, API, PostgreSQL model. \\
+Tuần 4 & Đánh giá, monitoring, Docker và MLOps hooks. & Benchmark, dashboard, Compose stack. \\
+Tuần 5 & Báo cáo cuối kỳ, slide, test và cleanup. & PDF report, repository, presentation. \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
-Dự án cũng đã chuẩn bị các thành phần cần thiết cho LLMOps: evaluation harness, benchmark baseline, feedback export, retrain trigger, MLflow tracking và quy trình promotion có kiểm soát. Tuy vậy, báo cáo phân biệt rõ giữa năng lực đã chuẩn bị và kết quả đã hoàn tất. Fine-tuning chưa được xem là bằng chứng cải thiện nếu chưa có artifact, benchmark sau huấn luyện và so sánh với baseline.
+\section{Lập kế hoạch theo nhóm}
 
-Nhìn tổng thể, dự án đáp ứng mục tiêu của môn học ``Ứng dụng xử lý ngôn ngữ tự nhiên trong doanh nghiệp'': chọn một bài toán NLP có ý nghĩa thực tế, xây dựng pipeline có thể chạy được, đưa LLM vào hệ thống phần mềm có dữ liệu, đánh giá, monitoring và feedback loop. Các bước phát triển tiếp theo nên tập trung vào dữ liệu meeting thật, đánh giá audio end-to-end, cải thiện assignee/deadline extraction và nâng cấp vận hành nếu muốn đưa hệ thống ra khỏi phạm vi demo kỹ thuật.
+Kế hoạch triển khai được tách theo các nhóm việc có kết quả rõ ràng: backend/API trong \texttt{src/meeting\_agent/api}, NLP pipeline trong \texttt{src/meeting\_agent/pipeline}, MLOps trong \texttt{src/meeting\_agent/mlops}, frontend trong \texttt{web/}, vận hành trong Docker/Grafana/Prometheus, và QA qua \texttt{tests/}. Khi mở rộng thành nhóm phát triển nhiều người, các nhóm việc này có interface tương đối rõ qua API, schema và evaluation reports.
+
+\section{Kết luận}
+
+Dự án đã xây dựng một hệ thống NLP end-to-end cho bài toán biên bản họp và action item extraction. Hệ thống có định nghĩa bài toán rõ ràng, dữ liệu benchmark, model runtime, checkpoint baseline đã huấn luyện, triển khai bằng Docker Compose, web demo, monitoring, feedback loop, chiến lược học liên tục, phân tích quyền riêng tư/độ bền vững và đánh giá đạo đức. Kết quả benchmark cho thấy pipeline có output có cấu trúc ổn định và baseline đo lường được, tạo nền tảng cho các vòng cải tiến bằng dữ liệu feedback và đánh giá audio end-to-end.

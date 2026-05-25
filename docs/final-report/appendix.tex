@@ -1,45 +1,19 @@
 \appendix
 
-\chapter{Cấu trúc dự án hiện tại}
-
-\begin{lstlisting}[language=bash,caption={Các thư mục và file chính}]
-web/                                  # Next.js frontend
-configs/                             # Example configuration files
-models/                              # Local model artifacts, not committed
-src/meeting_agent/
-  api/main.py                         # FastAPI endpoints
-  db/models.py                        # SQLAlchemy ORM schema
-  pipeline/
-    stt.py                            # WhisperX + diarization
-    orchestrator.py                   # Summary/action extraction pipeline
-    worker_task.py                    # Celery tasks and queue routing
-    feedback.py                       # Human feedback persistence
-  mlops/
-    evaluate.py                       # Evaluation harness
-    finetune.py                       # GPU fine-tune entrypoint
-    data_pipeline/                    # Feedback/data export helpers
-scripts/deploy_promoted_model.py      # Controlled deploy flow
-models/baseline-action-detector/      # Lightweight trained baseline checkpoint
-scripts/run_benchmark.py              # Baseline/candidate benchmark
-scripts/prepare_hf_dataset.py         # Hugging Face dataset export
-docker-compose.yml
-Dockerfile.train
-Makefile
-docs/mlops-runbook.md
-docs/project-status.md
-data/eval/gold_synthetic_205.jsonl
-data/training/
-\end{lstlisting}
-
 \chapter{Hướng dẫn chạy}
 
-\section{Chạy môi trường mặc định}
+\section{Các lệnh chính}
 
-\begin{lstlisting}[language=bash,caption={Khởi động stack chính}]
+\begin{lstlisting}[language=bash,caption={Các lệnh thường dùng}]
 docker compose up -d --build
+make test
+make hygiene
+make train-baseline
+make benchmark
+make mlops-up
 \end{lstlisting}
 
-Các URL thường dùng:
+\section{URL local quan trọng}
 
 \begin{itemize}[leftmargin=*]
   \item Frontend: \texttt{http://localhost:3001}
@@ -49,109 +23,23 @@ Các URL thường dùng:
   \item Grafana: \texttt{http://localhost:3000}
 \end{itemize}
 
-\section{Chạy profile MLOps}
+\section{Biến môi trường chính}
 
-\begin{lstlisting}[language=bash,caption={Khởi động các service MLOps}]
-make mlops-up
-make retrain-check
-make retrain-force
-make train-image
-\end{lstlisting}
-
-Profile này bổ sung Celery Beat, trainer worker và MLflow. Trainer consume queue \texttt{mlops}, tách khỏi worker xử lý meeting bình thường.
-
-\section{Deploy model promoted}
-
-\begin{lstlisting}[language=bash,caption={Deploy model promoted có chủ đích}]
-make deploy-promoted-model APPLY=1
-\end{lstlisting}
-
-Deploy không tự động chạy ngay sau promotion. Operator phải thực hiện lệnh deploy để giữ audit trail và giảm rủi ro thay model ngoài ý muốn.
-
-\chapter{Ví dụ API}
-
-\section{Upload meeting}
-
-\begin{lstlisting}[language=bash,caption={Upload audio}]
-curl -X POST http://localhost:8000/meetings \
-  -F "audio=@meeting.wav" \
-  -F 'roster_json={
-    "workers": [
-      {
-        "worker_id": "w1",
-        "name": "Alice Chen",
-        "aliases": ["Alice"],
-        "role": "Product Manager"
-      },
-      {
-        "worker_id": "w2",
-        "name": "Bob Kim",
-        "aliases": ["Bob"],
-        "role": "Backend Engineer"
-      }
-    ]
-  }'
-\end{lstlisting}
-
-\section{Lấy trạng thái meeting}
-
-\begin{lstlisting}[language=bash,caption={Xem trạng thái job}]
-curl http://localhost:8000/meetings/{meeting_id}
-\end{lstlisting}
-
-\section{Gửi feedback}
-
-\begin{lstlisting}[language=bash,caption={Gửi correction từ human review}]
-curl -X POST http://localhost:8000/meetings/{meeting_id}/feedback \
-  -H "Content-Type: application/json" \
-  -d '{
-    "reviewer": "human-reviewer",
-    "notes": "Assignee corrected after transcript review",
-    "corrections": [
-      {
-        "task_id": "task-1",
-        "original_description": "Send the quarterly report",
-        "corrected_description": "Send the quarterly report to the client",
-        "original_assignee": "Bob",
-        "corrected_assignee": "Alice Chen",
-        "original_due_date": null,
-        "corrected_due_date": "2026-05-30",
-        "is_false_positive": false,
-        "is_missing": false
-      }
-    ]
-  }'
-\end{lstlisting}
-
-\section{Xuất feedback cho fine-tuning}
-
-\begin{lstlisting}[language=bash,caption={Export feedback dạng JSONL}]
-curl "http://localhost:8000/feedback/export?format=jsonl"
-\end{lstlisting}
-
-\chapter{Cấu hình môi trường quan trọng}
-
-\begin{longtable}{ll}
+\footnotesize
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{5.2cm}p{9.3cm}@{}}
 \toprule
 \textbf{Biến} & \textbf{Mục đích} \\
 \midrule
-\texttt{DATABASE\_URL} & Kết nối PostgreSQL \\
-\texttt{REDIS\_URL} & Redis broker/cache \\
-\texttt{OLLAMA\_BASE\_URL} & Endpoint Ollama \\
-\texttt{OLLAMA\_LLM\_MODEL} & Model LLM đang phục vụ \\
-\texttt{WHISPER\_MODEL} & Model WhisperX \\
-\texttt{WHISPER\_DEVICE} & \texttt{cpu} hoặc \texttt{cuda} \\
-\texttt{HF\_TOKEN} & Token cho model diarization nếu cần \\
-\texttt{WEB\_PORT} & Port public của frontend, mặc định \texttt{3001} \\
-\texttt{PUBLIC\_URL} & URL public/frontend dùng khi cấu hình domain hoặc tunnel \\
-\texttt{AUTH\_URL} & URL callback cho NextAuth \\
-\texttt{GOOGLE\_CLIENT\_ID} & OAuth client ID cho đăng nhập Google \\
-\texttt{GOOGLE\_CLIENT\_SECRET} & OAuth client secret cho đăng nhập Google \\
-\texttt{LANGCHAIN\_TRACING\_V2} & Bật/tắt LangSmith tracing nếu có cấu hình \\
-\texttt{LANGCHAIN\_API\_KEY} & API key LangSmith, nếu dùng \\
-\texttt{RETRAIN\_MIN\_CORRECTIONS} & Ngưỡng correction để retrain check \\
-\texttt{MLFLOW\_TRACKING\_URI} & Tracking URI cho MLflow \\
+\codefield{CONFIG_FILE} & Đường dẫn file YAML runtime. \\
+\codefield{DATABASE_URL} & Chuỗi kết nối PostgreSQL. \\
+\codefield{REDIS_URL} & Redis broker/cache URL. \\
+\codefield{OLLAMA_BASE_URL} & Đường dẫn Ollama. \\
+\codefield{OLLAMA_LLM_MODEL} & Tên LLM, mặc định \texttt{qwen2.5:3b}. \\
+\codefield{WHISPER_MODEL} & Kích thước model WhisperX. \\
+\codefield{HF_TOKEN} & Token cho diarization model trong cấu hình có bật speaker diarization. \\
+\codefield{RETRAIN_MIN_CORRECTIONS} & Ngưỡng feedback để kiểm tra retraining. \\
+\codefield{MLFLOW_TRACKING_URI} & Đường dẫn MLflow tracking. \\
 \bottomrule
 \end{longtable}
 
-Các giá trị bí mật phải đặt trong \texttt{.env}; \texttt{.env.example} chỉ giữ tên biến và giá trị mẫu không nhạy cảm.
+Secret được đặt trong \texttt{.env}; repo chỉ giữ cấu hình mẫu không nhạy cảm.

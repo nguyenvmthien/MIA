@@ -1,62 +1,108 @@
-\chapter{Cơ sở lý thuyết và công nghệ liên quan}
-\label{chap:litreview}
+\chapter{Hạ tầng phát triển và triển khai}
 
-Chương này trình bày các nền tảng kỹ thuật liên quan đến Meeting AI Agent. Mục tiêu không phải liệt kê công nghệ, mà làm rõ vì sao từng nhóm kỹ thuật cần thiết cho bài toán chuyển audio cuộc họp thành action items có thể kiểm chứng.
+\section{Cấu trúc repo và công cụ phát triển}
 
-\section{Bài toán khai thác công việc từ audio cuộc họp}
+Dự án dùng Python cho backend/NLP pipeline và Next.js cho giao diện web. Dependency Python được quản lý bằng \texttt{pyproject.toml}; version control dùng Git. Cấu trúc repo đáp ứng yêu cầu đồ án:
 
-Trong môi trường doanh nghiệp, audio cuộc họp thường chứa nhiều thông tin cần theo dõi sau cuộc họp: quyết định, công việc được giao, người phụ trách và thời hạn. Các báo cáo về môi trường làm việc hiện đại cho thấy meeting và trao đổi số chiếm tỷ trọng lớn trong thời gian làm việc tri thức~\cite{microsoft2022}. Vì vậy, giá trị của hệ thống không chỉ nằm ở việc lưu lại transcript, mà ở khả năng biến hội thoại thành thông tin có thể hành động: ai cần làm gì, trước thời hạn nào và dựa trên phát biểu nào.
-
-So với các bài toán NLP văn bản thuần tuý, audio cuộc họp có thêm nhiều nguồn nhiễu: chất lượng âm thanh, nhiều người nói, phát biểu ngắt quãng, đại từ thay cho tên người và deadline được nói theo ngữ cảnh. Do đó, bài toán audio-to-action-items cần một chuỗi xử lý gồm ASR, diarization, LLM extraction và guardrails, thay vì chỉ dùng một bước tóm tắt văn bản.
+Bảng \ref{tab:project-structure} liệt kê các thư mục chính và vai trò của từng nhóm mã nguồn/tài nguyên trong repo.
 
 \begin{table}[H]
 \centering
-\caption{Vai trò của các nhóm kỹ thuật trong Meeting AI Agent}
-\label{tab:related-tech-roles}
-\begin{tabularx}{\textwidth}{@{}p{3.2cm}X X@{}}
+\small
+\caption{Cấu trúc dự án}
+\label{tab:project-structure}
+\begin{tabularx}{\textwidth}{@{}p{3.0cm}X@{}}
 \toprule
-\textbf{Nhóm kỹ thuật} & \textbf{Vai trò chính} & \textbf{Rủi ro cần kiểm soát} \\
+\textbf{Đường dẫn} & \textbf{Mục đích} \\
 \midrule
-ASR & Chuyển audio thành transcript & Nhiễu âm thanh, accent, lỗi nhận dạng từ \\
-Diarization & Xác định lượt nói theo speaker & Nói chồng, speaker có giọng tương tự \\
-LLM extraction & Trích xuất summary và action items & Hallucination, sai schema, bỏ sót task \\
-RAG/cache & Bổ sung ngữ cảnh và giảm chi phí suy luận & Truy hồi sai ngữ cảnh, cache không phù hợp \\
-Guardrails & Kiểm tra input/output của model & Không loại bỏ hoàn toàn rủi ro nội dung \\
-LLMOps & Đánh giá, monitoring, feedback và kiểm soát thay đổi & Metric không đại diện dữ liệu thật, regression \\
+\texttt{src/} & Backend, NLP pipeline, monitoring và MLOps code. \\
+\texttt{web/} & Next.js frontend cho upload, review và feedback. \\
+\texttt{data/} & Dữ liệu đánh giá, dữ liệu huấn luyện hoặc đường dẫn dữ liệu runtime. \\
+\texttt{models/} & Checkpoint baseline đã huấn luyện và output runtime được ignore. \\
+\texttt{configs/} & Cấu hình YAML runtime, được load qua \texttt{CONFIG\_FILE}. \\
+\texttt{tests/} & Unit test và smoke test cho API, config, guardrails, MLOps và baseline training. \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\section{Speech-to-text và speaker diarization}
+\section{Kiến trúc runtime}
 
-Nhận dạng tiếng nói tự động (ASR) là bước chuyển audio thành transcript. Whisper là một hướng tiếp cận mạnh cho ASR nhờ được huấn luyện trên dữ liệu âm thanh quy mô lớn và có khả năng khái quát tốt trên nhiều điều kiện âm thanh~\cite{radford2022whisper}. WhisperX mở rộng hướng này bằng cơ chế alignment để tạo timestamp chính xác hơn, đặc biệt hữu ích với audio dài~\cite{bain2022whisperx}.
+Hệ thống có thể triển khai bằng Docker Compose. Profile mặc định khởi động Next.js, FastAPI, Celery worker, Redis, PostgreSQL, Ollama, Prometheus và Grafana. Profile MLOps bổ sung Celery Beat, trainer worker và MLflow.
 
-Timestamp không chỉ phục vụ hiển thị transcript. Trong hệ thống meeting, timestamp và speaker turn giúp liên kết một action item với bằng chứng hội thoại nguồn. Đây là nền tảng cho khả năng audit: người dùng có thể kiểm tra vì sao một task được tạo ra thay vì chỉ nhìn thấy kết quả cuối.
+Hình \ref{fig:runtime} mô tả luồng runtime từ giao diện người dùng đến API, hàng đợi, worker xử lý nền và lớp monitoring. Bảng \ref{tab:runtime-services} mô tả trách nhiệm triển khai của từng service trong Docker Compose.
 
-Speaker diarization trả lời câu hỏi ``ai nói khi nào''. Pyannote là một toolkit phổ biến cho diarization và cung cấp pipeline nhận diện đoạn nói theo speaker~\cite{bredin2023pyannote}. Diarization bổ sung cho ASR: ASR sinh nội dung văn bản, còn diarization tổ chức nội dung đó theo người nói. Giới hạn chung của nhóm kỹ thuật này là nhạy với tiếng ồn, overlapping speech, accent và chất lượng microphone; vì vậy kết quả diarization cần được người dùng kiểm tra trong các trường hợp quan trọng.
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  node distance=0.45cm,
+  procstep/.style={draw=primary, fill=light, rounded corners=3pt, text width=6.0cm, minimum height=0.58cm, align=center, font=\scriptsize},
+  arrow/.style={-Latex, thick, color=darkgray}
+]
+  \node[procstep] (web) {Next.js Web UI};
+  \node[procstep, below=of web] (api) {FastAPI API + PostgreSQL state};
+  \node[procstep, below=of api] (queue) {Redis queue/cache};
+  \node[procstep, below=of queue] (worker) {Celery worker: ASR, diarization, LLM, guardrails};
+  \node[procstep, below=of worker] (obs) {Prometheus/Grafana monitoring};
+  \draw[arrow] (web) -- (api);
+  \draw[arrow] (api) -- (queue);
+  \draw[arrow] (queue) -- (worker);
+  \draw[arrow] (worker) -- (obs);
+\end{tikzpicture}
+\caption{Kiến trúc runtime}
+\label{fig:runtime}
+\end{figure}
 
-\section{LLM cho trích xuất thông tin có cấu trúc}
+\begin{table}[H]
+\centering
+\small
+\caption{Các service triển khai trong Docker Compose}
+\label{tab:runtime-services}
+\begin{tabularx}{\textwidth}{@{}p{2.8cm}X@{}}
+\toprule
+\textbf{Dịch vụ} & \textbf{Trách nhiệm kỹ thuật} \\
+\midrule
+\texttt{web} & Giao diện Next.js cho upload audio, xem lịch sử meeting, review transcript/task và gửi feedback. \\
+\texttt{api} & FastAPI REST API, tạo meeting job, đọc/ghi PostgreSQL, xuất Prometheus metrics và xử lý admin endpoints. \\
+\texttt{worker} & Celery worker chạy pipeline nặng: ingest, preprocess, ASR, diarization, LLM extraction, guardrails và persistence. \\
+\texttt{postgres} & Lưu meetings, transcript turns, tasks, workers, feedback corrections, artifacts và calendar events. \\
+\texttt{redis} & Celery broker/result backend và cache cho một số bước inference. \\
+\texttt{ollama} & Runtime phục vụ Qwen2.5-3B và embedding model local. \\
+\texttt{prometheus}, \texttt{grafana} & Thu thập và hiển thị metrics vận hành. \\
+\texttt{beat}, \texttt{trainer}, \texttt{mlflow} & Profile MLOps cho retraining schedule, training worker và experiment tracking. \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
-Các mô hình ngôn ngữ lớn dựa trên Transformer~\cite{vaswani2017attention} có khả năng học ngữ cảnh và làm theo chỉ dẫn ở nhiều tác vụ NLP. Nghiên cứu về few-shot learning cho thấy LLM có thể thực hiện tác vụ mới khi được cung cấp hướng dẫn và ví dụ phù hợp~\cite{brown2020gpt3}. Trong bài toán này, LLM không chỉ tóm tắt nội dung mà còn phải trích xuất action items theo schema để backend có thể xử lý tiếp.
+\section{Tương tác người dùng và định dạng vào ra}
 
-Qwen2.5 được chọn làm model phục vụ suy luận cục bộ vì cân bằng giữa khả năng instruction-following và chi phí vận hành~\cite{qwen2025}. Việc chạy model qua Ollama giúp hệ thống không phụ thuộc vào API thương mại và phù hợp với bối cảnh demo local. Đổi lại, model kích thước 3B, đặc biệt khi chạy trên CPU, có giới hạn về tốc độ và năng lực suy luận so với các model lớn hơn.
+Luồng người dùng gồm bốn bước: upload audio qua web UI, theo dõi trạng thái job, review transcript/action items, và gửi feedback correction. Đầu vào chính là audio file và optional roster. Đầu ra chính là summary, transcript turns và action items có các trường \texttt{description}, \texttt{assignee}, \texttt{due\_date}, \texttt{priority}, \texttt{status} và \texttt{source\_turn\_ids}.
 
-Structured extraction yêu cầu đầu ra ổn định hơn sinh văn bản tự do. Prompt cần chỉ rõ schema mong muốn, còn backend phải kiểm tra lại JSON trước khi lưu. Cách tiếp cận này giúp kết quả LLM có thể đi tiếp vào database, giao diện review, calendar sync và evaluation pipeline mà không phụ thuộc vào diễn giải thủ công.
+Backend lưu trạng thái job trong PostgreSQL thay vì giữ trong bộ nhớ worker, nên frontend có thể polling \texttt{GET /meetings/\{id\}} để theo dõi job dài. Đường dẫn \texttt{GET /metrics} xuất Prometheus metrics; các đường dẫn quản trị hỗ trợ kiểm tra retraining và trạng thái MLOps.
 
-\section{RAG, caching và tối ưu suy luận}
+Bảng \ref{tab:api-io} trình bày các API chính, định dạng đầu vào/đầu ra và phần hệ thống chịu trách nhiệm xử lý.
 
-Retrieval-Augmented Generation (RAG) bổ sung ngữ cảnh liên quan cho LLM thông qua bước truy hồi. Trong hệ thống này, văn bản transcript hoặc thông tin speaker có thể được biểu diễn dưới dạng embedding, sau đó FAISS hỗ trợ tìm các đoạn gần nhất trong không gian vector~\cite{johnson2019faiss}. Vai trò của RAG là giảm mất ngữ cảnh khi transcript dài hoặc khi một chunk cần tham chiếu thông tin đã xuất hiện trước đó.
 
-Caching là một kỹ thuật tối ưu vận hành khác. Redis không phải mô hình AI, nhưng có thể lưu kết quả cho các prompt đã xử lý để giảm số lần gọi LLM lặp lại. Trong môi trường local, nơi LLM chạy chậm hơn cloud GPU, caching giúp giảm latency và tài nguyên tính toán cho các request trùng hoặc gần trùng.
+\begin{table}[H]
+\centering
+\footnotesize
+\caption{Các API chính và định dạng dữ liệu}
+\label{tab:api-io}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{2.9cm}>{\raggedright\arraybackslash}p{3.9cm}X@{}}
+\toprule
+\textbf{Method} & \textbf{Đường dẫn} & \textbf{Vai trò và dữ liệu} \\
+\midrule
+\texttt{POST} & \apipath{/meetings} & Nhận audio file và \texttt{roster\_json}; trả \texttt{meeting\_id} để theo dõi job bất đồng bộ. \\
+\texttt{GET} & \apipath{/meetings/{id}} & Trả trạng thái meeting, transcript turns, summary, action items, unresolved items, human review items và run metrics. \\
+\texttt{POST} & \apipath{/meetings/{id}/feedback} & Nhận correction cho task: description, assignee, due date, false positive hoặc missing task. \\
+\texttt{POST} & \apipath{/meetings/{id}/participants/{speaker}/resolve} & Map speaker diarization label sang tên người tham gia hoặc worker trong roster. \\
+\scriptsize\texttt{GET/POST/PUT/DELETE}\normalsize & \apipath{/workers} & Quản lý worker roster gồm name, email, role, aliases và skills. \\
+\texttt{GET} & \apipath{/metrics}; \apipath{/metrics/business} & Xuất metrics vận hành và business metrics cho Prometheus/Grafana. \\
+\texttt{POST/GET} & \apipath{/admin/retrain}; \apipath{/admin/retrain/state} & Kiểm tra hoặc kích hoạt retraining pipeline và xem trạng thái retraining. \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
-\section{Guardrails và rủi ro hallucination}
 
-LLM có thể sinh câu trả lời đúng định dạng nhưng sai nội dung, hoặc sinh thêm thông tin không có trong input. Hiện tượng này thường được gọi là hallucination và là rủi ro quan trọng trong các hệ thống sinh ngôn ngữ~\cite{ji2023hallucination}. Với meeting action items, hallucination có thể tạo ra task không tồn tại, gán sai người phụ trách hoặc suy diễn deadline không được nói trong cuộc họp.
+\section{Latency, khả năng mở rộng và versioning mô hình}
 
-Guardrails là lớp kiểm soát quanh input và output của model. Trong dự án này, guardrails bao gồm kiểm tra JSON schema, lọc dấu hiệu prompt injection, regex-based PII masking, kiểm tra ngày hạn bất thường và kiểm tra một số dấu hiệu hallucination. Các cơ chế này không loại bỏ hoàn toàn rủi ro, nhưng giúp giảm lỗi phổ biến và làm kết quả phù hợp hơn với yêu cầu lưu trữ có cấu trúc.
-
-\section{LLMOps cho hệ thống NLP vận hành}
-
-MLOps/LLMOps nhấn mạnh việc đưa mô hình vào vòng đời có dữ liệu, đánh giá, triển khai, monitoring và kiểm soát thay đổi~\cite{shankar2022mlops}. Với LLM, vòng đời này phức tạp hơn vì chất lượng phụ thuộc không chỉ vào trọng số model mà còn vào prompt, dữ liệu ngữ cảnh, guardrails, feedback và cách đánh giá regression.
-
-Từ góc nhìn vận hành, điều này dẫn tới một nguyên tắc quan trọng: mọi thay đổi về dữ liệu, prompt hoặc model cần được đo bằng cùng một bộ benchmark trước khi đưa vào sử dụng. Đây là cơ sở cho các thành phần như feedback export, regression evaluation, monitoring và promotion gate trong Meeting AI Agent.
+Pipeline được thiết kế bất đồng bộ vì ASR, diarization và LLM inference có độ trễ cao hơn request HTTP thông thường. Redis/Celery cho phép tách API nhận request khỏi worker xử lý nặng. Model version được ghi vào metadata meeting và promotion flow dùng manifest để kiểm soát việc thay đổi model. Cách triển khai này phù hợp cho demo local và có đường mở rộng sang queue scaling, GPU trainer và model promotion có kiểm soát.
