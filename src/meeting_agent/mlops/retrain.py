@@ -32,21 +32,26 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from meeting_agent.config import settings
+
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-RETRAIN_MIN_CORRECTIONS = int(os.environ.get("RETRAIN_MIN_CORRECTIONS", "50"))
+RETRAIN_MIN_CORRECTIONS = int(
+    os.environ.get("RETRAIN_MIN_CORRECTIONS", settings.retrain_min_corrections)
+)
 RETRAIN_DATA_PATHS      = os.environ.get(
     "RETRAIN_DATA_PATHS",
     "data/training/synthetic.jsonl,data/training/collected.jsonl",
 ).split(",")
-RETRAIN_OUTPUT_DIR      = os.environ.get("RETRAIN_OUTPUT_DIR", "models/qwen-meeting-latest")
+RETRAIN_OUTPUT_DIR      = os.environ.get("RETRAIN_OUTPUT_DIR", settings.retrain_output_dir)
 MLFLOW_TRACKING_URI     = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000")
 
 # State file tracks how many corrections were present at the last retrain
 _STATE_FILE = Path("data/training/.retrain_state.json")
-_PROMOTION_MANIFEST_PATH = Path("data/training/.promotion_manifest.json")
+_MODEL_REGISTRY_DIR = Path(os.environ.get("MODEL_REGISTRY_DIR", "models/registry"))
+_PROMOTION_MANIFEST_PATH = _MODEL_REGISTRY_DIR / "promotion_manifest.json"
 
 
 def _load_state() -> dict:

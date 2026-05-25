@@ -39,6 +39,31 @@ Các mục tiêu chính của dự án gồm:
   \item Chuẩn bị benchmark, dataset validation, retrain trigger và promotion gate theo hướng LLMOps.
 \end{enumerate}
 
+\section{Người dùng mục tiêu và tiêu chí thành công}
+
+Người dùng mục tiêu của hệ thống là các nhóm làm việc thường xuyên họp trực tuyến hoặc ghi âm cuộc họp: quản lý dự án, trưởng nhóm kỹ thuật, product owner và thành viên cần theo dõi công việc sau họp. Stakeholder gián tiếp gồm bộ phận vận hành, bảo mật dữ liệu và quản lý chất lượng, vì hệ thống xử lý nội dung hội thoại có thể chứa thông tin nội bộ.
+
+Giá trị nghiệp vụ chính là giảm thời gian chuyển cuộc họp thành danh sách công việc có thể theo dõi. Thay vì người dùng phải nghe lại audio hoặc đọc toàn bộ transcript, hệ thống sinh bản tóm tắt và action items có assignee, deadline và evidence để review nhanh hơn.
+
+\begin{table}[H]
+\centering
+\caption{Tiêu chí thành công của dự án}
+\label{tab:success-metrics}
+\begin{tabularx}{\textwidth}{@{}p{3.5cm}X X@{}}
+\toprule
+\textbf{Nhóm metric} & \textbf{Metric} & \textbf{Mục tiêu/ý nghĩa} \\
+\midrule
+Business & Thời gian tạo minutes sau họp & Giảm đáng kể thời gian soạn thủ công bằng việc tự động tạo summary và action items để người dùng chỉ cần review. \\
+Business & Tỷ lệ task cần sửa sau review & Phản ánh mức độ người dùng tin cậy output; giảm dần khi có feedback loop. \\
+Business & Tỷ lệ task có assignee/deadline rõ ràng & Đo khả năng biến hội thoại thành dữ liệu có thể hành động trong workflow quản lý công việc. \\
+Technical & Precision, recall, F1 & Đo chất lượng trích xuất action items trên benchmark có nhãn. \\
+Technical & Assignee accuracy & Đo khả năng gán đúng người phụ trách, một trường quan trọng về mặt nghiệp vụ. \\
+Technical & Schema failure và hallucination rate & Đo độ ổn định của output có cấu trúc và mức độ bám transcript. \\
+Technical & Latency trung bình và P95 & Đánh giá khả năng dùng trong demo/deployment bất đồng bộ. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
 \section{Phạm vi dự án}
 
 Phiên bản hiện tại là hệ thống local-first chạy bằng Docker Compose. Runtime stack gồm Next.js, FastAPI, Celery, Redis, PostgreSQL, Ollama, Prometheus và Grafana. Cách triển khai này phù hợp với mục tiêu môn học: chứng minh một pipeline NLP/LLMOps hoàn chỉnh mà không phụ thuộc vào dịch vụ LLM trả phí.

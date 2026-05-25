@@ -1,19 +1,27 @@
+# Legacy/exported project folders
 seminar/
-data/
 final_report/
-*.pyc
-# Python
+
+# Python build/cache
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *.pyo
 *.pyd
 *.so
 *.egg
 *.egg-info/
+.eggs/
 dist/
 build/
-.eggs/
-hf_dataset/
+src/*.egg-info/
+
+# Python tooling
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
 # Virtual environments
 .venv/
 venv/
@@ -23,45 +31,35 @@ env/
 .env
 *.env.local
 
-# Data (audio, transcripts, models — too large for git)
-data/audio/
-data/transcripts/
-data/models/
-data/training/
-data/eval/
-hf_dataset/
+# Frontend dependencies/build output
+web/node_modules/
+web/.next/
+web/next-env.d.ts
 
-# ML models & checkpoints
-models/
+# Data and local datasets
+data/
+hf_dataset/
+mlruns/
+
+# ML models and generated checkpoints
+models/*
+!models/README.md
+!models/baseline-action-detector/
+!models/baseline-action-detector/**
 *.gguf
 *.bin
 *.safetensors
-mlruns/
 
-# OS
+# OS/editor
 .DS_Store
 *.DS_Store
 Thumbs.db
-
-# IDE
 .idea/
 .vscode/
 *.swp
 *.swo
 
-# Pytest / coverage
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Docker
+# Docker/local runtime
 docker-compose.override.yml
-
-meeting_agent.egg-info/docker/nginx/certs/
 docker/nginx/certs/
 docker/pgadmin/pgpass
-
-# Python cache
-**/__pycache__/
-*.pyc
-src/*.egg-info/

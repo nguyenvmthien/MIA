@@ -1,7 +1,7 @@
 import json
 from unittest.mock import patch
 
-from scripts.deploy_promoted_model import deploy
+from scripts.deploy_promoted_model import DEFAULT_MANIFEST, DEFAULT_SERVING_ENV, deploy
 
 
 def _manifest(tmp_path):
@@ -40,3 +40,8 @@ def test_deploy_promoted_model_apply_writes_serving_env(tmp_path):
     assert result["deployed"] is True
     assert serving_env.read_text() == "OLLAMA_LLM_MODEL=meeting-agent:test\n"
     assert list(tmp_path.glob("serving.env.*.bak"))
+
+
+def test_deploy_defaults_use_models_registry():
+    assert DEFAULT_MANIFEST == __import__("pathlib").Path("models/registry/promotion_manifest.json")
+    assert DEFAULT_SERVING_ENV == __import__("pathlib").Path("models/registry/serving.env")

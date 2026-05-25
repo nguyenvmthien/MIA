@@ -91,7 +91,7 @@ After training succeeds, the retrain pipeline:
 1. Runs the configured evaluation gate when a gold set exists.
 2. Uses `data/eval/gold_synthetic_205.jsonl` for the current larger baseline benchmark when available; `data/eval/gold_smoke.jsonl` remains a fast CI smoke fallback.
 3. Promotes the MLflow model only if the gate passes.
-4. Writes `data/training/.promotion_manifest.json`.
+4. Writes `models/registry/promotion_manifest.json`.
 5. Does not silently switch production serving.
 
 Current promotion policy:

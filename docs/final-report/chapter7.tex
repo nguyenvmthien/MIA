@@ -58,6 +58,37 @@ Khi có đủ dữ liệu correction chất lượng tốt và môi trường GP
 
 Sau khi candidate đạt gate, hệ thống có thể mở rộng theo hướng canary hoặc A/B testing. Một phần traffic nhỏ được route sang candidate, kết quả feedback và metrics được so sánh với baseline trong một khoảng thời gian. Chỉ khi candidate ổn định mới chuyển thành model mặc định.
 
+\section{Chiến lược continual learning và monitoring drift}
+
+Continual learning của dự án được thiết kế theo hướng có kiểm soát, không tự động cập nhật model ngay sau mỗi feedback. Dữ liệu mới được thu từ corrections trong UI, missing tasks, false positives và các trường hợp người dùng sửa assignee/deadline. Trước khi dùng cho huấn luyện, dữ liệu phải được scrub thông tin nhạy cảm, validate schema, loại trùng lặp và tách thành train/validation/test theo meeting.
+
+Hiệu năng suy giảm được phát hiện qua hai lớp. Lớp online monitoring theo dõi latency, số lỗi schema, số guardrail flags, số task mỗi meeting, tỷ lệ human review và feedback volume. Lớp offline evaluation chạy benchmark định kỳ để so sánh precision, recall, F1, assignee accuracy và hallucination rate giữa baseline và candidate. Nếu drift xuất hiện, ví dụ tỷ lệ human review tăng hoặc F1 giảm trên benchmark mới, hệ thống cần ưu tiên phân tích lỗi và cập nhật dữ liệu trước khi fine-tune.
+
+Rủi ro drift chính gồm thay đổi cách họp của nhóm, domain nghiệp vụ mới, ngôn ngữ mới, chất lượng audio khác và roster/alias thay đổi theo thời gian. Mitigation tương ứng là versioning dataset/model/prompt, giữ baseline cố định để so sánh, promotion gate trước deployment và rollback sang model trước đó nếu metrics vận hành xấu đi.
+
+\section{Kế hoạch dự án và phân rã công việc}
+
+Nếu triển khai theo nhóm, dự án có thể được chia thành các vai trò: backend/API, frontend/UI review, NLP pipeline, MLOps/evaluation, DevOps/monitoring và documentation. Với đồ án solo, các vai trò này được mô phỏng bằng các nhóm việc và artifact riêng trong repo.
+
+\begin{table}[H]
+\centering
+\caption{Timeline triển khai đề xuất}
+\label{tab:project-timeline}
+\begin{tabularx}{\textwidth}{@{}p{2.5cm}X X@{}}
+\toprule
+\textbf{Giai đoạn} & \textbf{Công việc chính} & \textbf{Kết quả} \\
+\midrule
+Tuần 1 & Xác định business problem, schema, dữ liệu mẫu và baseline architecture. & Problem definition, data schema, kế hoạch repo. \\
+Tuần 2 & Xây dựng pipeline audio/transcript, LLM extraction và guardrails. & Pipeline chạy end-to-end ở mức backend. \\
+Tuần 3 & Thêm UI review, database persistence, feedback loop và API hoàn chỉnh. & Demo web có upload, review và correction. \\
+Tuần 4 & Bổ sung benchmark, monitoring, retraining hooks và Docker Compose. & Repo runnable, metrics, baseline results. \\
+Tuần 5 & Viết report, slide deck, kiểm thử và cleanup deliverables. & Báo cáo PDF, source code, presentation. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Khi mở rộng thành dự án thật, nhóm cần bổ sung quy trình review code, data governance, incident response, quyền truy cập theo vai trò và kiểm thử trên dữ liệu thật của từng tổ chức.
+
 \section{Nâng cao vận hành}
 
 Để tiến gần hơn đến môi trường sử dụng thật, hệ thống cần các cải tiến vận hành sau:

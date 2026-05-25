@@ -89,6 +89,8 @@ Audio file
 │   │   └── data_pipeline/         Collection, synthetic data, validation, export
 ├── web/                           Next.js web UI
 ├── tests/                         Unit and smoke tests
+├── configs/                       Example configuration files
+├── models/                        Local trained models/checkpoints (not committed)
 ├── docs/                          Architecture & design documents
 ├── docker/                        Prometheus config, Grafana provisioning
 ├── .github/workflows/ci.yml       CI: lint → unit → schema smoke → eval smoke → docker
@@ -316,6 +318,16 @@ Checks: schema conformance, speaker balance, train/val leakage, duplicates.
 
 Local machines without GPU should use Kaggle for the training step. Kaggle produces a candidate artifact only; evaluate it locally before promotion.
 
+#### Lightweight baseline checkpoint
+
+The repository includes a real trained baseline checkpoint under
+`models/baseline-action-detector/`. It is a TF-IDF + Logistic Regression model
+for detecting transcript turns likely to contain action items. Recreate it with:
+
+```bash
+make train-baseline
+```
+
 ```bash
 pip install -e ".[train]"
 
@@ -338,7 +350,8 @@ mlflow ui --port 5000
 #### 4. Deploy fine-tuned model via Ollama
 
 ```bash
-# Evaluate the candidate first, then deploy an approved promotion manifest.
+# Evaluate the candidate first, then deploy an approved promotion manifest
+# from models/registry/promotion_manifest.json.
 make deploy-promoted-model APPLY=1
 
 # Update .env after promotion:

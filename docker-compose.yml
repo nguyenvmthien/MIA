@@ -2,6 +2,7 @@ name: meeting-agent
 
 x-db-env: &db-env
   DATABASE_URL: postgresql://${POSTGRES_USER:-meeting}:${POSTGRES_PASSWORD:-meeting}@postgres:5432/${POSTGRES_DB:-meeting_agent}
+  CONFIG_FILE: /app/configs/app.example.yml
   REDIS_URL: redis://redis:6379/0
   CELERY_BROKER_URL: redis://redis:6379/0
   CELERY_RESULT_BACKEND: redis://redis:6379/1
@@ -77,6 +78,8 @@ services:
       FRONTEND_URL: ${PUBLIC_URL:-http://localhost:3001}
     volumes:
       - ./data:/app/data
+      - ./configs:/app/configs:ro
+      - ./models:/app/models
     depends_on:
       migrator:
         condition: service_completed_successfully
@@ -103,6 +106,8 @@ services:
       WORKER_METRICS_PORT: "9100"
     volumes:
       - ./data:/app/data
+      - ./configs:/app/configs:ro
+      - ./models:/app/models
     depends_on:
       redis:
         condition: service_healthy
@@ -125,6 +130,8 @@ services:
       MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow:5000}
     volumes:
       - ./data:/app/data
+      - ./configs:/app/configs:ro
+      - ./models:/app/models
     depends_on:
       redis:
         condition: service_healthy
@@ -146,6 +153,7 @@ services:
       MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow:5000}
     volumes:
       - ./data:/app/data
+      - ./configs:/app/configs:ro
       - ./models:/app/models
     depends_on:
       redis:

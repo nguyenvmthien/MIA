@@ -1,4 +1,4 @@
-.PHONY: help up down dev restart-api restart-worker worker-rebuild logs deploy deploy-update migrate migrate-prod migrate-new db-shell test test-cov lint lint-fix hygiene dataset-smoke benchmark hf-dataset web-lint web-build mlops-smoke mlops-up mlops-logs train-image retrain-check retrain-force backfill-transcripts cleanup-artifacts deploy-promoted-model synthetic export-sft export-rlhf export-finetune
+.PHONY: help up down dev restart-api restart-worker worker-rebuild logs deploy deploy-update migrate migrate-prod migrate-new db-shell test test-cov lint lint-fix hygiene dataset-smoke benchmark hf-dataset web-lint web-build mlops-smoke mlops-up mlops-logs train-image train-baseline retrain-check retrain-force backfill-transcripts cleanup-artifacts deploy-promoted-model synthetic export-sft export-rlhf export-finetune
 
 COMPOSE      = docker compose -f docker-compose.yml
 COMPOSE_PROD = $(COMPOSE) -f docker-compose.prod.yml
@@ -102,6 +102,11 @@ mlops-logs: ## Tail MLOps scheduler/trainer logs
 
 train-image: ## Build GPU training image with QLoRA dependencies
 	$(COMPOSE) --profile mlops build trainer
+
+train-baseline: ## Train lightweight baseline action-turn detector into models/
+	$(PYTHONPATH) python3 -m meeting_agent.mlops.train_baseline_detector \
+		--gold data/eval/gold_synthetic_205.jsonl \
+		--out-dir models/baseline-action-detector
 
 retrain-check: ## Check whether retraining threshold is met
 	$(PYTHONPATH) python3 -m meeting_agent.mlops.retrain --check

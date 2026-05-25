@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 
 from prometheus_client import Counter
 
+from meeting_agent.config import settings
+
 log = logging.getLogger(__name__)
 
 ANOMALY_EVENTS = Counter(
@@ -21,7 +23,7 @@ ANOMALY_EVENTS = Counter(
 )
 
 # Rolling window size for computing mean/stddev
-_WINDOW = 20
+_WINDOW = settings.anomaly_window_size
 
 
 @dataclass
@@ -41,14 +43,15 @@ class _RollingWindow:
         variance = sum((x - m) ** 2 for x in self.values) / len(self.values)
         return math.sqrt(variance)
 
-    def is_anomaly(self, v: float, z_threshold: float = 3.0) -> bool:
+    def is_anomaly(self, v: float, z_threshold: float | None = None) -> bool:
         """Return True if v is more than z_threshold standard deviations from mean."""
+        threshold = z_threshold if z_threshold is not None else settings.anomaly_z_threshold
         if len(self.values) < 5:
             return False  # not enough data yet
         std = self.stddev()
         if std == 0:
             return False
-        return abs(v - self.mean()) / std > z_threshold
+        return abs(v - self.mean()) / std > threshold
 
 
 # Global rolling windows per metric

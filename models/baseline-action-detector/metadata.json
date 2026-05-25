@@ -1,0 +1,40 @@
+{
+  "schema_version": "baseline_action_detector_v1",
+  "model_type": "tfidf_logistic_regression",
+  "task": "action_item_turn_detection",
+  "gold_path": "data/eval/gold_synthetic_205.jsonl",
+  "num_examples": 2036,
+  "num_train_examples": 1620,
+  "num_test_examples": 416,
+  "positive_rate": 0.3001,
+  "precision": 0.575,
+  "recall": 0.5847457627118644,
+  "f1": 0.5798319327731093,
+  "classification_report": {
+    "non_action_turn": {
+      "precision": 0.8344594594594594,
+      "recall": 0.8288590604026845,
+      "f1-score": 0.8316498316498316,
+      "support": 298.0
+    },
+    "action_turn": {
+      "precision": 0.575,
+      "recall": 0.5847457627118644,
+      "f1-score": 0.5798319327731093,
+      "support": 118.0
+    },
+    "accuracy": 0.7596153846153846,
+    "macro avg": {
+      "precision": 0.7047297297297297,
+      "recall": 0.7068024115572744,
+      "f1-score": 0.7057408822114705,
+      "support": 416.0
+    },
+    "weighted avg": {
+      "precision": 0.7608627858627858,
+      "recall": 0.7596153846153846,
+      "f1-score": 0.760220716103069,
+      "support": 416.0
+    }
+  }
+}

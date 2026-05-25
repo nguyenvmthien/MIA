@@ -1,3 +1,6 @@
+import json
+
+from meeting_agent.mlops import retrain
 from meeting_agent.mlops.retrain import _build_promotion_manifest
 
 
@@ -27,3 +30,13 @@ def test_build_promotion_manifest_records_serving_target(monkeypatch, tmp_path):
         "target_value": "meeting-agent:test",
         "rollback_value": "meeting-agent:old",
     }
+
+
+def test_write_promotion_manifest_uses_models_registry(monkeypatch, tmp_path):
+    registry_dir = tmp_path / "models" / "registry"
+    monkeypatch.setattr(retrain, "_PROMOTION_MANIFEST_PATH", registry_dir / "promotion_manifest.json")
+
+    retrain._write_promotion_manifest({"schema_version": "model_promotion_v1"})
+
+    manifest_path = registry_dir / "promotion_manifest.json"
+    assert json.loads(manifest_path.read_text()) == {"schema_version": "model_promotion_v1"}

@@ -9,8 +9,8 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-DEFAULT_MANIFEST = Path("data/training/.promotion_manifest.json")
-DEFAULT_SERVING_ENV = Path("data/training/.serving.env")
+DEFAULT_MANIFEST = Path("models/registry/promotion_manifest.json")
+DEFAULT_SERVING_ENV = Path("models/registry/serving.env")
 
 
 def _find_gguf(artifact_path: Path) -> Path:

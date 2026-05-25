@@ -1,0 +1,62 @@
+app:
+  name: meeting-ai-agent
+  environment: local
+  log_level: INFO
+  max_audio_duration_hours: 4
+  pending_meeting_timeout_minutes: 60
+
+database:
+  url: postgresql://meeting:meeting@localhost:5432/meeting_agent
+
+redis:
+  url: redis://localhost:6379/0
+
+celery:
+  broker_url: redis://localhost:6379/0
+  result_backend: redis://localhost:6379/1
+
+inference:
+  llm_provider: ollama
+  llm_model: qwen2.5:3b
+  embedding_model: nomic-embed-text
+  ollama_base_url: http://localhost:11434
+  max_retries: 3
+  task_confidence_threshold: 0.6
+
+speech:
+  whisper_model: base
+  device: cpu
+  compute_type: int8
+  batch_size: 16
+  language: en
+  enable_diarization: true
+  hf_token: ""
+
+tracing:
+  langchain_tracing_v2: false
+  langchain_api_key: ""
+  langchain_project: meeting-agent
+
+storage:
+  audio_path: ./data/audio
+  transcript_path: ./data/transcripts
+  workers_path: ./data/workers.json
+  artifact_retention_days: 30
+  raw_audio_retention_days: 7
+  pii_artifact_retention_days: 14
+
+evaluation:
+  gold_path: data/eval/gold_synthetic_205.jsonl
+  baseline_limit: 100
+  precision_gate: 0.70
+  max_f1_drop: 0.05
+  max_hallucination_regression_pp: 2.0
+
+monitoring:
+  prometheus_endpoint: /metrics
+  anomaly_window_size: 20
+  anomaly_z_threshold: 3.0
+
+retraining:
+  min_corrections: 50
+  output_dir: models/qwen-meeting-latest

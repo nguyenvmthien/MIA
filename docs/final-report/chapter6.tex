@@ -39,6 +39,20 @@ Hệ thống đã có PII masking dựa trên pattern trước khi đưa nội d
 
 Vì vậy, PII masking hiện tại không nên được mô tả như một hệ thống DLP hoàn chỉnh. Khi triển khai thực tế, cần bổ sung chính sách retention, phân quyền chi tiết, mã hóa secret, audit access và quy trình xử lý dữ liệu theo yêu cầu tổ chức.
 
+\section{Robustness và đầu vào ngoài miền}
+
+Hệ thống cần robust trước các đầu vào không lý tưởng như audio quá nhiễu, transcript trộn ngôn ngữ, câu lệnh cố tình yêu cầu model bỏ qua schema, hoặc cuộc họp không có action item rõ ràng. Cách giảm rủi ro hiện tại gồm validate định dạng audio, prompt injection check, schema validation, due-date sanity check, hallucination heuristic và trạng thái \texttt{human\_review} cho kết quả thiếu tự tin.
+
+Các failure case quan trọng gồm: model bỏ sót task vì ASR nhận sai từ khóa, tạo due date sai do hiểu nhầm thời điểm tương đối, gán sai assignee khi người nói dùng đại từ, hoặc tạo task từ một câu thảo luận chưa phải cam kết. Vì vậy, UI hiển thị evidence transcript và cho phép sửa feedback được xem là một lớp robustness vận hành, không chỉ là tính năng tiện ích.
+
+\section{Đạo đức và Responsible AI}
+
+Nhóm được hưởng lợi trực tiếp là người tham gia cuộc họp vì họ có thể theo dõi quyết định và công việc nhanh hơn. Tuy nhiên, hệ thống cũng có thể gây hại nếu biến lời nói chưa chắc chắn thành cam kết chính thức, gán nhầm trách nhiệm cho một cá nhân, hoặc lưu trữ nội dung họp nhạy cảm lâu hơn cần thiết.
+
+Rủi ro thiên lệch xuất hiện khi ASR/diarization hoạt động kém hơn với accent, giới tính, tiếng ồn hoặc hội thoại đa ngôn ngữ. Nếu nhóm người nào đó bị nhận dạng kém hơn, họ có thể bị gán thiếu/nhầm task nhiều hơn. Vì vậy, hệ thống không nên được dùng để đánh giá hiệu suất cá nhân nếu không có review của con người và benchmark trên dữ liệu đại diện.
+
+Về explainability, mỗi action item cần đi kèm transcript evidence, model version và trạng thái confidence/review. Với stakeholder không kỹ thuật, giải thích quan trọng nhất không phải thuật toán chi tiết mà là: task này đến từ đoạn hội thoại nào, ai đã review, và trường nào do model suy luận. Misuse cần tránh gồm theo dõi nhân viên quá mức, ghi âm không có đồng ý, hoặc dùng transcript/action items cho mục đích kỷ luật ngoài phạm vi thông báo ban đầu.
+
 \section{Mức độ sẵn sàng triển khai}
 
 Hệ thống hiện chạy ổn cho demo kỹ thuật bằng Docker Compose. Cách triển khai này phù hợp để kiểm chứng pipeline, UI, database, worker và monitoring trên cùng một máy. Tuy nhiên, nó chưa tương đương môi trường vận hành chính thức có autoscaling, backup, secret manager, CI/CD release gate, alerting đầy đủ và incident response.

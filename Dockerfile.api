@@ -10,7 +10,7 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 RUN pip install --no-cache-dir \
     fastapi uvicorn[standard] python-multipart \
-    pydantic pydantic-settings \
+    pydantic pydantic-settings PyYAML \
     celery redis \
     sqlalchemy alembic psycopg2-binary \
     prometheus-client langsmith \
@@ -19,6 +19,8 @@ RUN pip install --no-cache-dir \
 
 # --- App code layer (invalidated only when src/ changes) ---
 COPY src/ ./src/
+COPY configs/ ./configs/
+COPY scripts/ ./scripts/
 COPY alembic/ ./alembic/
 COPY alembic.ini ./
 RUN pip install --no-cache-dir -e . --no-deps
