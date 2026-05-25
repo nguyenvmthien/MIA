@@ -19,6 +19,7 @@ RUN pip install --no-cache-dir -e ".[train]" \
     && pip install --no-cache-dir cryptography
 
 COPY src/ ./src/
+COPY configs/ ./configs/
 RUN pip install --no-cache-dir -e . --no-deps
 
 RUN mkdir -p data/training data/eval data/models models
