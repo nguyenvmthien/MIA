@@ -222,14 +222,17 @@ def test_submit_feedback(client):
 # ── GDPR delete ───────────────────────────────────────────────────────────────
 
 def test_delete_meeting_no_data(client, tmp_path):
-    """Delete on a non-existent meeting returns empty deleted_paths."""
+    """Delete on a non-existent meeting returns 404 without touching files."""
+    audio_dir = tmp_path / "audio" / "nonexistent-id"
+    audio_dir.mkdir(parents=True)
     with patch("meeting_agent.api.main.settings") as mock_settings, \
+         patch("meeting_agent.api.main.db_get_meeting", return_value=None), \
          patch("meeting_agent.api.main.db_delete_meeting", return_value=False):
         mock_settings.audio_storage_path = str(tmp_path / "audio")
         mock_settings.transcript_storage_path = str(tmp_path / "transcripts")
         resp = client.delete("/meetings/nonexistent-id")
-    assert resp.status_code == 200
-    assert resp.json()["deleted_paths"] == []
+    assert resp.status_code == 404
+    assert audio_dir.exists()
 
 
 # ── Guardrail: assignee name normalisation ────────────────────────────────────

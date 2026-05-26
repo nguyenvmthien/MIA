@@ -670,11 +670,12 @@ Prometheus metrics are at `GET /metrics`. Import Grafana dashboard:
 
 | Document | Description |
 |----------|-------------|
-| [TODO.md](TODO.md) | Active roadmap and open work |
+| [TODO.md](TODO.md) | Internal roadmap and remaining work |
 | [docs/project-status.md](docs/project-status.md) | Current project status, constraints, and cleanup notes |
 | [docs/architecture.md](docs/architecture.md) | Full system architecture (C4 levels 1–3) |
 | [docs/data-pipeline.md](docs/data-pipeline.md) | Data collection, synthetic data, validation, and training prep |
 | [docs/mlops-runbook.md](docs/mlops-runbook.md) | Retraining, MLflow, promotion, and deploy operations |
 | [docs/monitoring-guide.md](docs/monitoring-guide.md) | Observability setup and day-to-day checks |
 | [docs/eval-results.md](docs/eval-results.md) | Baseline model evaluation results |
-| [docs/final-report/](docs/final-report/) | Final report LaTeX/Markdown source |
+| [docs/final-report/](docs/final-report/) | Internal report source |
+| [docs/presentation-deck.md](docs/presentation-deck.md) | Internal slide draft content |

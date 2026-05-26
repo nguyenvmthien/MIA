@@ -256,9 +256,9 @@ This is the **central focus**: the Processing Service + LLM Inference Service in
 ```
 
 **Training data sources:**
-- Synthetic meetings generated with Claude/GPT seeded with action item templates
-- AMI Meeting Corpus (public, annotated)
-- Internal meeting transcripts (anonymized, GDPR-compliant)
+- Synthetic meetings from the packaged data-generation pipeline
+- Public or permissioned meeting transcripts where licensing allows reuse
+- Human-reviewed correction exports from the application feedback loop
 
 **Techniques:**
 - **QLoRA** (4-bit NF4 base + LoRA adapters) — resource-efficient fine-tuning
@@ -411,7 +411,7 @@ OUTPUT JSON ARRAY:
 │  Collection                                                      │
 │  ├── Real meetings (user uploads, anonymized)                    │
 │  ├── AMI Corpus (public labeled meeting dataset)                 │
-│  └── Synthetic generation (Claude → meeting scripts → audio TTS) │
+│  └── Synthetic generation (scripts → transcripts → audio TTS)    │
 │                                                                  │
 │  Preprocessing                                                   │
 │  ├── Audio normalization (ffmpeg, 16kHz mono WAV)                │

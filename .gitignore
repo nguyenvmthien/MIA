@@ -2,7 +2,6 @@
 seminar/
 final_report/
 docs/*
-
 # Python build/cache
 __pycache__/
 **/__pycache__/
@@ -38,7 +37,8 @@ web/.next/
 web/next-env.d.ts
 
 # Data and local datasets
-data/
+data/*
+!data/README.md
 hf_dataset/
 mlruns/
 

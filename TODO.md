@@ -9,8 +9,8 @@
 ## 1. Dataset
 
 ### 1.1 Du lieu that
-- [x] Thu thap it nhat 50 meetings that co transcript va permission su dung
-- [x] Dam bao da dang: nganh nghe, so nguoi tham gia, ngon ngu EN/VI
+- [ ] Thu thap it nhat 50 meetings that co transcript va permission su dung
+- [ ] Dam bao da dang: nganh nghe, so nguoi tham gia, ngon ngu EN/VI
 - [x] Luu raw audio + transcript vao `data/raw/` hoac storage rieng, khong commit PII len repo
 
 ### 1.2 Synthetic data
@@ -24,8 +24,8 @@
 ### 1.3 Human annotation
 - [x] Corrections tu UI luu vao DB va export duoc JSONL
 - [x] Export training data: `GET /feedback/export?format=jsonl`
-- [x] Target: it nhat 50 meetings co >=1 human correction (hien repo co `feedback_corrections.jsonl`: 13 samples)
-- [x] Tang coverage cho false positive / missing tasks bang review that
+- [ ] Target: it nhat 50 meetings co >=1 human correction (hien repo co 13 feedback samples)
+- [ ] Tang coverage cho false positive / missing tasks bang review that
 
 ### 1.4 Data quality
 - [x] Dedupe `feedback_corrections.jsonl` (18 -> 13 samples sau khi loai near-duplicate)
@@ -49,18 +49,18 @@
 ### 2.2 Chay fine-tuning
 - [x] `finetune.py` ho tro QLoRA/Unsloth va log experiment vao MLflow
 - [x] Retrain pipeline chay qua Celery queue `mlops`, co threshold check va state file
-- [x] Chay smoke fine-tuning tren may co CUDA/Colab:
+- [ ] Chay smoke fine-tuning tren may co CUDA/Colab:
   `python3 -m meeting_agent.mlops.finetune --data data/training/smoke_10.jsonl --output models/qwen-meeting-v1 --epochs 1`
-- [x] Chay full training:
+- [ ] Chay full training:
   `python3 -m meeting_agent.mlops.finetune --data data/training/synthetic.jsonl --data data/training/synthetic_long.jsonl --epochs 3`
-- [x] Luu run ID, dataset hash, metrics va artifact path vao release note/model card
+- [ ] Luu run ID, dataset hash, metrics va artifact path vao release note/model card
 
 ### 2.3 Deploy model
 - [x] Eval gate so sanh candidate voi champion truoc khi promote
 - [x] MLflow promotion manifest + deploy helper (`scripts/deploy_promoted_model.py`)
-- [x] Convert LoRA/GGUF -> Ollama custom model (`ollama create meeting-agent-v1 -f Modelfile`)
-- [x] Chay deploy co chu dich: `make deploy-promoted-model APPLY=1`
-- [x] Set `OLLAMA_LLM_MODEL=meeting-agent-v1` trong `.env` va restart worker/API
+- [ ] Convert LoRA/GGUF -> Ollama custom model (`ollama create meeting-agent-v1 -f Modelfile`)
+- [ ] Chay deploy co chu dich: `make deploy-promoted-model APPLY=1`
+- [ ] Set `OLLAMA_LLM_MODEL=meeting-agent-v1` trong `.env` va restart worker/API
 
 ---
 
@@ -73,7 +73,7 @@
 - [x] Baseline benchmark 100 mau tren `data/eval/gold_synthetic_205.jsonl` voi `qwen2.5:3b`
 - [x] Dieu chinh benchmark gates: precision/schema/hallucination la hard gates; recall/F1/assignee la watch metrics
 - [x] Cai thien recall/F1 sau benchmark baseline 100 mau, khong yeu cau tat ca metrics cung vuot target
-- [x] Assignee resolution accuracy tren real meetings
+- [ ] Assignee resolution accuracy tren real meetings
 - [x] Bao cao hallucination rate theo model version
 
 ### 3.2 Business metrics
@@ -101,7 +101,7 @@
 - [x] Corrections apply vao `tasks` table (ground truth)
 - [x] Export JSONL cho fine-tuning (`/feedback/export`)
 - [x] Trigger retrain: Celery Beat + `/admin/retrain` + `force` mode
-- [x] Chay retrain that tren GPU va ghi lai artifact/version
+- [ ] Chay retrain that tren GPU va ghi lai artifact/version
 
 ### 4.2 Model versioning
 - [x] MLflow `log_model` trong `finetune.py`
@@ -109,7 +109,7 @@
 - [x] A/B runtime routing co explicit enablement (`AB_TEST_ENABLED=true`)
 - [x] Admin endpoints: `/admin/ab-test/start|status|results|stop`
 - [x] Tests cho A/B logic va promotion manifest
-- [x] Test A/B end-to-end voi 2 Ollama model that va traffic that
+- [ ] Test A/B end-to-end voi 2 Ollama model that va traffic that
 
 ### 4.3 Data versioning
 - [x] Dataset version/hash helper de log vao MLflow
@@ -149,13 +149,13 @@
 - [x] Integration test: upload audio -> poll until completed -> verify tasks in DB
 
 ### 5.4 Production
-- [x] Docker Compose production config (`docker-compose.prod.yml`)
+- [ ] Dedicated production compose override (`docker-compose.prod.yml`)
 - [x] GPU/MLOps compose profile (`docker-compose.gpu.yml`) cho trainer/beat/mlflow
 - [x] Health check cho API + worker
 - [x] Bo nginx khoi active path (khong can thiet o quy mo hien tai)
 - [x] `.github/workflows/docker-build.yml` build & push API/worker images len GHCR khi merge/push main
-- [x] Rate limiting tren API, dac biet `POST /meetings`
-- [x] Decide release policy: explicit deploy command hay protected release workflow
+- [ ] Rate limiting tren API, dac biet `POST /meetings`
+- [ ] Decide release policy: explicit deploy command hay protected release workflow
 
 ---
 
@@ -170,8 +170,8 @@
 
 ### 6.2 CD
 - [x] `.github/workflows/docker-build.yml` - build & push `ghcr.io/<repo>-api:<sha>` va `ghcr.io/<repo>-worker:<sha>` tren main
-- [x] Them web image vao CD neu frontend se deploy bang container rieng
-- [x] Them deployment environment/protected approval neu dung GitHub Environments
+- [ ] Them web image vao CD neu frontend se deploy bang container rieng
+- [ ] Them deployment environment/protected approval neu dung GitHub Environments
 
 ### 6.3 Branch strategy
 - [x] Protect `main` branch: require PR + CI pass

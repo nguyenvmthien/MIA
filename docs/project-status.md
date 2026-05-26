@@ -10,7 +10,8 @@ This file is the single short status document for planning and cleanup context. 
 - `docs/mlops-runbook.md`: retraining, MLflow, promotion, and deploy operations.
 - `docs/monitoring-guide.md`: Prometheus, Grafana, LangSmith, and anomaly checks.
 - `docs/eval-results.md`: baseline evaluation results.
-- `docs/final-report/`: report LaTeX/Markdown source. Generated PDF is not kept in source control.
+- `docs/final-report/`: internal report source.
+- `docs/presentation-deck.md`: internal slide draft content.
 
 ## Current State
 

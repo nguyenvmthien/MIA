@@ -6,9 +6,9 @@ Source of truth: `Prokct.md`, converted from the original assignment PDF.
 
 | Requirement | Current coverage |
 | --- | --- |
-| Written report, 10-15 pages PDF | `docs/final-report/` LaTeX source. `docs/final-report/MIA_System.pdf` must be rebuilt from the updated source before submission. |
+| Written report, 10-15 pages PDF | Submit `report.pdf`. |
 | Complete runnable source code | `src/meeting_agent/`, `web/`, Dockerfiles, `docker-compose.yml`, `README.md` |
-| Presentation slide deck, 10-15 slides | Still needs final slide deck export |
+| Presentation slide deck, 10-15 slides | Submit `slide.pdf`. |
 
 ## Section I Coverage
 
@@ -27,9 +27,14 @@ Source of truth: `Prokct.md`, converted from the original assignment PDF.
 | Project management and teamwork | `docs/final-report/chapter8.tex` |
 | Ethics and responsible AI | `docs/final-report/chapter7.tex` |
 
-## Remaining Manual Deliverable
+## Final Submission Files
 
-Create/export the presentation deck as PDF or PPTX with 10-15 slides:
+Only these files are intended as final submitted documents:
+
+1. `report.pdf`
+2. `slide.pdf`
+
+The slide deck should cover:
 
 1. Title and team information
 2. Business problem and motivation

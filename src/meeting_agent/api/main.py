@@ -845,6 +845,10 @@ async def delete_meeting_data(
     principal: Principal = Depends(require_user),
 ):
     """Delete stored audio, transcript data, and DB rows for a meeting (GDPR compliance)."""
+    owner_scope = _owner_scope(principal)
+    if db_get_meeting(meeting_id, owner_user_id=owner_scope) is None:
+        raise HTTPException(status_code=404, detail=f"Meeting {meeting_id} not found")
+
     audio_dir = Path(settings.audio_storage_path) / meeting_id
     transcript_dir = Path(settings.transcript_storage_path) / meeting_id
 
@@ -854,6 +858,6 @@ async def delete_meeting_data(
             shutil.rmtree(d)
             deleted.append(str(d))
 
-    db_deleted = db_delete_meeting(meeting_id, owner_user_id=_owner_scope(principal))
+    db_deleted = db_delete_meeting(meeting_id, owner_user_id=owner_scope)
 
     return {"meeting_id": meeting_id, "deleted_paths": deleted, "db_deleted": db_deleted}
