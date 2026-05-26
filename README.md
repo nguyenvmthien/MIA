@@ -22,7 +22,7 @@ Audio → WhisperX (ASR+Diarize) → Qwen2.5-3B (LLM) → Action Items JSON
    - [Monitoring](#monitoring)
 4. [Output format](#output-format)
 5. [LLMOps coverage](#llmops-coverage)
-6. [Documentation](#documentation)
+6. [Author](#author)
 
 ---
 
@@ -91,7 +91,6 @@ Audio file
 ├── tests/                         Unit and smoke tests
 ├── configs/                       Example configuration files
 ├── models/                        Baseline checkpoint plus ignored runtime model outputs
-├── docs/                          Architecture & design documents
 ├── docker/                        Prometheus config, Grafana provisioning
 ├── .github/workflows/ci.yml       CI: lint → unit → schema smoke → eval smoke → docker
 ├── docker-compose.yml
@@ -524,8 +523,6 @@ Gold set format (each line):
 | Avg latency | 26.97s | watch |
 | P95 latency | 120.2s | watch |
 
-Full analysis: [docs/eval-results.md](docs/eval-results.md)
-
 Promotion gates are intentionally conservative: a candidate must keep precision above 0.70, avoid F1 dropping more than 0.05 vs baseline, avoid hallucination regression above 2 percentage points, and avoid schema regression. Recall, F1, assignee accuracy, and latency are tracked as watch metrics instead of requiring every metric to beat a fixed high target.
 
 ---
@@ -631,7 +628,7 @@ Prometheus metrics are at `GET /metrics`. Import Grafana dashboard:
 
 ---
 
-## LLMOps coverage
+<!-- ## LLMOps coverage
 
 | Requirement | Status | Implementation |
 |---|---|---|
@@ -662,20 +659,17 @@ Prometheus metrics are at `GET /metrics`. Import Grafana dashboard:
 | AutoML (Optuna) | ✅ | `python3 -m meeting_agent.mlops.finetune --search` |
 | Hyperparameter search | ✅ | Optuna over rank, lr, batch_size |
 | Automated retraining | ✅ | `src/meeting_agent/mlops/retrain.py` — threshold check + Celery Beat (24h) |
-| Evaluation harness | ✅ | `src/meeting_agent/mlops/evaluate.py` — P/R/F1 |
+| Evaluation harness | ✅ | `src/meeting_agent/mlops/evaluate.py` — P/R/F1 | -->
 
 ---
 
-## Documentation
+## Author
 
-| Document | Description |
-|----------|-------------|
-| [TODO.md](TODO.md) | Internal roadmap and remaining work |
-| [docs/project-status.md](docs/project-status.md) | Current project status, constraints, and cleanup notes |
-| [docs/architecture.md](docs/architecture.md) | Full system architecture (C4 levels 1–3) |
-| [docs/data-pipeline.md](docs/data-pipeline.md) | Data collection, synthetic data, validation, and training prep |
-| [docs/mlops-runbook.md](docs/mlops-runbook.md) | Retraining, MLflow, promotion, and deploy operations |
-| [docs/monitoring-guide.md](docs/monitoring-guide.md) | Observability setup and day-to-day checks |
-| [docs/eval-results.md](docs/eval-results.md) | Baseline model evaluation results |
-| [docs/final-report/](docs/final-report/) | Internal report source |
-| [docs/presentation-deck.md](docs/presentation-deck.md) | Internal slide draft content |
+| Field | Details |
+|-------|---------|
+| Name | Nguyễn Văn Minh Thiện |
+<!-- | Student ID | 22127398 | -->
+| Email | nvmthien22@clc.fitus.edu.vn |
+| GitHub | https://github.com/nguyenvmthien/MIA |
+| Dataset | https://huggingface.co/datasets/minhthien/mia-meeting |
+<!-- | Demo | https://mia.minhthien.click | -->
