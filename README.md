@@ -628,48 +628,11 @@ Prometheus metrics are at `GET /metrics`. Import Grafana dashboard:
 
 ---
 
-<!-- ## LLMOps coverage
-
-| Requirement | Status | Implementation |
-|---|---|---|
-| Model selection | ✅ | WhisperX large-v3 + Qwen2.5-3B Q4_K_M |
-| Fine-tuning (QLoRA) | ✅ | `src/meeting_agent/mlops/finetune.py` — Unsloth + PEFT |
-| Model versioning | ✅ | MLflow `log_model` in `src/meeting_agent/mlops/finetune.py` |
-| Data collection | ✅ | `src/meeting_agent/mlops/data_pipeline/collect.py` |
-| Data validation | ✅ | `src/meeting_agent/mlops/data_pipeline/validate.py` — bias/leakage/schema |
-| Synthetic data | ✅ | `src/meeting_agent/mlops/data_pipeline/synthetic.py` |
-| Inference optimization | ✅ | GGUF Q4_K_M, token chunking, Redis cache |
-| Model distillation | ✅ | `src/meeting_agent/mlops/distill.py` — KL-divergence KD (3B→1.5B) |
-| Model pruning | ✅ | `python3 -m meeting_agent.mlops.distill prune` — magnitude-based LoRA sparsity |
-| Distributed inference | ✅ | `pipeline/router.py` — multi-Ollama load balancer |
-| FAISS RAG | ✅ | `pipeline/rag.py` — speaker profile retrieval |
-| Prometheus + Grafana | ✅ | `monitoring/metrics.py`, docker-compose |
-| LangSmith tracing | ✅ | `@traceable` on `_raw_llm_call` in orchestrator |
-| Feedback loop | ✅ | `pipeline/feedback.py` + `POST /meetings/{id}/feedback` |
-| Anomaly detection | ✅ | `monitoring/anomaly.py` — rolling Z-score + hard thresholds |
-| Few-shot + CoT prompts | ✅ | `prompts/templates.py` |
-| Guardrails | ✅ | schema, hallucination, jailbreak, PII scrub |
-| Jailbreak protection | ✅ | `guardrails.py` — regex pattern blocklist |
-| PII masking | ✅ | `pipeline/pii.py` — email, phone, SSN, card, IP |
-| Scalability (Celery) | ✅ | `pipeline/worker_task.py` |
-| Token budget | ✅ | `CHUNK_TOKEN_BUDGET` in orchestrator |
-| GDPR compliance | ✅ | `DELETE /meetings/{id}` |
-| Source provenance | ✅ | `source_turn_ids` on every `ExtractedTask` |
-| CI/CD | ✅ | `.github/workflows/ci.yml` |
-| AutoML (Optuna) | ✅ | `python3 -m meeting_agent.mlops.finetune --search` |
-| Hyperparameter search | ✅ | Optuna over rank, lr, batch_size |
-| Automated retraining | ✅ | `src/meeting_agent/mlops/retrain.py` — threshold check + Celery Beat (24h) |
-| Evaluation harness | ✅ | `src/meeting_agent/mlops/evaluate.py` — P/R/F1 | -->
-
----
-
 ## Author
 
 | Field | Details |
 |-------|---------|
 | Name | Nguyễn Văn Minh Thiện |
-<!-- | Student ID | 22127398 | -->
 | Email | nvmthien22@clc.fitus.edu.vn |
 | GitHub | https://github.com/nguyenvmthien/MIA |
 | Dataset | https://huggingface.co/datasets/minhthien/mia-meeting |
-<!-- | Demo | https://mia.minhthien.click | -->

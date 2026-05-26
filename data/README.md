@@ -17,3 +17,5 @@ data/
 Use the scripts in `src/meeting_agent/mlops/data_pipeline/` and `scripts/` to
 regenerate synthetic, feedback, and Hugging Face export datasets. Keep raw audio
 and any data containing PII outside source control.
+
+Public dataset link: https://huggingface.co/datasets/minhthien/mia-meeting
