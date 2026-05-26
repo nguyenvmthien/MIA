@@ -143,7 +143,7 @@ class Settings(BaseSettings):
     llm_max_retries: int = _CONFIG_DEFAULTS.get("llm_max_retries", 3)
     task_confidence_threshold: float = _CONFIG_DEFAULTS.get("task_confidence_threshold", 0.6)
     pending_meeting_timeout_minutes: int = _CONFIG_DEFAULTS.get(
-        "pending_meeting_timeout_minutes", 60
+        "pending_meeting_timeout_minutes", 5
     )
 
     # Monitoring / MLOps

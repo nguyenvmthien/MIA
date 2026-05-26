@@ -3,7 +3,7 @@ app:
   environment: local
   log_level: INFO
   max_audio_duration_hours: 4
-  pending_meeting_timeout_minutes: 60
+  pending_meeting_timeout_minutes: 5
 
 database:
   url: postgresql://meeting:meeting@localhost:5432/meeting_agent
